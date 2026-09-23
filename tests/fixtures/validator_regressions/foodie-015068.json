@@ -1,0 +1,707 @@
+{
+  "id": "foodie-015068",
+  "response": {
+    "status": "resolved",
+    "source_id": "foodie-015068",
+    "content_hash": "a3b7e38ea910e05435cb33b62dc3ef1844021e6782359b1e90245d79d8da63c0",
+    "title": "Ye'abesha Gomen (Ethiopian Collard Greens)",
+    "description": null,
+    "headings": [],
+    "ingredients": [
+      {
+        "source_line_id": "L4",
+        "name": "Collard Greens/Kale",
+        "amount_text": "10",
+        "amount_value": "10",
+        "unit_text": "ounce",
+        "unit_normalized": "oz",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L4"
+          ],
+          "excerpt": "10  ounce Collard Greens/Kale chopped"
+        }
+      },
+      {
+        "source_line_id": "L5",
+        "name": "Niter Ethiopian Spiced Butter or cooking oil",
+        "amount_text": "3 or more",
+        "amount_value": "3",
+        "unit_text": "tablespoons",
+        "unit_normalized": "tablespoons",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L5"
+          ],
+          "excerpt": "3 or more tablespoons Niter Ethiopian Spiced Butter or cooking oil"
+        }
+      },
+      {
+        "source_line_id": "L6",
+        "name": "minced ginger",
+        "amount_text": "1 1/2",
+        "amount_value": "1 1/2",
+        "unit_text": "teaspoon",
+        "unit_normalized": "teaspoon",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L6"
+          ],
+          "excerpt": "1 1/2 teaspoon minced ginger"
+        }
+      },
+      {
+        "source_line_id": "L7",
+        "name": "minced garlic",
+        "amount_text": "2",
+        "amount_value": "2",
+        "unit_text": "teaspoon",
+        "unit_normalized": "teaspoon",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L7"
+          ],
+          "excerpt": "2 teaspoon minced garlic"
+        }
+      },
+      {
+        "source_line_id": "L8",
+        "name": "white onion",
+        "amount_text": "1",
+        "amount_value": "1",
+        "unit_text": "large",
+        "unit_normalized": "count",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L8"
+          ],
+          "excerpt": "1 large white onion chopped"
+        }
+      },
+      {
+        "source_line_id": "L9",
+        "name": "smoke paprika",
+        "amount_text": "1",
+        "amount_value": "1",
+        "unit_text": "teaspoon",
+        "unit_normalized": "teaspoon",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L9"
+          ],
+          "excerpt": "1 teaspoon smoke paprika"
+        }
+      },
+      {
+        "source_line_id": "L10",
+        "name": "cardamom spice",
+        "amount_text": "½",
+        "amount_value": "1/2",
+        "unit_text": "teaspoon",
+        "unit_normalized": "teaspoon",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L10"
+          ],
+          "excerpt": "½ teaspoon cardamom spice"
+        }
+      },
+      {
+        "source_line_id": "L11",
+        "name": "coriander/Cumin",
+        "amount_text": "1",
+        "amount_value": "1",
+        "unit_text": "teaspoon",
+        "unit_normalized": "teaspoon",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L11"
+          ],
+          "excerpt": "1 teaspoon coriander/Cumin"
+        }
+      },
+      {
+        "source_line_id": "L12",
+        "name": "Fresh chili pepper",
+        "amount_text": null,
+        "amount_value": null,
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [
+          "1/2 teaspoon cayenne pepper or more"
+        ],
+        "notes": "uncertain quantity; between fresh chili pepper and cayenne pepper",
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": true,
+        "evidence": {
+          "line_ids": [
+            "L12"
+          ],
+          "excerpt": "1-2 Fresh Chili pepper or ½ teaspoon cayenne pepper or more"
+        }
+      },
+      {
+        "source_line_id": "L13",
+        "name": "lemon",
+        "amount_text": "1",
+        "amount_value": "1",
+        "unit_text": "fresh",
+        "unit_normalized": "count",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L13"
+          ],
+          "excerpt": "1 fresh lemon"
+        }
+      },
+      {
+        "source_line_id": "L14",
+        "name": "Directions",
+        "amount_text": null,
+        "amount_value": null,
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": true,
+        "alternatives": [],
+        "notes": null,
+        "group": "Directions",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L14"
+          ],
+          "excerpt": "Directions"
+        }
+      }
+    ],
+    "steps": [],
+    "notes": [],
+    "servings": null,
+    "servings_text": null,
+    "batch_yield_count": null,
+    "batch_yield_text": null,
+    "temperatures": [],
+    "durations": [
+      {
+        "label": "cook",
+        "text": "about 30 seconds or more; sauté for about 30 seconds or more",
+        "range": false
+      },
+      {
+        "label": "combine",
+        "text": "Sauté for about 3-5",
+        "range": false
+      },
+      {
+        "label": "cook2",
+        "text": "Continue cooking for another 7-10 minutes",
+        "range": true
+      }
+    ],
+    "unclassified_line_ids": [],
+    "second_recipe_boundary": null,
+    "uncertainty_notes": []
+  },
+  "context": {
+    "source_id": "foodie-015068",
+    "content_hash": "a3b7e38ea910e05435cb33b62dc3ef1844021e6782359b1e90245d79d8da63c0",
+    "line_map": {
+      "L1": "Ye'abesha Gomen (Ethiopian Collard Greens)",
+      "L2": "Ethiopian Collard Greens aka Ye’abasha Gomen- Braised collard greens and kale seasoned with aromatics; Quick, easy and tasty.",
+      "L3": "Ingredients",
+      "L4": "10  ounce Collard Greens/Kale chopped",
+      "L5": "3 or more tablespoons Niter Ethiopian Spiced Butter or cooking oil",
+      "L6": "1 1/2 teaspoon minced ginger",
+      "L7": "2 teaspoon minced garlic",
+      "L8": "1 large white onion chopped",
+      "L9": "1 teaspoon smoke paprika",
+      "L10": "½ teaspoon cardamom spice",
+      "L11": "1 teaspoon coriander/Cumin",
+      "L12": "1-2 Fresh Chili pepper or ½ teaspoon cayenne pepper or more",
+      "L13": "1 fresh lemon",
+      "L14": "Directions",
+      "L15": "In a large skillet, add oil, spiced butter, garlic, ginger, chili pepper, cumin, cardamom, paprika, sauté for about 30 seconds or more, be careful not to let the ingredients burn.",
+      "L16": "Then add onions, mix with the spices. Sauté for about 3-5",
+      "L17": "Throw in chopped collards, cayenne pepper, lemon juice, Continue cooking for another 7-10 minutes until flavors have blend and greens are cooked, according to preference. Adjust seasonings –Salt and pepper, turn off the heat.",
+      "L18": "Remove from the heat and let it cool. SERVE WITH DORO WAT"
+    },
+    "ingredient_line_ids": [
+      "L4",
+      "L5",
+      "L6",
+      "L7",
+      "L8",
+      "L9",
+      "L10",
+      "L11",
+      "L12",
+      "L13"
+    ],
+    "step_line_ids": [
+      "L15",
+      "L16",
+      "L17",
+      "L18"
+    ],
+    "heading_line_ids": [],
+    "prose_line_ids": [
+      "L2"
+    ],
+    "baseline": {
+      "requested_ingredient_line_ids": [
+        "L12"
+      ],
+      "has_deterministic": true,
+      "servings": null,
+      "batch_yield_count": null,
+      "has_steps": true,
+      "has_groups": false,
+      "has_title": true
+    },
+    "request_versions": {
+      "prompt_version": "6",
+      "prompt_hash": "f0a97eb968d3fa6a",
+      "schema_version": "5",
+      "adapter_version": "2",
+      "routing_version": "2",
+      "model": "gpt-5-nano",
+      "reasoning_effort": "low"
+    },
+    "current_versions": {
+      "prompt_version": "6",
+      "prompt_hash": "f0a97eb968d3fa6a",
+      "schema_version": "5",
+      "adapter_version": "2",
+      "routing_version": "2",
+      "model": "gpt-5-nano",
+      "reasoning_effort": "low"
+    }
+  },
+  "deterministic": {
+    "dataset_id": "odunola/foodie",
+    "source_id": "foodie-015068",
+    "row_number": 15068,
+    "title": "Ye'abesha Gomen (Ethiopian Collard Greens)",
+    "description": "Ethiopian Collard Greens aka Ye’abasha Gomen- Braised collard greens and kale seasoned with aromatics; Quick, easy and tasty.",
+    "ingredients": [
+      {
+        "original": "10  ounce Collard Greens/Kale chopped",
+        "canonical": "collard greens/kale",
+        "name": "collard greens/kale",
+        "epicure_id": null,
+        "quantity_text": "10 ounce",
+        "amount": "10",
+        "amount_text": "10",
+        "unit": "oz",
+        "unit_text": "ounce",
+        "notes": "chopped",
+        "alternatives": false,
+        "optional": false,
+        "qualitative": false,
+        "group": "main",
+        "position": 0
+      },
+      {
+        "original": "3 or more tablespoons Niter Ethiopian Spiced Butter or cooking oil",
+        "canonical": "or more tablespoons niter ethiopian spiced butter or cooking oil",
+        "name": "or more tablespoons niter ethiopian spiced butter or cooking oil",
+        "epicure_id": null,
+        "quantity_text": "3",
+        "amount": "3",
+        "amount_text": "3",
+        "unit": null,
+        "unit_text": null,
+        "notes": null,
+        "alternatives": false,
+        "optional": false,
+        "qualitative": false,
+        "group": "main",
+        "position": 1
+      },
+      {
+        "original": "1 1/2 teaspoon minced ginger",
+        "canonical": "minced ginger",
+        "name": "minced ginger",
+        "epicure_id": null,
+        "quantity_text": "1 1/2 teaspoon",
+        "amount": "3/2",
+        "amount_text": "1 1/2",
+        "unit": "tsp",
+        "unit_text": "teaspoon",
+        "notes": null,
+        "alternatives": false,
+        "optional": false,
+        "qualitative": false,
+        "group": "main",
+        "position": 2
+      },
+      {
+        "original": "2 teaspoon minced garlic",
+        "canonical": "minced garlic",
+        "name": "minced garlic",
+        "epicure_id": null,
+        "quantity_text": "2 teaspoon",
+        "amount": "2",
+        "amount_text": "2",
+        "unit": "tsp",
+        "unit_text": "teaspoon",
+        "notes": null,
+        "alternatives": false,
+        "optional": false,
+        "qualitative": false,
+        "group": "main",
+        "position": 3
+      },
+      {
+        "original": "1 large white onion chopped",
+        "canonical": "large white onion",
+        "name": "large white onion",
+        "epicure_id": null,
+        "quantity_text": "1",
+        "amount": "1",
+        "amount_text": "1",
+        "unit": null,
+        "unit_text": null,
+        "notes": "chopped",
+        "alternatives": false,
+        "optional": false,
+        "qualitative": false,
+        "group": "main",
+        "position": 4
+      },
+      {
+        "original": "1 teaspoon smoke paprika",
+        "canonical": "smoke paprika",
+        "name": "smoke paprika",
+        "epicure_id": null,
+        "quantity_text": "1 teaspoon",
+        "amount": "1",
+        "amount_text": "1",
+        "unit": "tsp",
+        "unit_text": "teaspoon",
+        "notes": null,
+        "alternatives": false,
+        "optional": false,
+        "qualitative": false,
+        "group": "main",
+        "position": 5
+      },
+      {
+        "original": "1⁄2 teaspoon cardamom spice",
+        "canonical": "cardamom spice",
+        "name": "cardamom spice",
+        "epicure_id": null,
+        "quantity_text": "1/2 teaspoon",
+        "amount": "1/2",
+        "amount_text": "1/2",
+        "unit": "tsp",
+        "unit_text": "teaspoon",
+        "notes": null,
+        "alternatives": false,
+        "optional": false,
+        "qualitative": false,
+        "group": "main",
+        "position": 6
+      },
+      {
+        "original": "1 teaspoon coriander/Cumin",
+        "canonical": "coriander/cumin",
+        "name": "coriander/cumin",
+        "epicure_id": null,
+        "quantity_text": "1 teaspoon",
+        "amount": "1",
+        "amount_text": "1",
+        "unit": "tsp",
+        "unit_text": "teaspoon",
+        "notes": null,
+        "alternatives": false,
+        "optional": false,
+        "qualitative": false,
+        "group": "main",
+        "position": 7
+      },
+      {
+        "original": "1-2 Fresh Chili pepper or 1⁄2 teaspoon cayenne pepper or more",
+        "canonical": "fresh chili pepper or 1/2 teaspoon cayenne pepper or more",
+        "name": "fresh chili pepper or 1/2 teaspoon cayenne pepper or more",
+        "epicure_id": null,
+        "quantity_text": "1-2 Fresh Chili pepper or 1/2 teaspoon cayenne pepper or more",
+        "amount": null,
+        "amount_text": null,
+        "unit": null,
+        "unit_text": null,
+        "notes": null,
+        "alternatives": false,
+        "optional": false,
+        "qualitative": false,
+        "group": "main",
+        "position": 8
+      },
+      {
+        "original": "1 fresh lemon",
+        "canonical": "fresh lemon",
+        "name": "fresh lemon",
+        "epicure_id": null,
+        "quantity_text": "1",
+        "amount": "1",
+        "amount_text": "1",
+        "unit": null,
+        "unit_text": null,
+        "notes": null,
+        "alternatives": false,
+        "optional": false,
+        "qualitative": false,
+        "group": "main",
+        "position": 9
+      }
+    ],
+    "ingredient_groups": [],
+    "instructions": [
+      "In a large skillet, add oil, spiced butter, garlic, ginger, chili pepper, cumin, cardamom, paprika, sauté for about 30 seconds or more, be careful not to let the ingredients burn.",
+      "Then add onions, mix with the spices. Sauté for about 3-5",
+      "Throw in chopped collards, cayenne pepper, lemon juice, Continue cooking for another 7-10 minutes until flavors have blend and greens are cooked, according to preference. Adjust seasonings –Salt and pepper, turn off the heat.",
+      "Remove from the heat and let it cool. SERVE WITH DORO WAT"
+    ],
+    "servings": null,
+    "servings_text": null,
+    "batch_yield": null,
+    "durations_reported": [
+      {
+        "label": "sauté",
+        "text": "sauté for about 30 seconds",
+        "range": false
+      },
+      {
+        "label": "cook",
+        "text": "cooking for another 7-10 minutes",
+        "range": true
+      }
+    ],
+    "durations_mentioned": true,
+    "temperatures": [],
+    "notes_text": [],
+    "attribution": [],
+    "line_coverage": {
+      "input_lines": 10,
+      "occurrences": 10,
+      "groups": 0,
+      "dropped": 0
+    },
+    "durations_minutes": {
+      "TotalTime": null,
+      "PrepTime": null,
+      "CookTime": null
+    },
+    "media": {
+      "images": [],
+      "images_raw": null
+    },
+    "meta": {
+      "author_id": null,
+      "author_name": null,
+      "category": null,
+      "keywords": [],
+      "date_published": null,
+      "barcode": null,
+      "recipe_yield_text": null
+    },
+    "ratings": {
+      "aggregated": null,
+      "review_count": null
+    },
+    "nutrition": {
+      "calories": null,
+      "fat": null,
+      "saturated_fat": null,
+      "cholesterol": null,
+      "sodium": null,
+      "carbohydrate": null,
+      "fiber": null,
+      "sugar": null,
+      "protein": null
+    },
+    "nutrition_observations": [],
+    "flags": [
+      "quantity_unknown",
+      "servings_unknown",
+      "units_unknown"
+    ],
+    "quality_issues": [
+      {
+        "code": "quantity_range",
+        "severity": "info",
+        "field": "ingredients.amount",
+        "message": "Range retained without midpoint: 1-2 Fresh Chili pepper or 1⁄2 teaspoon cayenne pepper or more"
+      },
+      {
+        "code": "quantity_unknown",
+        "severity": "warning",
+        "field": "ingredients.amount",
+        "message": "At least one ingredient amount is missing or unparseable."
+      },
+      {
+        "code": "name_contains_measure",
+        "severity": "warning",
+        "field": "ingredients.canonical",
+        "message": "Measurement tokens remain embedded in 1 ingredient name(s); quantities not validated."
+      },
+      {
+        "code": "units_unknown",
+        "severity": "info",
+        "field": "ingredients.unit",
+        "message": "At least one amount lacks a recognized unit; no conversions applied."
+      }
+    ],
+    "available_fields": {
+      "description": true,
+      "images": false,
+      "keywords": false,
+      "nutrition": false,
+      "ratings": false,
+      "servings": false,
+      "batch_yield": false,
+      "durations": true,
+      "durations_structured": true,
+      "temperatures": false,
+      "ingredient_groups": false,
+      "notes": false
+    },
+    "capabilities": {
+      "searchable": true,
+      "evidence_usable": true,
+      "quantities_validated": false,
+      "complete_eligible": false,
+      "scalable": false
+    },
+    "search_document_version": "1",
+    "searchable": true,
+    "scalable": false,
+    "final_recipe_eligible": false,
+    "content_hash": "8d81f126dc1a6a7ba69f1e814f6effb8991383f9d912ac3a4bc30afbe0cbb4a1",
+    "source_url": null,
+    "language": "en",
+    "provenance": {
+      "dataset_id": "odunola/foodie",
+      "revision": "20a451c2a8f22e9161a13346f08e0d7cdd555727",
+      "file_path": "recipes.csv",
+      "file_sha256": "76dd8f8692a4c751d5ea7ce30dcd7dd9d4c5d17a1ec4cef163edf83966b98e4c",
+      "row_number": 15068,
+      "source_id": "foodie-015068",
+      "adapter": "foodie",
+      "adapter_version": "2",
+      "language": "en",
+      "source_url": null,
+      "license_declared": "apache-2.0",
+      "provenance_status": "pending"
+    },
+    "raw": {
+      "texts": "Ye'abesha Gomen (Ethiopian Collard Greens)\nEthiopian Collard Greens aka Ye’abasha Gomen- Braised collard greens and kale seasoned with aromatics; Quick, easy and tasty.\nIngredients\n10  ounce Collard Greens/Kale chopped\n3 or more tablespoons Niter Ethiopian Spiced Butter or cooking oil\n1 1/2 teaspoon minced ginger\n2 teaspoon minced garlic\n1 large white onion chopped\n1 teaspoon smoke paprika\n½ teaspoon cardamom spice\n1 teaspoon coriander/Cumin\n1-2 Fresh Chili pepper or ½ teaspoon cayenne pepper or more\n1 fresh lemon\nDirections\nIn a large skillet, add oil, spiced butter, garlic, ginger, chili pepper, cumin, cardamom, paprika, sauté for about 30 seconds or more, be careful not to let the ingredients burn.\nThen add onions, mix with the spices. Sauté for about 3-5\nThrow in chopped collards, cayenne pepper, lemon juice, Continue cooking for another 7-10 minutes until flavors have blend and greens are cooked, according to preference. Adjust seasonings –Salt and pepper, turn off the heat.\nRemove from the heat and let it cool. SERVE WITH DORO WAT"
+    }
+  },
+  "before": {
+    "verdict": "rejected_validation",
+    "problems": [
+      {
+        "code": "invented_alternative",
+        "detail": "ingredients[8]: '1/2 teaspoon cayenne pepper or more' not in source line",
+        "class": "critical"
+      },
+      {
+        "code": "prose_coverage_gap",
+        "detail": "L2 prose not preserved or classified",
+        "class": "optional"
+      }
+    ],
+    "retry_eligible": true
+  }
+}

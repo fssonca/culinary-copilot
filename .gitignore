@@ -17,3 +17,6 @@ wheels/
 .ruff_cache/
 .cache/
 .DS_Store
+
+# Local dataset previews and quality reports
+data/

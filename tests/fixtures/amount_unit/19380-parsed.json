@@ -1,0 +1,280 @@
+{
+ "status": "resolved",
+ "source_id": "foodie-019380",
+ "content_hash": "1181989005d5a21ec9be6b9d64809850f2e9151cc9376468e65100679cd3d2f5",
+ "title": null,
+ "description": null,
+ "headings": [],
+ "ingredients": [
+  {
+   "source_line_id": "L4",
+   "name": "chicken thighs and drumsticks",
+   "amount_text": "2 pounds",
+   "amount_value": "2",
+   "unit_text": "pounds",
+   "unit_normalized": "pounds",
+   "qualitative": false,
+   "optional": false,
+   "alternatives": [],
+   "notes": null,
+   "group": "",
+   "is_range": false,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": false,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "2 pounds chicken thighs and drumsticks"
+   }
+  },
+  {
+   "source_line_id": "L4",
+   "name": "lemon, juiced",
+   "amount_text": "1 small",
+   "amount_value": "1",
+   "unit_text": null,
+   "unit_normalized": null,
+   "qualitative": false,
+   "optional": false,
+   "alternatives": [],
+   "notes": null,
+   "group": "",
+   "is_range": false,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": false,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "1 small lemon juiced"
+   }
+  },
+  {
+   "source_line_id": "L4",
+   "name": "garlic, finely chopped",
+   "amount_text": "2 to 3 cloves",
+   "amount_value": null,
+   "unit_text": "cloves",
+   "unit_normalized": "cloves",
+   "qualitative": false,
+   "optional": false,
+   "alternatives": [],
+   "notes": null,
+   "group": "",
+   "is_range": true,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": false,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "2 to 3 cloves garlic finely chopped"
+   }
+  },
+  {
+   "source_line_id": "L4",
+   "name": "Salt",
+   "amount_text": "to taste",
+   "amount_value": null,
+   "unit_text": null,
+   "unit_normalized": null,
+   "qualitative": true,
+   "optional": false,
+   "alternatives": [],
+   "notes": null,
+   "group": "",
+   "is_range": false,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": false,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "Salt to taste"
+   }
+  },
+  {
+   "source_line_id": "L4",
+   "name": "vegetable oil",
+   "amount_text": "6 tablespoons",
+   "amount_value": "6",
+   "unit_text": "tablespoons",
+   "unit_normalized": "tablespoons",
+   "qualitative": false,
+   "optional": false,
+   "alternatives": [
+    "clarified butter",
+    "ghee",
+    "niter kibbeh, fragrant butter"
+   ],
+   "notes": null,
+   "group": "",
+   "is_range": false,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": true,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "6 tablespoons vegetable oil clarified butter, ghee, or niter kibbeh, fragrant butter"
+   }
+  },
+  {
+   "source_line_id": "L4",
+   "name": "red onions, chopped",
+   "amount_text": "6 large",
+   "amount_value": "6",
+   "unit_text": null,
+   "unit_normalized": null,
+   "qualitative": false,
+   "optional": false,
+   "alternatives": [],
+   "notes": null,
+   "group": "",
+   "is_range": false,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": false,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "6 large red onions chopped"
+   }
+  },
+  {
+   "source_line_id": "L4",
+   "name": "berbere spice mix",
+   "amount_text": "2 tablespoons",
+   "amount_value": "2",
+   "unit_text": "tablespoons",
+   "unit_normalized": "tablespoons",
+   "qualitative": false,
+   "optional": false,
+   "alternatives": [],
+   "notes": "more or less to taste",
+   "group": "",
+   "is_range": false,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": false,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "2 tablespoons berbere spice mix more or less to taste"
+   }
+  },
+  {
+   "source_line_id": "L4",
+   "name": "fresh ginger, peeled and finely chopped",
+   "amount_text": "1- inch piece",
+   "amount_value": "1",
+   "unit_text": "piece",
+   "unit_normalized": "piece",
+   "qualitative": false,
+   "optional": false,
+   "alternatives": [],
+   "notes": null,
+   "group": "",
+   "is_range": false,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": false,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "1- inch piece fresh ginger peeled and finely chopped"
+   }
+  },
+  {
+   "source_line_id": "L4",
+   "name": "water or chicken stock",
+   "amount_text": "450 milliliters",
+   "amount_value": "450",
+   "unit_text": "milliliters",
+   "unit_normalized": "milliliters",
+   "qualitative": false,
+   "optional": false,
+   "alternatives": [
+    "chicken stock"
+   ],
+   "notes": null,
+   "group": "",
+   "is_range": false,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": false,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "450 milliliters water or chicken stock"
+   }
+  },
+  {
+   "source_line_id": "L4",
+   "name": "garam masala",
+   "amount_text": "1 tablespoon",
+   "amount_value": "1",
+   "unit_text": "tablespoon",
+   "unit_normalized": "tablespoon",
+   "qualitative": false,
+   "optional": false,
+   "alternatives": [],
+   "notes": null,
+   "group": "",
+   "is_range": false,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": false,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "1 tablespoon garam masala"
+   }
+  },
+  {
+   "source_line_id": "L4",
+   "name": "hard-boiled eggs, peeled",
+   "amount_text": "6 large",
+   "amount_value": "6",
+   "unit_text": null,
+   "unit_normalized": null,
+   "qualitative": false,
+   "optional": false,
+   "alternatives": [],
+   "notes": null,
+   "group": "",
+   "is_range": false,
+   "compound": false,
+   "equivalent": null,
+   "uncertain": false,
+   "evidence": {
+    "line_ids": [
+     "L4"
+    ],
+    "excerpt": "6 large hard-boiled eggs peeled"
+   }
+  }
+ ],
+ "steps": [],
+ "notes": [],
+ "servings": null,
+ "servings_text": null,
+ "batch_yield_count": null,
+ "batch_yield_text": null,
+ "temperatures": [],
+ "durations": [],
+ "unclassified_line_ids": [],
+ "second_recipe_boundary": null,
+ "uncertainty_notes": []
+}

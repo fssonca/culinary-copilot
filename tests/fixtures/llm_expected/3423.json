@@ -1,0 +1,219 @@
+{
+  "label": "AI-authored reference fixture, PENDING HUMAN REVIEW. Not model output.",
+  "source": {
+    "dataset_id": "odunola/foodie",
+    "revision": "20a451c2a8f22e9161a13346f08e0d7cdd555727",
+    "row_number": 3423,
+    "content_hash": "24db14c2153a983013e83b6756e8633a3ab5543a3ca5238fd4e6d58aa7af060e",
+    "texts": "Pineapple Mojito\nI love pineapple, and I love mojitos. So combining them in this pineapple mojito recipe was a winner. When fresh pineapples are available, I like to add a tablespoon of chopped pieces to my mojito and muddle them with the mint leaves.\nIngredients\n\n\n\n10  fresh mint leaves, divided\n\n\n1 tablespoon white sugar\n\n\n1 tablespoon chopped fresh pineapple\n\n\n  ice\n\n\n6 fluid ounces pineapple juice\n\n\n2 fluid ounces rum\n\n\n1 splash club soda\n\n\n1 wedge fresh pineapple\nDirections\n\n\n\n\nMuddle mint leaves, sugar, and pineapple in a highball glass.\n\n\n\n\n\nFill glass with ice cubes. Pour in pineapple juice and rum. Top with a splash of club soda. Garnish with pineapple wedge and remaining mint leaves."
+  },
+  "expected_verdict": "accepted",
+  "verdict_notes": "Ice is amount-less so merged capabilities stay evidence-only, but the extraction itself is clean.",
+  "expected": {
+    "status": "resolved",
+    "source_id": "foodie-003423",
+    "content_hash": "24db14c2153a983013e83b6756e8633a3ab5543a3ca5238fd4e6d58aa7af060e",
+    "title": null,
+    "description": null,
+    "ingredients": [
+      {
+        "source_line_id": "L4",
+        "name": "fresh mint leaves",
+        "amount_text": "10",
+        "amount_value": "10",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L4"
+          ],
+          "excerpt": "10 fresh mint leaves, divided"
+        }
+      },
+      {
+        "source_line_id": "L5",
+        "name": "white sugar",
+        "amount_text": "1 tablespoon",
+        "amount_value": "1",
+        "unit_text": "tablespoon",
+        "unit_normalized": "tbsp",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L5"
+          ],
+          "excerpt": "1 tablespoon white sugar"
+        }
+      },
+      {
+        "source_line_id": "L6",
+        "name": "chopped fresh pineapple",
+        "amount_text": "1 tablespoon",
+        "amount_value": "1",
+        "unit_text": "tablespoon",
+        "unit_normalized": "tbsp",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L6"
+          ],
+          "excerpt": "1 tablespoon chopped fresh pineapple"
+        }
+      },
+      {
+        "source_line_id": "L7",
+        "name": "ice",
+        "amount_text": null,
+        "amount_value": null,
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L7"
+          ],
+          "excerpt": "ice"
+        }
+      },
+      {
+        "source_line_id": "L8",
+        "name": "pineapple juice",
+        "amount_text": "6 fluid ounces",
+        "amount_value": "6",
+        "unit_text": "fluid ounces",
+        "unit_normalized": "fl_oz",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L8"
+          ],
+          "excerpt": "6 fluid ounces pineapple juice"
+        }
+      },
+      {
+        "source_line_id": "L9",
+        "name": "rum",
+        "amount_text": "2 fluid ounces",
+        "amount_value": "2",
+        "unit_text": "fluid ounces",
+        "unit_normalized": "fl_oz",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L9"
+          ],
+          "excerpt": "2 fluid ounces rum"
+        }
+      },
+      {
+        "source_line_id": "L10",
+        "name": "club soda",
+        "amount_text": "1 splash",
+        "amount_value": "1",
+        "unit_text": "splash",
+        "unit_normalized": "splash",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L10"
+          ],
+          "excerpt": "1 splash club soda"
+        }
+      },
+      {
+        "source_line_id": "L11",
+        "name": "fresh pineapple",
+        "amount_text": "1 wedge",
+        "amount_value": "1",
+        "unit_text": "wedge",
+        "unit_normalized": "wedge",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L11"
+          ],
+          "excerpt": "1 wedge fresh pineapple"
+        }
+      }
+    ],
+    "headings": [],
+    "steps": [],
+    "notes": [],
+    "servings": null,
+    "servings_text": null,
+    "batch_yield_count": null,
+    "batch_yield_text": null,
+    "temperatures": [],
+    "durations": [],
+    "unclassified_line_ids": [
+      "L2"
+    ],
+    "second_recipe_boundary": null,
+    "uncertainty_notes": []
+  }
+}

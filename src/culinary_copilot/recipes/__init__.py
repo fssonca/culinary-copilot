@@ -1,1 +1,1 @@
-"""Recipe ingestion and retrieval will be implemented in Week 2."""
+"""Recipe normalization, ingestion and offline retrieval."""

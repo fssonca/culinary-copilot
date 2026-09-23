@@ -1,0 +1,343 @@
+{
+  "label": "AI-authored reference fixture, PENDING HUMAN REVIEW. Not model output.",
+  "source": {
+    "dataset_id": "odunola/foodie",
+    "revision": "20a451c2a8f22e9161a13346f08e0d7cdd555727",
+    "row_number": 303,
+    "content_hash": "ce1b7febb6bf2004bd8d026dce34830a34e2b9482a0217021c0d2145332548d8",
+    "texts": "Leek Gratin with Lemon Béchamel and Beaufort Cheese\nIngredients\nSteaming leeks:\n6leek whites600 g of leeks \n40 gsemi-salted butter\n25 clVegetable Stock\n1 pinchSalt\nLemon béchamel:\n½ untreated yellow lemon peel\n30 cl Milk\n20 g Butter\n20 g Flour\n1 pinchSalt\nThe finish:\n50 ggrated Beaufort cheese\n½ untreated yellow lemon peelIntroduction\nContrary to popular belief, leeks are not always a “strong” tasting vegetable. On the contrary, the taste can be delicate and refined. Here, I prepare it au gratin with a very light béchamel sauce which is acidic and really easy to make. You can also use it in other recipes.\nTip: don’t forget to boil the béchamel to cook the flour well. This way, the sauce will be creamier and, moreover, it will not have that unpleasant flour aftertaste.\n\n directions\nCut the leek whites in half lengthwise to make cleaning easier.\nSoak them in a large volume of cold water and shake to remove all the sand. Take them out of the water. Cut them finely.\nIn a frying pan, cook over medium heat with the butter for 5 minutes.\nAdd the salt and mix. Gradually pour in the vegetable stock with a ladle until the leeks are well cooked and tender.\nRemove from the heat. Set aside.\nRemove the half-peel of the lemon with a peeler, or a peeler knife, taking care not to scratch the white skin, which is bitter.\nBring the milk to the boil in a saucepan, remove from the heat, and then add the lemon zest to infuse it for 5 minutes.\nFilter the perfumed milk through a strainer.\nMelt the butter in a saucepan (be careful that it does not start to color) and then add the flour passed through a dry sieve.\nLet it boil slowly for 2 to 3 minutes, stirring constantly, to cook the flour well. With a ladle, add the very hot milk, little by little, taking care to boil the sauce for a few seconds each time you pour in the milk (to avoid lumps). Add a little salt.\nSet aside, off the heat.\nPreheat the oven to the broil position.\nIn a salad bowl, mix the leek with the béchamel sauce. Place this mixture in a gratin dish.\nSprinkle with grated Beaufort cheese.\nPut in the oven and leave to gratinate for 3 or 4 minutes, more or less depending on the oven, watch carefully!\nTake the gratin out and finish the recipe by adding, at the last moment, the grated lemon half-zest."
+  },
+  "expected_verdict": "accepted",
+  "verdict_notes": "L4 yields two occurrences (count + equivalent mass via the equivalent field). Peel halves carry no unit in the source, so merged capabilities stay evidence-only.",
+  "expected": {
+    "status": "resolved",
+    "source_id": "foodie-000303",
+    "content_hash": "ce1b7febb6bf2004bd8d026dce34830a34e2b9482a0217021c0d2145332548d8",
+    "title": null,
+    "description": null,
+    "ingredients": [
+      {
+        "source_line_id": "L4",
+        "name": "leek whites",
+        "amount_text": "6",
+        "amount_value": "6",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": "equivalent mass stated on the same line",
+        "group": "Steaming leeks",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L4"
+          ],
+          "excerpt": "6leek whites600 g of leeks"
+        }
+      },
+      {
+        "source_line_id": "L4",
+        "name": "leeks",
+        "amount_text": "600 g",
+        "amount_value": "600",
+        "unit_text": "g",
+        "unit_normalized": "g",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "Steaming leeks",
+        "is_range": false,
+        "compound": false,
+        "equivalent": "6 leek whites on the same line",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L4"
+          ],
+          "excerpt": "600 g of leeks"
+        }
+      },
+      {
+        "source_line_id": "L5",
+        "name": "semi-salted butter",
+        "amount_text": "40 g",
+        "amount_value": "40",
+        "unit_text": "g",
+        "unit_normalized": "g",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "Steaming leeks",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L5"
+          ],
+          "excerpt": "40 gsemi-salted butter"
+        }
+      },
+      {
+        "source_line_id": "L6",
+        "name": "vegetable stock",
+        "amount_text": "25 cl",
+        "amount_value": "25",
+        "unit_text": "cl",
+        "unit_normalized": "cl",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "Steaming leeks",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L6"
+          ],
+          "excerpt": "25 clVegetable Stock"
+        }
+      },
+      {
+        "source_line_id": "L7",
+        "name": "salt",
+        "amount_text": "1 pinch",
+        "amount_value": "1",
+        "unit_text": "pinch",
+        "unit_normalized": "pinch",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "Steaming leeks",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L7"
+          ],
+          "excerpt": "1 pinchSalt"
+        }
+      },
+      {
+        "source_line_id": "L9",
+        "name": "untreated yellow lemon peel",
+        "amount_text": "½",
+        "amount_value": "1/2",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "Lemon béchamel",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L9"
+          ],
+          "excerpt": "½ untreated yellow lemon peel"
+        }
+      },
+      {
+        "source_line_id": "L10",
+        "name": "milk",
+        "amount_text": "30 cl",
+        "amount_value": "30",
+        "unit_text": "cl",
+        "unit_normalized": "cl",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "Lemon béchamel",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L10"
+          ],
+          "excerpt": "30 cl Milk"
+        }
+      },
+      {
+        "source_line_id": "L11",
+        "name": "butter",
+        "amount_text": "20 g",
+        "amount_value": "20",
+        "unit_text": "g",
+        "unit_normalized": "g",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "Lemon béchamel",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L11"
+          ],
+          "excerpt": "20 g Butter"
+        }
+      },
+      {
+        "source_line_id": "L12",
+        "name": "flour",
+        "amount_text": "20 g",
+        "amount_value": "20",
+        "unit_text": "g",
+        "unit_normalized": "g",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "Lemon béchamel",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L12"
+          ],
+          "excerpt": "20 g Flour"
+        }
+      },
+      {
+        "source_line_id": "L13",
+        "name": "salt",
+        "amount_text": "1 pinch",
+        "amount_value": "1",
+        "unit_text": "pinch",
+        "unit_normalized": "pinch",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "Lemon béchamel",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L13"
+          ],
+          "excerpt": "1 pinchSalt"
+        }
+      },
+      {
+        "source_line_id": "L15",
+        "name": "grated beaufort cheese",
+        "amount_text": "50 g",
+        "amount_value": "50",
+        "unit_text": "g",
+        "unit_normalized": "g",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "The finish",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L15"
+          ],
+          "excerpt": "50 ggrated Beaufort cheese"
+        }
+      },
+      {
+        "source_line_id": "L16",
+        "name": "untreated yellow lemon peel",
+        "amount_text": "½",
+        "amount_value": "1/2",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "The finish",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L16"
+          ],
+          "excerpt": "½ untreated yellow lemon peel"
+        }
+      }
+    ],
+    "headings": [
+      {
+        "source_line_id": "L3",
+        "text": "Steaming leeks:",
+        "evidence": {
+          "line_ids": [
+            "L3"
+          ],
+          "excerpt": "Steaming leeks:"
+        }
+      },
+      {
+        "source_line_id": "L8",
+        "text": "Lemon béchamel:",
+        "evidence": {
+          "line_ids": [
+            "L8"
+          ],
+          "excerpt": "Lemon béchamel:"
+        }
+      },
+      {
+        "source_line_id": "L14",
+        "text": "The finish:",
+        "evidence": {
+          "line_ids": [
+            "L14"
+          ],
+          "excerpt": "The finish:"
+        }
+      }
+    ],
+    "steps": [],
+    "notes": [],
+    "servings": null,
+    "servings_text": null,
+    "batch_yield_count": null,
+    "batch_yield_text": null,
+    "temperatures": [],
+    "durations": [],
+    "unclassified_line_ids": [
+      "L17",
+      "L18"
+    ],
+    "second_recipe_boundary": null,
+    "uncertainty_notes": []
+  }
+}

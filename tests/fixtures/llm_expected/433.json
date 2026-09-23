@@ -1,0 +1,36 @@
+{
+  "label": "AI-authored reference fixture, PENDING HUMAN REVIEW. Not model output.",
+  "source": {
+    "dataset_id": "odunola/foodie",
+    "revision": "20a451c2a8f22e9161a13346f08e0d7cdd555727",
+    "row_number": 433,
+    "content_hash": "50c4852fd88bf53c8d53753bffa5862d53bfc6ad5d7ee7794462448dafc0c160",
+    "texts": "July 3, 2020Vegetarian Roasted Peppers with SoyrizoIt’s bell pepper season! These stuffed bell peppers are easy to prep in advance and then roast right before dinner time, or even pop them on the grill for some yummy outdoor vegetarian eats!These slightly spciy stuffed bell peppers are made with quinoa, soy chorizo crumbles, shallot & cherry tomatoes roasted with a little parmesan on top. you could use soy cheese to make this vegan. I rubbed the bell peppers with olive oil and pre-baked them for 25 minutes at 400 degrees before stuffing them and putting them in for another 20 minutes. You will need:6 Bell Peppers – Serves 6 (1 Pepper per person)5 cups of cooked quinoa ( I often make TOO much and then have extra for the next day)2 cups of soyrizo crumbles – I used Morningstar Farms Chorizo Crumbles (vegetarian)1 large shallot or one small onion (any)1 cup of cherry tomatoes, slices4 tablespoons olive oil (2 for oiling up the sliced peppers and 2 for cooking the softening the shallots/onions.salt and pepper to taste1/2 cup quality parmesanHow to Prepare:Make your quinoa FIRST and ahead of time. It just makes it easier to throw everything together later.I use my rice cooker to make my quinoa. If you make it on the stove top, then I recommend you add a little extra olive oil to the water so it doesn’t dry out & prep per instructions on the quinoa box/bag.Preheat over to 400 degrees.Wash peppers and slice lengthwise. Clean out seeds and carefully de-stem. In a bowl, toss all ove the halves with 2 tablespoons olive oil and add a pinch of salt.Place peppers cut side UP on a baking pan. Bake for 25 minutes.In a karge saute’ pan, add 2 tablespoons of olive oil on medium high and saute’ onions or shallots. When softened, add in the vegetarian soyrizo crumbles and slices cherry tomatoes. Cook on medium. You want everything to be incorporated, but not overcooked.Mix in 5 cups of cooked quinoa. Gently turn everything over and well mixed and turn off heat.When the peppers have been in for at least 25 minutes, pull out and carefully spoon in the quinoa mixture into each pepper. I stamp down mixture into each one so I can pack each one really full.Top each pepper with parmesan.Reduce heat to 350 degrees and bake for another 15 minutes of until the cheese looks melty and slightly toasty.Pull out an serve with a knife and fork! The pepper SHOULD be cooked so you can get a fork through it, but I like serving it with a knive to make the mouthfuls smaller and easier.Enjoy!  Author: Bored"
+  },
+  "expected_verdict": "accepted_partial",
+  "verdict_notes": "Honest abstention on a single-line blob: no section markers exist, so no ingredient/step line IDs can be grounded. Unresolved with everything explicitly unclassified, never guessed.",
+  "expected": {
+    "status": "unresolved",
+    "source_id": "foodie-000433",
+    "content_hash": "50c4852fd88bf53c8d53753bffa5862d53bfc6ad5d7ee7794462448dafc0c160",
+    "title": null,
+    "description": null,
+    "ingredients": [],
+    "headings": [],
+    "steps": [],
+    "notes": [],
+    "servings": null,
+    "servings_text": null,
+    "batch_yield_count": null,
+    "batch_yield_text": null,
+    "temperatures": [],
+    "durations": [],
+    "unclassified_line_ids": [
+      "L1"
+    ],
+    "second_recipe_boundary": null,
+    "uncertainty_notes": [
+      "Single-line blob with no section markers; ingredient and step boundaries cannot be grounded to line IDs, so nothing is extracted"
+    ]
+  }
+}

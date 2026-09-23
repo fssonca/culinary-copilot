@@ -1,0 +1,503 @@
+{
+  "id": "foodie-015907",
+  "response": {
+    "status": "resolved",
+    "source_id": "foodie-015907",
+    "content_hash": "6d9fa36c25efe24d1d5082bd1f2d30056aecd1ac43c98d48fe02c523cc3b00fe",
+    "title": "Sweet Dinner Rolls",
+    "description": "Dinner rolls have got to be my favourite bread type. I love the Asian inspired sweet and fluffy milk bread rolls especially. This Dinner Rolls recipe is amazing, even if I do say so myself. If done properly, you’ll end up very soft and chewy roll which stay soft for days. Remember, this recipe is for “Sweet” Dinner Rolls, so if you’re not a fan of sweet bread, be sure to reduce the quantity of sugar in the recipe. I prefer my Dinner Rolls sweet so I can snack on it on its own rather than as a meal accompaniment.",
+    "headings": [],
+    "ingredients": [
+      {
+        "source_line_id": "L3",
+        "name": "Strong Bread Flour",
+        "amount_text": "500g",
+        "amount_value": "500",
+        "unit_text": "g",
+        "unit_normalized": "g",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L3"
+          ],
+          "excerpt": "500g Strong Bread Flour"
+        }
+      },
+      {
+        "source_line_id": "L4",
+        "name": "Butter",
+        "amount_text": "50g",
+        "amount_value": "50",
+        "unit_text": "g",
+        "unit_normalized": "g",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L4"
+          ],
+          "excerpt": "50g Butter"
+        }
+      },
+      {
+        "source_line_id": "L5",
+        "name": "Sugar",
+        "amount_text": "90g",
+        "amount_value": "90",
+        "unit_text": "g",
+        "unit_normalized": "g",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L5"
+          ],
+          "excerpt": "90g Sugar"
+        }
+      },
+      {
+        "source_line_id": "L6",
+        "name": "Milk Powder",
+        "amount_text": "3 Tablespoons",
+        "amount_value": "3",
+        "unit_text": "Tablespoons",
+        "unit_normalized": "tablespoons",
+        "qualitative": false,
+        "optional": true,
+        "alternatives": [],
+        "notes": "Optional",
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L6"
+          ],
+          "excerpt": "3 Tablespoons Milk Powder (Optional)"
+        }
+      },
+      {
+        "source_line_id": "L7",
+        "name": "Milk",
+        "amount_text": "280ml",
+        "amount_value": "280",
+        "unit_text": "ml",
+        "unit_normalized": "ml",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L7"
+          ],
+          "excerpt": "280ml Milk ( If you’re using evaporated milk, be sure to dilute with water first as it’s quite thick)"
+        }
+      },
+      {
+        "source_line_id": "L8",
+        "name": "Active Dry Yeast",
+        "amount_text": "11g",
+        "amount_value": "11",
+        "unit_text": "g",
+        "unit_normalized": "g",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L8"
+          ],
+          "excerpt": "11g Active Dry Yeast"
+        }
+      },
+      {
+        "source_line_id": "L9",
+        "name": "Egg",
+        "amount_text": "2",
+        "amount_value": "2",
+        "unit_text": "Eggs",
+        "unit_normalized": "count",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L9"
+          ],
+          "excerpt": "2 Eggs"
+        }
+      },
+      {
+        "source_line_id": "L10",
+        "name": "Salt",
+        "amount_text": "1/2 Teaspoon",
+        "amount_value": "1/2",
+        "unit_text": "Teaspoon",
+        "unit_normalized": "teaspoon",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L10"
+          ],
+          "excerpt": "1/2 Teaspoon Salt"
+        }
+      },
+      {
+        "source_line_id": "L11",
+        "name": "Note",
+        "amount_text": null,
+        "amount_value": null,
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": true,
+        "optional": true,
+        "alternatives": [],
+        "notes": "All ingredients must be at room temperature!",
+        "group": "",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L11"
+          ],
+          "excerpt": "Important: All ingredients must be at room temperature!"
+        }
+      }
+    ],
+    "steps": [
+      {
+        "source_line_id": "L12",
+        "text": "Add the liquid Milk, Sugar and Yeast into a large bowl, mix thoroughly. Then break in 1 egg, mix thoroughly to combine…",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L12"
+          ],
+          "excerpt": "Add the liquid Milk, Sugar and Yeast into a large bowl, mix thoroughly. Then break in 1 egg, mix thoroughly to combine…"
+        }
+      },
+      {
+        "source_line_id": "L13",
+        "text": "Mix the Flour, Milk Powder and Salt, then sift into the Milk mixture, combine thoroughly.",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L13"
+          ],
+          "excerpt": "Mix the Flour, Milk Powder and Salt, then sift into the Milk mixture, combine thoroughly."
+        }
+      },
+      {
+        "source_line_id": "L14",
+        "text": "You’ll need to sift the flour to break up clumps and also make the dough easier to work with…",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L14"
+          ],
+          "excerpt": "You’ll need to sift the flour to break up clumps and also make the dough easier to work with…"
+        }
+      },
+      {
+        "source_line_id": "L15",
+        "text": "You can use the dough tool on your stand mixer for this, you’ll need to knead for 2-3 minutes. If you’re kneading by hand, mix till thoroughly combined. You should get a smooth stretchy dough. Now, add in the Butter, mix thoroughly…",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L15"
+          ],
+          "excerpt": "You can use the dough tool on your stand mixer for this, you’ll need to knead for 2-3 minutes. If you’re kneading by hand, mix till thoroughly combined. You should get a smooth stretchy dough. Now, add in the Butter, mix thoroughly…"
+        }
+      },
+      {
+        "source_line_id": "L16",
+        "text": "When it’s fully combined, you should get a very smooth and elastic dough. The dough should not stick to your hands or fingers. Place the dough into an oiled bowl and place in a warm place, preferably your oven. You can place a cup of hot water underneath to help with the fermentation.",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L16"
+          ],
+          "excerpt": "When it’s fully combined, you should get a very smooth and elastic dough. The dough should not stick to your hands or fingers.  Place the dough into an oiled bowl and place in a warm place, preferably your oven. You can place a cup of hot water underneath to help with the fermentation."
+        }
+      },
+      {
+        "source_line_id": "L17",
+        "text": "Leave for an hour or until your dough doubles in size…",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L17"
+          ],
+          "excerpt": "Leave for an hour or until your dough doubles in size…"
+        }
+      },
+      {
+        "source_line_id": "L18",
+        "text": "When the dough rises to double the size, take it out and place on a clean surface…",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L18"
+          ],
+          "excerpt": "When the dough rises to double the size, take it out and place on a clean surface…"
+        }
+      },
+      {
+        "source_line_id": "L19",
+        "text": "You may need to flour the surface if your dough is too soft or sticky but do not over flour or you’ll end up with dry dinner rolls…",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L19"
+          ],
+          "excerpt": "You may need to flour the surface if your dough is too soft or sticky but do not over flour or you’ll end up with dry dinner rolls…"
+        }
+      },
+      {
+        "source_line_id": "L20",
+        "text": "Roll out the dough as pictured below…",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L20"
+          ],
+          "excerpt": "Roll out the dough as pictured below…"
+        }
+      },
+      {
+        "source_line_id": "L21",
+        "text": "Then fold over 3 times, roll after each fold. You’ll need to roll and fold the dough at least 5 times. This process will produce chewy and fluffy dinner rolls..",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L21"
+          ],
+          "excerpt": "Then fold over 3 times, roll after each fold. You’ll need to roll and fold the dough at least 5 times. This process will produce chewy and fluffy dinner rolls.."
+        }
+      },
+      {
+        "source_line_id": "L22",
+        "text": "When you’re fine rolling and folding, cut the dough into smaller pieces…",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L22"
+          ],
+          "excerpt": "When you’re fine rolling and folding, cut the dough into smaller pieces…"
+        }
+      },
+      {
+        "source_line_id": "L23",
+        "text": "Depending on the size of the pan you’ll be using, cut and roll the dough into small pieces. Make sure the pieces are as even and same size as possible.",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L23"
+          ],
+          "excerpt": "Depending on the size of the pan you’ll be using, cut and roll the dough into small pieces. Make sure the pieces are as even and same size as possible."
+        }
+      },
+      {
+        "source_line_id": "L24",
+        "text": "This is where I lack patience when baking, I just get impatient and end up doing the opposite. Ideally, you should be able to get 12 rolls from this recipe. His shows 7 cos I used 2 separate pans…",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L24"
+          ],
+          "excerpt": "This is where I lack patience when baking, I just get impatient and end up doing the opposite. Ideally, you should be able to get 12 rolls from this recipe. His shows 7 cos I used 2 separate pans…"
+        }
+      },
+      {
+        "source_line_id": "L25",
+        "text": "Place the rolled",
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L25"
+          ],
+          "excerpt": "Place the rolled"
+        }
+      }
+    ],
+    "notes": [
+      {
+        "source_line_id": "L24",
+        "kind": "note",
+        "text": "Ideally, you should be able to get 12 rolls from this recipe.",
+        "evidence": {
+          "line_ids": [
+            "L24"
+          ],
+          "excerpt": "This is where I lack patience when baking, I just get impatient and end up doing the opposite. Ideally, you should be able to get 12 rolls from this recipe. His shows 7 cos I used 2 separate pans…"
+        }
+      }
+    ],
+    "servings": null,
+    "servings_text": null,
+    "batch_yield_count": 12,
+    "batch_yield_text": "makes 12 rolls",
+    "temperatures": [],
+    "durations": [
+      {
+        "label": "rise",
+        "text": "Leave for an hour or until your dough doubles in size",
+        "range": true
+      }
+    ],
+    "unclassified_line_ids": [],
+    "second_recipe_boundary": null,
+    "uncertainty_notes": []
+  },
+  "context": {
+    "source_id": "foodie-015907",
+    "content_hash": "6d9fa36c25efe24d1d5082bd1f2d30056aecd1ac43c98d48fe02c523cc3b00fe",
+    "line_map": {
+      "L1": "Dinner rolls have got to be my favourite bread type. I love the Asian inspired sweet and fluffy milk bread rolls especially. This Dinner Rolls recipe is amazing, even if I do say so myself. If done properly, you’ll end up very soft and chewy roll which stay soft for days.",
+      "L2": "Remember, this recipe is for “Sweet” Dinner Rolls, so if you’re not a fan of sweet bread, be sure to reduce the quantity of sugar in the recipe. I prefer my Dinner Rolls sweet so I can snack on it on its own rather than as a meal accompaniment.",
+      "L3": "500g Strong Bread Flour",
+      "L4": "50g Butter",
+      "L5": "90g Sugar",
+      "L6": "3 Tablespoons Milk Powder (Optional)",
+      "L7": "280ml Milk ( If you’re using evaporated milk, be sure to dilute with water first as it’s quite thick)",
+      "L8": "11g Active Dry Yeast",
+      "L9": "2 Eggs",
+      "L10": "1/2 Teaspoon Salt",
+      "L11": "Important: All ingredients must be at room temperature!",
+      "L12": "Add the liquid Milk, Sugar and Yeast into a large bowl, mix thoroughly. Then break in 1 egg, mix thoroughly to combine…",
+      "L13": "Mix the Flour, Milk Powder and Salt, then sift into the Milk mixture, combine thoroughly.",
+      "L14": "You’ll need to sift the flour to break up clumps and also make the dough easier to work with…",
+      "L15": "You can use the dough tool on your stand mixer for this, you’ll need to knead for 2-3 minutes. If you’re kneading by hand, mix till thoroughly combined. You should get a smooth stretchy dough. Now, add in the Butter, mix thoroughly…",
+      "L16": "When it’s fully combined, you should get a very smooth and elastic dough. The dough should not stick to your hands or fingers.  Place the dough into an oiled bowl and place in a warm place, preferably your oven. You can place a cup of hot water underneath to help with the fermentation.",
+      "L17": "Leave for an hour or until your dough doubles in size…",
+      "L18": "When the dough rises to double the size, take it out and place on a clean surface…",
+      "L19": "You may need to flour the surface if your dough is too soft or sticky but do not over flour or you’ll end up with dry dinner rolls…",
+      "L20": "Roll out the dough as pictured below…",
+      "L21": "Then fold over 3 times, roll after each fold. You’ll need to roll and fold the dough at least 5 times. This process will produce chewy and fluffy dinner rolls..",
+      "L22": "When you’re fine rolling and folding, cut the dough into smaller pieces…",
+      "L23": "Depending on the size of the pan you’ll be using, cut and roll the dough into small pieces. Make sure the pieces are as even and same size as possible.",
+      "L24": "This is where I lack patience when baking, I just get impatient and end up doing the opposite. Ideally, you should be able to get 12 rolls from this recipe. His shows 7 cos I used 2 separate pans…",
+      "L25": "Place the rolled"
+    },
+    "ingredient_line_ids": [],
+    "step_line_ids": [],
+    "heading_line_ids": [],
+    "prose_line_ids": [
+      "L2",
+      "L3",
+      "L4",
+      "L5",
+      "L6",
+      "L7",
+      "L8",
+      "L9",
+      "L10",
+      "L11",
+      "L12",
+      "L13",
+      "L14",
+      "L15",
+      "L16",
+      "L17",
+      "L18",
+      "L19",
+      "L20",
+      "L21",
+      "L22",
+      "L23",
+      "L24",
+      "L25"
+    ],
+    "baseline": {
+      "requested_ingredient_line_ids": null,
+      "has_deterministic": false,
+      "servings": null,
+      "batch_yield_count": null,
+      "has_steps": false,
+      "has_groups": false,
+      "has_title": false
+    },
+    "request_versions": {
+      "prompt_version": "6",
+      "prompt_hash": "f0a97eb968d3fa6a",
+      "schema_version": "5",
+      "adapter_version": "2",
+      "routing_version": "2",
+      "model": "gpt-5-nano",
+      "reasoning_effort": "low"
+    },
+    "current_versions": {
+      "prompt_version": "6",
+      "prompt_hash": "f0a97eb968d3fa6a",
+      "schema_version": "5",
+      "adapter_version": "2",
+      "routing_version": "2",
+      "model": "gpt-5-nano",
+      "reasoning_effort": "low"
+    }
+  },
+  "deterministic": null,
+  "before": {
+    "verdict": "rejected_validation",
+    "problems": [
+      {
+        "code": "invented_batch_yield",
+        "detail": "batch yield without a source dozen statement",
+        "class": "critical"
+      }
+    ],
+    "retry_eligible": false
+  }
+}

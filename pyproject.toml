@@ -6,13 +6,20 @@ readme = "README.md"
 requires-python = ">=3.13"
 authors = [{ name = "Fernando Sousa", email = "fssonca@gmail.com" }]
 dependencies = [
-    "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.8,<3",
-    "sqlalchemy>=2.0,<3", "psycopg[binary]>=3.2,<4",
-    "huggingface-hub>=0.30,<2", "numpy>=2.2,<3", "safetensors>=0.5,<1",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
+    "pydantic-settings>=2.8,<3",
+    "sqlalchemy>=2.0,<3",
+    "psycopg[binary]>=3.2,<4",
+    "huggingface-hub>=0.30,<2",
+    "numpy>=2.2,<3",
+    "safetensors>=0.5,<1",
+    "openai>=3.16.2",
 ]
 
 [project.scripts]
 culinary-copilot = "culinary_copilot:main"
+import-recipes = "culinary_copilot.recipes.import_data:main"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]

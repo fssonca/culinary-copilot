@@ -1,8 +1,9 @@
 # Culinary Copilot
 
 Week 1 backend foundation for the Epicure learning project. Python 3.13, FastAPI,
-PostgreSQL 17, uv, and Docker Compose. No LLM calls are implemented; OpenAI settings
-are reserved for the next step. API keys are not needed to start or test the backend.
+PostgreSQL 17, uv, and Docker Compose. Hybrid recipe ingestion supports opt-in
+LLM extraction; application recipe generation is not implemented. API keys are
+not needed to start the backend or run default tests.
 
 ## Run with Docker
 
@@ -39,7 +40,8 @@ docker compose up -d db
 make dev
 ```
 
-`make check` runs Ruff, strict mypy, and offline tests. CI also builds and starts the
+`make check` runs Ruff, strict mypy, offline tests and disposable-Postgres tests
+when PostgreSQL is available. CI also builds and starts the
 Docker stack and checks database readiness. Keep `.env` and downloaded models out of Git.
 
 ## Epicure Core (optional)
@@ -67,13 +69,14 @@ KAIKAKU.AI, [Epicure paper](https://arxiv.org/abs/2605.22391).
 The project computes normalized cosine similarity over the original vectors without
 modifying or committing the upstream assets. Revision is configured in `.env.example`.
 
-## Future OpenAI integration
+## OpenAI integration
 
 Add `OPENAI_API_KEY` to `.env` when ready. The configured default is
 [`gpt-5-nano`](https://developers.openai.com/api/docs/models/gpt-5-nano);
 [`gpt-5.6-luna`](https://developers.openai.com/api/docs/models/gpt-5.6-luna) is an
-alternative. Adding a key does not enable requests: the provider implementation is
-intentionally deferred along with streaming, retries, structured generation, and usage tracking.
+alternative configuration. Adding a key alone does not enable ingestion calls;
+see [hybrid ingestion](docs/hybrid-ingestion.md) for explicit enablement and budgets.
+The application-facing provider, streaming and grounded generation remain future work.
 
 ## Structure and next steps
 
@@ -83,15 +86,46 @@ src/culinary_copilot/
   domain/    Pydantic cooking-request schema
   llm/       Reserved provider package
   tools/     Opt-in Epicure Core adapter
-  recipes/   Reserved Week 2 ingestion/retrieval package
+  recipes/   Normalization, import, migrations and offline retrieval
   config.py  Environment settings (secrets masked in repr)
   db.py      SQLAlchemy connection pool and readiness check
  tests/      Offline backend checks
  evals/      Existing evaluation scaffold
 ```
 
-This is the boilerplate portion of Week 1, not the full week's implementation.
-Next: request clarification, async OpenAI client, structured outputs, and evaluation
-cases. Week 2 adds recipe tables and migrations, ingestion, then retrieval/pgvector.
-There are no application tables or migrations yet because no persistence feature is
-implemented. No recipe retrieval, agent loop, or generated cooking plans are exposed.
+The backend and recipe data foundation are implemented. The local application
+migration is complete; new environments require explicit database setup and import. Request clarification and reviewed ingredient-unit
+metadata remain Milestone 1 follow-ups. Milestone 2 adds an async OpenAI client,
+structured sourced responses, recipe embeddings, pgvector and retrieval evaluations.
+Epicure Core is available; Cooc/Chem remain deferred. Agent iteration and generated
+cooking plans are not implemented.
+
+## Recipe foundation and next milestone
+
+- [Milestone 1 assessment and recipe import review/runbook](docs/recipe-ingestion.md)
+- [Hybrid ingestion and completed local migration](docs/hybrid-ingestion.md)
+- [Historical corpus workstreams](docs/corpus-workstreams.md)
+- [jojogo9 dataset audit and hold decision](docs/jojogo9-provenance-coverage.md)
+
+`uv run import-recipes` creates a local preview by default. Database writes require
+`--write`; first-time schema setup also requires `--apply-schema`. Review the runbook
+before running it. Recipe discovery is available after import. No LLM calls are needed.
+
+```sh
+# Combined search across both imported datasets (default):
+curl 'http://localhost:8000/api/v1/recipes?q=garlic'
+# Single-dataset search:
+curl 'http://localhost:8000/api/v1/recipes?q=garlic&dataset_id=odunola%2Ffoodie'
+# Dataset-qualified lookup (exact pair, 404 on miss with no fallback):
+curl 'http://localhost:8000/api/v1/recipes/000038?dataset_id=AkashPS11%2Frecipes_data_food.com'
+```
+
+Search defaults to the combined corpus (`AkashPS11/recipes_data_food.com` +
+`odunola/foodie`); pass `dataset_id` to scope results to one dataset.
+Ingredient, `max_minutes`, and `limit` filters apply identically to combined
+and single-dataset search, and every hit carries `dataset_id`/`source_id`.
+Canonical identity is the `(dataset_id, source_id)` pair: with `dataset_id`,
+lookup matches that pair exactly and never falls back. Without it, legacy
+Food.com-first lookup is preserved (including `000038`); new clients should
+supply `dataset_id`. Alias IDs remain provenance metadata and do not resolve
+as independent API rows.

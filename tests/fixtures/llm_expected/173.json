@@ -1,0 +1,370 @@
+{
+  "label": "AI-authored reference fixture, PENDING HUMAN REVIEW. Not model output.",
+  "source": {
+    "dataset_id": "odunola/foodie",
+    "revision": "20a451c2a8f22e9161a13346f08e0d7cdd555727",
+    "row_number": 173,
+    "content_hash": "4ffc82e29ec942a5ebef45ce53bd6ab8e502e33181385af873d30e198be0650e",
+    "texts": "Black Garlic Chicken Broth\nIngredients\n2 wholechicken legsskin removed \n3medium carrots choppedpeeled \n3cloves of garlicpeeled \n2onionscut in half, skin on \n1 bunch Green Onions\n1 tspVegetable Oil\n1 tspblack pepper\n1 tspcoriander seeds\n1bay leaf\nFor Finishing:\n¼ pc fresh lime\n1/16th xanthan gum\ngreen onion topsFinely sliced \n1 + ½head of black garlic\nSaltto taste Introduction\nThis broth is in a word: FLAVOURFUL. Black garlic lends a certain sweetness and richness to this broth that you won’t find with any other ingredient. By using the pressure-cooker, you will reduce your cook time and get tender, fall-off-the-bone chicken. Black garlic has all the health benefits of regular garlic, but added depth and flavour.\n \n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\ndirections\nRoast the chicken legs, green onions, carrots, and onions in a tray at 425℉/220℃ for 40-60 minutes or until deep dark brown but not burnt.\nAdd the roast chicken, veggies, and the rest of the ingredients to the Instant Pot (except for the lime and xanthan gum).\nFill to the max line with cold water and turn on the sauté function for 25 minutes. Let it come to a boil.\nSkim the stock of any impurities or foam as it comes to a boil.\nOnce boiled, turn off the heat. Double-check that the water is not filled past the max line. Close the lid and set on high pressure for 2 hours.\nNaturally release the pressure for 10 minutes. Manually release the rest.\nOpen the lid and skim off any fat from the top. Strain through a fine-mesh strainer.\nPass the black garlic through a tamis or mesh strainer to remove the skin. Add this, the xanthan gum and the fresh lime juice to the strained broth. Blend with an immersion blender. Check the seasoning and serve with freshly chopped green onions and some of the cooked chicken meat if desired."
+  },
+  "expected_verdict": "accepted_partial",
+  "verdict_notes": "The 'pc' abbreviation in L13 is genuinely ambiguous, hence one honest uncertain flag. Everything else is exact.",
+  "expected": {
+    "status": "partially_resolved",
+    "source_id": "foodie-000173",
+    "content_hash": "4ffc82e29ec942a5ebef45ce53bd6ab8e502e33181385af873d30e198be0650e",
+    "title": null,
+    "description": null,
+    "ingredients": [
+      {
+        "source_line_id": "L3",
+        "name": "whole chicken legs",
+        "amount_text": "2",
+        "amount_value": "2",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": "skin removed",
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L3"
+          ],
+          "excerpt": "wholechicken legsskin removed"
+        }
+      },
+      {
+        "source_line_id": "L4",
+        "name": "medium carrots",
+        "amount_text": "3",
+        "amount_value": "3",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": "chopped, peeled",
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L4"
+          ],
+          "excerpt": "3medium carrots choppedpeeled"
+        }
+      },
+      {
+        "source_line_id": "L5",
+        "name": "garlic",
+        "amount_text": "3 cloves",
+        "amount_value": "3",
+        "unit_text": "cloves",
+        "unit_normalized": "clove",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": "peeled",
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L5"
+          ],
+          "excerpt": "3cloves of garlicpeeled"
+        }
+      },
+      {
+        "source_line_id": "L6",
+        "name": "onions",
+        "amount_text": "2",
+        "amount_value": "2",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": "cut in half, skin on",
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L6"
+          ],
+          "excerpt": "2onionscut in half, skin on"
+        }
+      },
+      {
+        "source_line_id": "L7",
+        "name": "green onions",
+        "amount_text": "1 bunch",
+        "amount_value": "1",
+        "unit_text": "bunch",
+        "unit_normalized": "bunch",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L7"
+          ],
+          "excerpt": "1 bunch Green Onions"
+        }
+      },
+      {
+        "source_line_id": "L8",
+        "name": "vegetable oil",
+        "amount_text": "1 tsp",
+        "amount_value": "1",
+        "unit_text": "tsp",
+        "unit_normalized": "tsp",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L8"
+          ],
+          "excerpt": "1 tspVegetable Oil"
+        }
+      },
+      {
+        "source_line_id": "L9",
+        "name": "black pepper",
+        "amount_text": "1 tsp",
+        "amount_value": "1",
+        "unit_text": "tsp",
+        "unit_normalized": "tsp",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L9"
+          ],
+          "excerpt": "1 tspblack pepper"
+        }
+      },
+      {
+        "source_line_id": "L10",
+        "name": "coriander seeds",
+        "amount_text": "1 tsp",
+        "amount_value": "1",
+        "unit_text": "tsp",
+        "unit_normalized": "tsp",
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L10"
+          ],
+          "excerpt": "1 tspcoriander seeds"
+        }
+      },
+      {
+        "source_line_id": "L11",
+        "name": "bay leaf",
+        "amount_text": "1",
+        "amount_value": "1",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "main",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L11"
+          ],
+          "excerpt": "1bay leaf"
+        }
+      },
+      {
+        "source_line_id": "L13",
+        "name": "fresh lime",
+        "amount_text": "¼",
+        "amount_value": "1/4",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": "pc: unparsed unit abbreviation",
+        "group": "For Finishing",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": true,
+        "evidence": {
+          "line_ids": [
+            "L13"
+          ],
+          "excerpt": "¼ pc fresh lime"
+        }
+      },
+      {
+        "source_line_id": "L14",
+        "name": "xanthan gum",
+        "amount_text": "1/16th",
+        "amount_value": "1/16",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "For Finishing",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L14"
+          ],
+          "excerpt": "1/16th xanthan gum"
+        }
+      },
+      {
+        "source_line_id": "L15",
+        "name": "green onion tops",
+        "amount_text": null,
+        "amount_value": null,
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": "finely sliced",
+        "group": "For Finishing",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L15"
+          ],
+          "excerpt": "green onion topsFinely sliced"
+        }
+      },
+      {
+        "source_line_id": "L16",
+        "name": "black garlic",
+        "amount_text": "1 + ½",
+        "amount_value": "3/2",
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": false,
+        "optional": false,
+        "alternatives": [],
+        "notes": "head",
+        "group": "For Finishing",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L16"
+          ],
+          "excerpt": "½head of black garlic"
+        }
+      },
+      {
+        "source_line_id": "L17",
+        "name": "salt",
+        "amount_text": null,
+        "amount_value": null,
+        "unit_text": null,
+        "unit_normalized": null,
+        "qualitative": true,
+        "optional": false,
+        "alternatives": [],
+        "notes": null,
+        "group": "For Finishing",
+        "is_range": false,
+        "compound": false,
+        "equivalent": null,
+        "uncertain": false,
+        "evidence": {
+          "line_ids": [
+            "L17"
+          ],
+          "excerpt": "Saltto taste"
+        }
+      }
+    ],
+    "headings": [
+      {
+        "source_line_id": "L12",
+        "text": "For Finishing:",
+        "evidence": {
+          "line_ids": [
+            "L12"
+          ],
+          "excerpt": "For Finishing:"
+        }
+      }
+    ],
+    "steps": [],
+    "notes": [],
+    "servings": null,
+    "servings_text": null,
+    "batch_yield_count": null,
+    "batch_yield_text": null,
+    "temperatures": [],
+    "durations": [],
+    "unclassified_line_ids": [
+      "L18"
+    ],
+    "second_recipe_boundary": null,
+    "uncertainty_notes": [
+      "L13 'pc' is an unparsed unit abbreviation; amount 1/4 recorded without a validated unit"
+    ]
+  }
+}
