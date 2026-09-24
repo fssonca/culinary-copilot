@@ -74,17 +74,28 @@ modifying or committing the upstream assets. Revision is configured in `.env.exa
 Add `OPENAI_API_KEY` to `.env` when ready. The configured default is
 [`gpt-5-nano`](https://developers.openai.com/api/docs/models/gpt-5-nano);
 [`gpt-5.6-luna`](https://developers.openai.com/api/docs/models/gpt-5.6-luna) is an
-alternative configuration. Adding a key alone does not enable ingestion calls;
-see [hybrid ingestion](docs/hybrid-ingestion.md) for explicit enablement and budgets.
-The application-facing provider, streaming and grounded generation remain future work.
+alternative configuration. Adding a key alone enables nothing: ingestion calls
+require `LLM_INGESTION_ENABLED=true` (see [hybrid ingestion](docs/hybrid-ingestion.md)
+for explicit enablement and budgets), and hybrid clarification planning requires
+the separate `LLM_ENABLED=true` (see [clarification backend](docs/clarification.md)).
+Default tests are key-free and offline either way.
+
+## Architecture
+
+Start with the [current architecture guide](docs/architecture/README.md) for system,
+request-flow, concurrency, ingestion and database diagrams. It distinguishes
+implemented behavior from planned integrations.
 
 ## Structure and next steps
 
 ```text
 src/culinary_copilot/
-  api/       FastAPI app, health and pairing endpoints
-  domain/    Pydantic cooking-request schema
-  llm/       Reserved provider package
+  api/       FastAPI app, health, pairing, recipe, clarification and retrieval endpoints
+  domain/    Pydantic cooking-request schema, clarification contracts, rule planner
+  llm/       Application provider boundary (fake + async OpenAI)
+  services/  Hybrid planning, answer processing, in-memory clarification store
+  retrieval/ Phase 1 ready-request mapping plus bounded evidence summaries
+  obs/       Clarification planning events
   tools/     Opt-in Epicure Core adapter
   recipes/   Normalization, import, migrations and offline retrieval
   config.py  Environment settings (secrets masked in repr)
@@ -94,9 +105,18 @@ src/culinary_copilot/
 ```
 
 The backend and recipe data foundation are implemented. The local application
-migration is complete; new environments require explicit database setup and import. Request clarification and reviewed ingredient-unit
-metadata remain Milestone 1 follow-ups. Milestone 2 adds an async OpenAI client,
-structured sourced responses, recipe embeddings, pgvector and retrieval evaluations.
+migration is complete; new environments require explicit database setup and import.
+Hybrid clarification planning (rule + bounded LLM questions, answer processing,
+and the `/api/v1/clarification` endpoints) is implemented backend-only; see
+[clarification backend](docs/clarification.md). Phase 1 retrieval
+(`POST /api/v1/retrieval/search`: ready-request mapping plus bounded
+evidence summaries, AI-proposed review packet) is implemented and repaired
+(dish eligibility vs pantry ranking, shared duration policy, current-group
+contract); see [retrieval guide](docs/retrieval.md). Labels are AI-proposed
+until human-reviewed; no definitive retrieval score is published. The
+official Phase 2 baseline waits on label calibration and the approved
+Food.com search rebuild. Milestone 2 adds recipe embeddings, structured
+sourced responses, pgvector and measured retrieval evaluations.
 Epicure Core is available; Cooc/Chem remain deferred. Agent iteration and generated
 cooking plans are not implemented.
 

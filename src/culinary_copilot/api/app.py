@@ -5,8 +5,11 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query
 from sqlalchemy.exc import SQLAlchemyError
 
+from culinary_copilot.api.clarification import build_router as build_clarification_router
+from culinary_copilot.api.retrieval import build_router as build_retrieval_router
 from culinary_copilot.config import Settings
 from culinary_copilot.db import check_database, create_db_engine
+from culinary_copilot.llm.client import OpenAIApplicationProvider
 from culinary_copilot.recipes.repository import (
     SUPPORTED_DATASETS,
     get_recipe,
@@ -36,15 +39,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     engine = create_db_engine(settings)
     epicure = EpicureCore(settings)
+    from culinary_copilot.services.store import InMemoryClarificationStore
+
+    clarification_store = InMemoryClarificationStore()
+    llm_provider = OpenAIApplicationProvider(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if settings.llm_enabled:
+            try:
+                await llm_provider.start()
+            except Exception:
+                pass
         try:
             yield
         finally:
+            try:
+                await llm_provider.aclose()
+            except Exception:
+                pass
             engine.dispose()
 
     app = FastAPI(title="Culinary Copilot", version="0.1.0", lifespan=lifespan)
+    app.state.clarification_store = clarification_store
+    app.state.llm_provider = llm_provider
+    app.include_router(
+        build_clarification_router(
+            settings=settings,
+            store=clarification_store,
+            provider=llm_provider,
+            engine=engine,
+            epicure=epicure,
+        )
+    )
+    app.include_router(build_retrieval_router(store=clarification_store, engine=engine))
 
     @app.get("/health/live", tags=["health"])
     def live() -> dict[str, str]:

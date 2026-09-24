@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     # report "unknown" and submit requires an explicit --limit.
     llm_price_input_per_1m: float | None = None
     llm_price_output_per_1m: float | None = None
+    # Application-facing LLM (clarification planning). Separate master switch
+    # from ingestion: LLM_INGESTION_ENABLED never enables application calls.
+    # Default tests are key-free and offline; the disabled path must make
+    # zero provider calls.
+    llm_enabled: bool = False
+    llm_app_model: str = "gpt-5-nano"
+    llm_app_timeout_s: float = 20.0
+    llm_app_max_output_tokens: int = 1500
+    llm_app_max_input_chars: int = 12000
+    llm_app_max_retries: int = 1
 
     @field_validator(
         "llm_budget_usd",

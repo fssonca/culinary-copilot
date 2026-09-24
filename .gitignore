@@ -20,3 +20,14 @@ wheels/
 
 # Local dataset previews and quality reports
 data/
+
+# Local database backups (never commit)
+backups/
+
+# Local recipe review packets and AI review transcripts; retain summary evidence.
+evals/results/phase1/*
+!evals/results/phase1/README.md
+!evals/results/phase1/baseline_fulltext_corrected.json
+!evals/results/phase1/baseline_fulltext_corrected.md
+!evals/results/phase1/phase2_inputs_freeze.json
+!evals/results/phase1/phase2_inputs_post_rebuild.json

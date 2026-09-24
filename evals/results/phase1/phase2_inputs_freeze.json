@@ -1,0 +1,114 @@
+{
+  "freeze": "phase2-inputs-pre-rebuild",
+  "status": "AI-assisted review accepted by the project owner; not independently human-verified or culinarily validated.",
+  "cases": {
+    "file": "evals/cases/phase1_retrieval.json",
+    "sha256": "57b3c8c07c6c2a4daa8861b207c66809007a1f8acf3912ef4572271af462e138",
+    "version": "phase1-v2",
+    "count": 52,
+    "development": 32,
+    "held_out": 20
+  },
+  "rubric": {
+    "file": "evals/rubric_v1.md",
+    "sha256": "4db0323f2f6ddc31ace2a97f9d4f14f011b804143ebb9791b5fbdbd6fc85e936"
+  },
+  "labels": {
+    "source": "evals/results/phase1/checkpoint1_corrections.json",
+    "sha256": "589e228b1f986ef16fa3b928f53aa57caed76d60d350c2169acebbcf421df4ae",
+    "count": 173,
+    "by_reviewer_type": {
+      "ai_second_pass": 173
+    },
+    "schema": {
+      "topical_grade": "0/1/2 relevance to the dish or query intent, ignoring hard constraints (phase1-rubric-v1 wording applied to meaning, not title tokens)",
+      "constraint_checks": "per constraint: satisfied_by_reported_value | violated_by_source | unresolved, with source evidence",
+      "suitability": "not_suitable (any violation) | supported (all request constraints satisfied by reported values; NOT general recipe verification) | unresolved | not_applicable (request has no hard constraints)",
+      "pantry_semantics": "ingredients in state mean AVAILABLE (not must-use, not only-these); a missing available item never lowers topical_grade",
+      "time_derivation": "mechanical from reported total_minutes; a reported 0 is unresolved; source-backed overrides listed in time_overrides"
+    }
+  },
+  "metrics": {
+    "cases": 32,
+    "cases_total": 32,
+    "cases_with_judgments": 32,
+    "judged_candidates": 173,
+    "unjudged_candidates": 0,
+    "no_relevant_label_cases": [],
+    "topical_recall_at_k": 0.9375,
+    "topical_mrr_at_k": 0.921875,
+    "k": 5,
+    "joint_suitable": 26,
+    "joint_unsuitable": 2,
+    "joint_unknown": 4
+  },
+  "metrics_note": "Topical Recall@5/MRR and joint suitability over RECORDED labels only; unjudged candidates excluded (never zero-graded); cases without judgments listed in no_relevant_label_cases (never verified no-match); shared intents counted once.",
+  "corpus_fingerprint": {
+    "total": 16033,
+    "by_dataset": [
+      [
+        "AkashPS11/recipes_data_food.com",
+        1216
+      ],
+      [
+        "odunola/foodie",
+        14817
+      ]
+    ],
+    "imports": [
+      [
+        "AkashPS11/recipes_data_food.com",
+        "aa68f5bf9c9f33a9fe4624e180d9e80a2030c675",
+        "2"
+      ],
+      [
+        "odunola/foodie",
+        "20a451c2a8f22e9161a13346f08e0d7cdd555727",
+        "3"
+      ]
+    ]
+  },
+  "search_fingerprint": {
+    "renderer_version": "1",
+    "search_document_versions": [
+      [
+        "1",
+        16033
+      ]
+    ]
+  },
+  "code_revision": "b4ef222",
+  "dirty_tree": "M .env.example\n M README.md\n M src/culinary_copilot/api/app.py\n M src/culinary_copilot/config.py\n M src/culinary_copilot/recipes/repository.py\n?? AGENTS.md\n?? docs/architecture/\n?? docs/clarification.md\n?? docs/retrieval.md\n?? docs/week-2-execution-plan.md\n?? evals/cases/phase1_retrieval.json\n?? evals/results/phase1/\n?? evals/rubric_v1.md\n?? evals/test_phase1_cases.py\n?? scripts/retrieval_eval/\n?? src/culinary_copilot/api/clarification.py\n?? src/culinary_copilot/api/retrieval.py\n?? src/culinary_copilot/domain/clarification.py\n?? src/culinary_copilot/domain/rule_planner.py\n?? src/culinary_copilot/llm/client.py\n?? src/culinary_copilot/obs/\n?? src/culinary_copilot/recipes/durations.py\n?? src/culinary_copilot/retrieval/\n?? src/culinary_copilot/services/\n?? tests/test_calibration_adjudication.py\n?? tests/test_clarification.py\n?? tests/test_clarification_api.py\n?? tests/test_clarification_hardening.py\n?? tests/test_retrieval.py\n?? tests/test_retrieval_metrics.py\n?? tests/test_retrieval_pg.py",
+  "commands": {
+    "validate": "uv run python scripts/retrieval_eval/validate_cases.py",
+    "assemble": "uv run python scripts/retrieval_eval/assemble_packet.py",
+    "calibrate": "uv run python scripts/retrieval_eval/build_calibration_packet.py",
+    "freeze": "uv run python scripts/retrieval_eval/freeze_inputs.py"
+  },
+  "discovery_methods": {
+    "annotation_pool": "fixed-code repository search top-15 (dish-eligibility plus pantry ranking boost, or pantry-overlap matching) plus a read-only title ILIKE scan top-10 for dish/query heads; merged, deduped, capped at 20",
+    "production": "deterministic mapping plus repository search at case limit"
+  },
+  "exposure": {
+    "held_out_slots": [
+      "S07",
+      "S14",
+      "A4"
+    ],
+    "aggregate_intent": "HELD-10/HELD-11 share nonsense-no-match; counted once",
+    "blind_confirmation_set": "separate future work; these cases are exposed"
+  },
+  "judgment_coverage": {
+    "prior_accepted": 14,
+    "new_ai_proposed": 7,
+    "quarantined": 0,
+    "topical_pending": 3,
+    "suitability": {
+      "not_applicable": 6,
+      "unresolved": 6,
+      "not_suitable": 4,
+      "supported": 3,
+      "None": 2
+    }
+  }
+}
