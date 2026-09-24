@@ -31,3 +31,9 @@ evals/results/phase1/*
 !evals/results/phase1/baseline_fulltext_corrected.md
 !evals/results/phase1/phase2_inputs_freeze.json
 !evals/results/phase1/phase2_inputs_post_rebuild.json
+
+# Phase 3 local model responses, source packets and rehearsal payloads.
+evals/results/phase3*/
+!evals/results/phase3_review/
+evals/results/phase3_review/*
+!evals/results/phase3_review/manifest.json

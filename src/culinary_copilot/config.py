@@ -43,6 +43,57 @@ class Settings(BaseSettings):
     llm_app_max_output_tokens: int = 1500
     llm_app_max_input_chars: int = 12000
     llm_app_max_retries: int = 1
+    # Recommendation generation (Phase 3). Separate master switch from
+    # clarification planning and ingestion: LLM_ENABLED never enables
+    # recommendation calls. Disabled generation fails closed (503) before
+    # any network access; default tests are key-free and offline.
+    llm_recommendation_enabled: bool = False
+    llm_rec_model: str = "gpt-5-nano"
+    llm_rec_timeout_s: float = 20.0
+    # Recommendation-only reasoning effort (separate from ingestion's
+    # LLM_REASONING_EFFORT switch). "minimal" is the lowest effort level
+    # documented for the GPT-5 family (official GPT-5 cookbook: GPT-5
+    # supports minimal; default is medium when unset). Selection over
+    # bounded evidence is a deterministic lightweight task (the cookbook's
+    # minimal use case: extraction/formatting/classification). Sent
+    # explicitly on every recommendation call and recorded in artifacts.
+    llm_rec_reasoning_effort: str = "minimal"
+    # Output cap derived from a measured bound, not guessed: the largest
+    # schema-valid label selection under current input bounds serializes
+    # to 5414 chars (server-issued 1-char label, evidence-bounded refs,
+    # 5x200-char free text; tokens <= chars for this ASCII JSON), plus a
+    # 1000-token reasoning allowance (docs: reasoning runs "a few hundred"
+    # tokens at minimum; minimal effort produces "few or no" reasoning
+    # tokens), rounded up: 5414 + 1000 -> 6500. Covers reasoning + text
+    # together. LIVE-07 observed 224 output / 0 reasoning tokens: an
+    # observation, not the bound.
+    llm_rec_max_output_tokens: int = 6500
+    llm_rec_max_input_chars: int = 12000
+    llm_rec_max_retries: int = 1
+    # Bounded recommendation workflow limits (conservative defaults; see
+    # docs/recommendations.md for rationale).
+    rec_candidate_count: int = 3
+    rec_candidate_max: int = 5
+    rec_evidence_max_chars: int = 6000
+    rec_epicure_max_ingredients: int = 5
+    rec_epicure_suggestion_count: int = 5
+    rec_max_provider_turns: int = 2
+    rec_max_tool_calls: int = 1
+
+    @field_validator("llm_rec_reasoning_effort", mode="before")
+    @classmethod
+    def _validate_rec_effort(cls, value: Any) -> Any:
+        # Values documented for reasoning.effort (Responses API reference +
+        # reasoning guide); per-model support is server-enforced (400 on
+        # unsupported values, surfaced as provider_bad_request).
+        allowed = {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return "minimal"
+            if value not in allowed:
+                raise ValueError(f"LLM_REC_REASONING_EFFORT must be one of {sorted(allowed)}")
+        return value
 
     @field_validator(
         "llm_budget_usd",

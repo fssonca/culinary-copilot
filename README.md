@@ -1,9 +1,10 @@
 # Culinary Copilot
 
-Week 1 backend foundation for the Epicure learning project. Python 3.13, FastAPI,
-PostgreSQL 17, uv, and Docker Compose. Hybrid recipe ingestion supports opt-in
-LLM extraction; application recipe generation is not implemented. API keys are
-not needed to start the backend or run default tests.
+Backend for the Epicure learning project: Python 3.13, FastAPI, PostgreSQL 17,
+uv, and Docker Compose. Includes hybrid recipe ingestion, clarification,
+dataset-aware retrieval and grounded recipe selection. Recipe facts and explanation
+wording are rendered by the server; recipe rewriting is not implemented. API keys
+are not needed to start the backend or run default tests.
 
 ## Run with Docker
 
@@ -90,35 +91,36 @@ implemented behavior from planned integrations.
 
 ```text
 src/culinary_copilot/
-  api/       FastAPI app, health, pairing, recipe, clarification and retrieval endpoints
+  api/       FastAPI app, health, pairing, recipe, clarification, retrieval and recommendation endpoints
   domain/    Pydantic cooking-request schema, clarification contracts, rule planner
   llm/       Application provider boundary (fake + async OpenAI)
   services/  Hybrid planning, answer processing, in-memory clarification store
   retrieval/ Phase 1 ready-request mapping plus bounded evidence summaries
+  recommendations/ Source selection, constraints, typed propositions and rendering
   obs/       Clarification planning events
   tools/     Opt-in Epicure Core adapter
   recipes/   Normalization, import, migrations and offline retrieval
   config.py  Environment settings (secrets masked in repr)
   db.py      SQLAlchemy connection pool and readiness check
  tests/      Offline backend checks
- evals/      Existing evaluation scaffold
+ evals/      Retrieval baseline, recommendation cases and review specs
 ```
 
-The backend and recipe data foundation are implemented. The local application
-migration is complete; new environments require explicit database setup and import.
-Hybrid clarification planning (rule + bounded LLM questions, answer processing,
-and the `/api/v1/clarification` endpoints) is implemented backend-only; see
-[clarification backend](docs/clarification.md). Phase 1 retrieval
-(`POST /api/v1/retrieval/search`: ready-request mapping plus bounded
-evidence summaries, AI-proposed review packet) is implemented and repaired
-(dish eligibility vs pantry ranking, shared duration policy, current-group
-contract); see [retrieval guide](docs/retrieval.md). Labels are AI-proposed
-until human-reviewed; no definitive retrieval score is published. The
-official Phase 2 baseline waits on label calibration and the approved
-Food.com search rebuild. Milestone 2 adds recipe embeddings, structured
-sourced responses, pgvector and measured retrieval evaluations.
-Epicure Core is available; Cooc/Chem remain deferred. Agent iteration and generated
-cooking plans are not implemented.
+The local corpus migration and Food.com search rebuild are complete; new
+environments require explicit database setup and import. Implemented backend flows:
+
+- [Hybrid clarification](docs/clarification.md): typed questions, answers and revision control.
+- [Retrieval](docs/retrieval.md): dish eligibility, pantry ranking and bounded evidence summaries.
+- [Grounded recommendations](docs/recommendations.md): Epicure consultation, model selection,
+  typed propositions, source validation and server rendering. Phase 3 is
+  [owner-accepted with limitations](docs/phase3-closure.md).
+- [Architecture and diagrams](docs/architecture/README.md).
+
+The [corrected full-text baseline](evals/results/phase1/baseline_fulltext_corrected.md)
+reports grade-2 Recall@5 0.408 and MRR@5 0.446 over 27 relevant-labeled units,
+against an AI-assisted, owner-accepted rubric with incomplete judgments.
+Streaming and complete telemetry are next. Embeddings/pgvector, recipe adaptations,
+frontend, web search and autonomous agent iteration remain future work.
 
 ## Recipe foundation and next milestone
 

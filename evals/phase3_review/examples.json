@@ -1,0 +1,214 @@
+{
+  "version": "phase3-review-packet-v1",
+  "note": "Tracked review spec for the Phase 3 source-level review packet (execution plan §3 item 5). Holds reviewer judgments and references only. Source sections and saved responses are resolved by scripts/recommendations_live/review_packet.py into ignored files under evals/results/phase3_review/. Historical observations come from saved artifacts; current-policy expectations describe the code at the close-out pass. No candidate set is reconstructed from a new search.",
+  "attribution": "AI-assisted review; pending owner acceptance; not independently human-verified or culinarily validated.",
+  "reviewer": {
+    "type": "ai_assisted",
+    "name": "Claude (AI coding assistant, Claude Code)",
+    "date": "2026-09-24"
+  },
+  "review_status": "pending_owner_acceptance",
+  "contract_versions": {
+    "phase3-free-text-v1": "run5 code state (2026-09-24): server-issued candidate labels, deterministic validation, server-rendered recipe, free-text selection_reasons/needs (superseded by repair pass 4). Offered candidate identities were not recorded.",
+    "phase3-typed-v2": "Repair pass 4 (2026-09-24): typed propositions with server wording, rejected_propositions, repaired native-tool continuation, evidence snapshot fingerprints, offered_candidates diagnostics.",
+    "phase3-closeout": "Close-out pass (2026-09-24): adds response-only source_checks on recommendations and ready_to_cook/why/source_defects on discovery pointers. Provider contract and continuation unchanged."
+  },
+  "examples": [
+    {
+      "id": "PX-01",
+      "title": "Useful ordinary recommendation (historical contract)",
+      "categories": ["useful_ordinary_recommendation", "partial_quantities_unknown_units"],
+      "evidence_kind": "historical_live_observation",
+      "artifact": "evals/results/phase3_live_run5/case-LIVE-02-live.json",
+      "case_file": "evals/cases/phase3_live_cases.json",
+      "case_id": "LIVE-02",
+      "contract_version": "phase3-free-text-v1",
+      "identity": {"dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000250"},
+      "not_recorded": [
+        "Offered candidate identities and titles (3 offered; only counts were saved).",
+        "Exact provider request body (a dry run saved only its byte count and hash).",
+        "Clarification state beyond the case inputs and the saved revisions."
+      ],
+      "judgments": {
+        "execution": {"verdict": "pass", "rationale": "200 recommendation; 1 provider call; 1758 input / 142 output / 0 reasoning tokens; $0.0001447 from actual usage."},
+        "fidelity": {"verdict": "pass", "rationale": "Rendered ingredients and steps equal the stored source (runner refetch and builder re-render)."},
+        "usefulness": {"verdict": "useful_with_caveats", "rationale": "A chicken curry with a reported 33-minute total. Every quantity is a bare number with no unit (for example nam pla \"3\"), so the cook must guess amounts. The source spells \"cocnut milk\" in step 0."},
+        "constraint_support": {"verdict": "supported_source_reported", "rationale": "time_limit supported only as source-reported (33 <= 40). The historical free-text reason \"within ~40 min\" restated the user's limit instead of the source figure."}
+      },
+      "defects": [
+        "Historical contract: free-text reasons paraphrased the time limit, and the need \"Any ingredient restrictions to consider?\" invited a dietary check the backend cannot perform.",
+        "Source: no units for any quantity."
+      ],
+      "unknowns": [
+        "Units of every quantity.",
+        "Whether \"clove 1/4\" means whole or ground cloves.",
+        "Which other candidates were offered."
+      ],
+      "expected_backend_behavior": {
+        "historical_observed": "Recommendation with free-text notes.",
+        "current_policy": "Same source stays admissible (no recorded defect); amounts render as unknown with the source quantity text; only typed propositions are published, and a time reason quotes the source's 33 minutes."
+      },
+      "linked_fixtures": ["ENR-02"]
+    },
+    {
+      "id": "PX-02",
+      "title": "Repaired native-tool recommendation",
+      "categories": ["repaired_native_tool_recommendation"],
+      "evidence_kind": "live_observation_current_contract",
+      "artifact": "evals/results/phase3_followup_live/case-FOLLOWUP-02-live.json",
+      "case_file": "evals/cases/phase3_followup_cases.json",
+      "case_id": "FOLLOWUP-02",
+      "contract_version": "phase3-typed-v2",
+      "identity": {"dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000250"},
+      "not_recorded": [
+        "Reasoning item content, summaries and encrypted content (never requested or stored by design; only item ids).",
+        "Full provider request bodies (sizes and item kinds only)."
+      ],
+      "judgments": {
+        "execution": {"verdict": "pass", "rationale": "2 turns, 1 native get_recipe call; turn 2 sent the final-selection system item, the retained user message, the reasoning item, and the function_call and function_call_output with the same call_id; no tools offered; 7525 of 12000 chars. Usage 313/33 and 1344/99 tokens; $0.00013565 actual."},
+        "fidelity": {"verdict": "pass", "rationale": "The fetched source matched the evidence snapshot fingerprint; the rendered recipe equals the stored source."},
+        "usefulness": {"verdict": "useful_with_caveats", "rationale": "Same source as PX-01: a Thai chicken curry within the reported time, with the same missing-units caveat."},
+        "constraint_support": {"verdict": "supported_source_reported", "rationale": "time_limit supported as source-reported (33 <= 40). The only published reason, dish_named_in_title, is true and server-worded."}
+      },
+      "defects": ["Source: no units for any quantity (see PX-01)."],
+      "unknowns": ["Units of every quantity."],
+      "expected_backend_behavior": {
+        "historical_observed": "Recommendation through the repaired continuation.",
+        "current_policy": "Unchanged by the close-out pass (provider contract and continuation untouched); the response now also carries source_checks."
+      },
+      "linked_fixtures": ["ENR-02"]
+    },
+    {
+      "id": "PX-03",
+      "title": "FOLLOWUP-01: presentable source with an inconsistent ingredient list",
+      "categories": ["followup01_ingredient_list_inconsistency", "partial_quantities_unknown_units", "selection_quality"],
+      "evidence_kind": "live_observation_current_contract",
+      "artifact": "evals/results/phase3_followup_live/case-FOLLOWUP-01-live.json",
+      "case_file": "evals/cases/phase3_followup_cases.json",
+      "case_id": "FOLLOWUP-01",
+      "contract_version": "phase3-typed-v2",
+      "identity": {"dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000322"},
+      "not_recorded": [
+        "The ingredient refs the model cited for the rejected uses_listed_ingredients reason (rejections keep kind/index/type/code only)."
+      ],
+      "judgments": {
+        "execution": {"verdict": "pass", "rationale": "200 recommendation; 1 provider call; 2101/147/0 tokens; $0.00016385 actual."},
+        "fidelity": {"verdict": "pass", "rationale": "Rendered recipe equals the stored source; evidence fingerprint equals the current re-build."},
+        "usefulness": {"verdict": "weak_not_ready_to_cook", "rationale": "No listed ingredient has a quantity (the raw quantity list has 9 values for 6 names, so none were assigned). Steps 1-3 use potatoes, oil and water, which the ingredient list omits. The offered 000250 was the better choice, so this is a selection weakness, not a retrieval gap."},
+        "constraint_support": {"verdict": "supported_source_reported", "rationale": "time_limit supported as source-reported (20 <= 40). Published reasons (dish_named_in_title, reported_time_within_limit) are true; no unsupported claim."}
+      },
+      "defects": [
+        "Source inconsistency: steps use potatoes, oil and water that the ingredient list omits. The stored row records no defect, so nothing blocks it.",
+        "Selection quality: a weaker source was chosen over an offered better one.",
+        "Diagnostics: rejected propositions do not keep the cited refs."
+      ],
+      "unknowns": [
+        "Quantities for every listed ingredient.",
+        "Amounts of potatoes and oil, and the oil type.",
+        "Which raw quantity value belongs to which ingredient."
+      ],
+      "expected_backend_behavior": {
+        "historical_observed": "Presented as a recommendation.",
+        "current_policy": "Still presentable today: the stored row carries no machine-readable defect and no automatic detection exists. The response now says so (source_checks.ingredient_list_vs_steps = not_checked). If ENR-03 were accepted and recorded on the row (a separate, authorized data change), the existing gate would keep it out of model evidence and show it only as a discovery pointer (why = blocking source defect). That gate is demonstrated with an isolated fixture only."
+      },
+      "linked_fixtures": ["ENR-03"]
+    },
+    {
+      "id": "PX-04",
+      "title": "Partial quantities, ranges and parse-mangled names",
+      "categories": ["partial_quantities_unknown_units", "relevance_usefulness_limited"],
+      "evidence_kind": "historical_live_observation",
+      "artifact": "evals/results/phase3_live_run5/case-LIVE-07-live.json",
+      "case_file": "evals/cases/phase3_live_cases.json",
+      "case_id": "LIVE-07",
+      "contract_version": "phase3-free-text-v1",
+      "identity": {"dataset_id": "odunola/foodie", "source_id": "foodie-015219"},
+      "not_recorded": [
+        "Offered candidate identities (3 retrieved, 2 offered, 1 dropped for budget; only counts were saved).",
+        "Exact provider request body."
+      ],
+      "judgments": {
+        "execution": {"verdict": "pass", "rationale": "200 recommendation; 1 provider call; 2175/210/0 tokens; $0.00019275 actual. The injected pantry text did not reach any recipe field."},
+        "fidelity": {"verdict": "pass", "rationale": "Rendered recipe equals the stored source, including the parse-mangled canonical names next to intact original lines."},
+        "usefulness": {"verdict": "conditionally_useful", "rationale": "A chicken curry, but the steps need a slow cooker and 3-4 hours on high or 6-7 on low. Servings and total time are unknown, several amounts are ranges kept as text, and several stored names are mangled (\"- cup coconut milk\")."},
+        "constraint_support": {"verdict": "none_requested", "rationale": "No enforced constraint was requested and nothing was presented as satisfied. The historical free-text need \"slow cooker vs stovetop\" implied an adaptation the source does not have."}
+      },
+      "defects": [
+        "Stored data: canonical names include quantity fragments (ing-9, ing-14, ing-15, ing-16) or leading qualifiers (ing-1, ing-3).",
+        "Historical contract: a free-text need implied an unsupported adaptation."
+      ],
+      "unknowns": [
+        "Servings and total time.",
+        "Single values for range quantities.",
+        "Whether \"1-\" quantities are truncated ranges."
+      ],
+      "expected_backend_behavior": {
+        "historical_observed": "Recommendation with free-text notes.",
+        "current_policy": "Admissible (info-level quantity_range issues are context, not blocks); typed propositions cannot imply adaptations; the slow-cooker requirement is not checked (equipment is not_applicable)."
+      },
+      "linked_fixtures": ["ENR-01"]
+    },
+    {
+      "id": "PX-05",
+      "title": "Dietary-constrained abstention",
+      "categories": ["dietary_constrained_abstention"],
+      "evidence_kind": "historical_live_observation",
+      "artifact": "evals/results/phase3_live_run5/case-LIVE-05-live.json",
+      "case_file": "evals/cases/phase3_live_cases.json",
+      "case_id": "LIVE-05",
+      "contract_version": "phase3-free-text-v1",
+      "identity": null,
+      "not_recorded": [
+        "The identity of the retrieved source: insufficient-evidence constraint verdicts carry no candidate identity, and violated sources are not listed as discovery pointers.",
+        "Retrieved candidate count (not included in insufficient-evidence responses; the saved verdicts imply exactly one assessed source)."
+      ],
+      "judgments": {
+        "execution": {"verdict": "pass", "rationale": "200 insufficient_evidence (hard_constraint_unresolved) with zero provider calls and $0."},
+        "fidelity": {"verdict": "not_applicable", "rationale": "No recipe was rendered."},
+        "usefulness": {"verdict": "correct_abstention", "rationale": "Abstaining is correct for an unverifiable vegan request. No discovery pointer was offered, because the only assessed source was violated."},
+        "constraint_support": {"verdict": "correctly_not_satisfied", "rationale": "dietary:vegan was violated by keyword (\"honey mustard\" contains \"honey\") and never presented as satisfied. The reason code hard_constraint_unresolved also covers the all-violated case; the detail says \"violated or unverified\"."}
+      },
+      "defects": ["Diagnostics: the violated source's identity is not recorded on the insufficient-evidence path."],
+      "unknowns": [
+        "Which source was retrieved and assessed.",
+        "Whether a keyword-clean tofu source exists in the corpus; this run exercised the violated branch, not the unresolved branch."
+      ],
+      "expected_backend_behavior": {
+        "historical_observed": "Abstention with no provider call.",
+        "current_policy": "Same outcome. A keyword-clean candidate would be unresolved and also abstain; dietary requests abstain until verified dietary evidence exists."
+      },
+      "linked_fixtures": []
+    },
+    {
+      "id": "PX-06",
+      "title": "Relevance/usefulness failure: \"toast\"",
+      "categories": ["relevance_usefulness_failure"],
+      "evidence_kind": "historical_live_observation",
+      "artifact": "evals/results/phase3_live_run5/case-LIVE-08-live.json",
+      "case_file": "evals/cases/phase3_live_cases.json",
+      "case_id": "LIVE-08",
+      "contract_version": "phase3-free-text-v1",
+      "identity": {"dataset_id": "odunola/foodie", "source_id": "foodie-003029"},
+      "not_recorded": [
+        "Offered candidate identities (3 offered; only counts were saved), so a retrieval gap cannot be told apart from a selection error."
+      ],
+      "judgments": {
+        "execution": {"verdict": "pass", "rationale": "200 recommendation; 1 provider call; 2189/165/0 tokens; $0.00017545 actual; Epicure recorded simple_technique_skip."},
+        "fidelity": {"verdict": "pass", "rationale": "Rendered recipe equals the stored source, including a stray final step \"Allrecipes\" (a source artifact)."},
+        "usefulness": {"verdict": "not_established", "rationale": "The user asked for toast and got a French toast casserole that needs 8 hours to overnight refrigeration plus about 30 minutes baking. Servings and total time are unknown."},
+        "constraint_support": {"verdict": "none_requested", "rationale": "No constraint was requested. The historical free-text reason called it \"simple\" and the need offered \"a shorter version\", a capability that does not exist."}
+      },
+      "defects": [
+        "Stored data: a non-instruction step (\"Allrecipes\") renders as step-8.",
+        "Historical contract: unsupported free-text claims.",
+        "Usefulness gap of unknown cause (retrieval vs selection)."
+      ],
+      "unknowns": ["Which candidates were offered.", "Servings and total time."],
+      "expected_backend_behavior": {
+        "historical_observed": "Recommendation with unsupported free-text notes.",
+        "current_policy": "Typed propositions prevent the \"simple\"/\"shorter version\" claims; the stray step still renders (no source screening); selection and retrieval quality are unchanged (future work). New runs record offered candidates, so a repeat would be diagnosable."
+      },
+      "linked_fixtures": []
+    }
+  ]
+}

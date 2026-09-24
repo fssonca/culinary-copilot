@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Query
 from sqlalchemy.exc import SQLAlchemyError
 
 from culinary_copilot.api.clarification import build_router as build_clarification_router
+from culinary_copilot.api.recommendations import build_router as build_recommendations_router
 from culinary_copilot.api.retrieval import build_router as build_retrieval_router
 from culinary_copilot.config import Settings
 from culinary_copilot.db import check_database, create_db_engine
@@ -73,6 +74,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
     )
     app.include_router(build_retrieval_router(store=clarification_store, engine=engine))
+    # Recommendation-stage Epicure uses cached assets only (Stage B wiring);
+    # Stage A tests inject the fake adapter directly at the service layer.
+    from culinary_copilot.recommendations.epicure import CachedEpicureAdapter
+
+    recommendation_epicure: Any = CachedEpicureAdapter(epicure)
+    app.include_router(
+        build_recommendations_router(
+            store=clarification_store,
+            engine=engine,
+            settings=settings,
+            provider=llm_provider,
+            epicure=recommendation_epicure,
+        )
+    )
 
     @app.get("/health/live", tags=["health"])
     def live() -> dict[str, str]:

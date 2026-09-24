@@ -1,0 +1,142 @@
+{
+  "version": "phase3-enrichment-proposals-v1",
+  "note": "Review proposals, not production corrections. Nothing here modifies imported documents or database rows, and no runtime code loads this file. Each proposal covers one field of one source; accepting one does not upgrade capabilities or apply to other entries or sources. Evidence references carry sha256 hashes of the exact stored values; the builder resolves them into the ignored enrichment_fixtures files.",
+  "attribution": "AI-assisted review; pending owner acceptance; not independently human-verified or culinarily validated.",
+  "proposals": [
+    {
+      "id": "ENR-01",
+      "kind": "source_backed_correction",
+      "title": "Stored ingredient name includes a quantity fragment",
+      "packet_example": "PX-04",
+      "identity": {"dataset_id": "odunola/foodie", "source_id": "foodie-015219"},
+      "source_fingerprint": {
+        "stored_document_sha256": "a1cddaf8a30deb38f0fbf3c57e04efee05361994ff09577f41cc227f670822bd",
+        "content_hash": "a54e41f545da38a8f82c2e62cbbd5ea302868d7984c066940848546a899c5b62"
+      },
+      "field": "ingredients[9].canonical (ref ing-9)",
+      "proposed_change": {
+        "action": "replace_canonical_name",
+        "field": "ingredients[9].canonical",
+        "from": "- cup coconut milk",
+        "to": "coconut milk"
+      },
+      "abstentions": [
+        "amount, unit and quantity_text stay unchanged: the original line reads \"1- cup\", and the trailing hyphen may mark a truncated range, so neither a single amount nor a confirmed unit follows from it.",
+        "ing-1, ing-3, ing-14, ing-15 and ing-16 have similar name problems; each would need its own review and is not covered here."
+      ],
+      "evidence": [
+        {"section": "ingredients", "ref": "ing-9", "key": "original", "sha256": "37fbebd0c30770658570253e42dd156dc64ec900642307a8fde2c53b9ea9007e"},
+        {"section": "ingredients", "ref": "ing-9", "key": "canonical", "sha256": "9e26cdc0257eb6a644cb118c37110bf3f5e35a301dfa41f7c86b38615fd63a2f"},
+        {"section": "ingredients", "ref": "ing-9", "key": "quantity_text", "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"},
+        {"section": "ingredients", "ref": "ing-9", "key": "unit", "sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"},
+        {"section": "instructions", "ref": "step-4", "sha256": "86fe4a17e2f381b05c93de2d0206d73c5f998f9b0bf7ce23ff6062cb18deee2b"}
+      ],
+      "establishes": [
+        "The source line names the ingredient \"coconut milk\", and step-4 adds coconut milk.",
+        "The stored name \"- cup coconut milk\" carries a quantity fragment that is not part of the ingredient name."
+      ],
+      "does_not_establish": [
+        "How much coconut milk (\"1-\" may be a truncated range).",
+        "That the stored unit should become \"cup\"; the unit field stays as stored until the quantity is reviewed.",
+        "Anything about other ingredients or other foodie sources with similar parse artifacts."
+      ],
+      "scope": "This one field of this one source.",
+      "effect_if_accepted": "Only the displayed and matched name changes. Rendering already shows the intact original line; recommendability and capabilities are unaffected.",
+      "reviewer": {"type": "ai_assisted", "name": "Claude (AI coding assistant, Claude Code)", "date": "2026-09-24"},
+      "status": "proposed",
+      "owner_decision": "pending"
+    },
+    {
+      "id": "ENR-02",
+      "kind": "unresolved_must_remain_unknown",
+      "title": "Quantity without a unit must stay unknown",
+      "packet_example": "PX-01",
+      "identity": {"dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000250"},
+      "source_fingerprint": {
+        "stored_document_sha256": "10a812407b1e5dfd89eedb8d738034071e27418f13560e56fa32b11eadbabcd6",
+        "content_hash": "05a22d5295dcd98988b8084107a754fe92c6d40e6e2e2ef1f74a145aecb24569"
+      },
+      "field": "ingredients[2].unit (ref ing-2, nam pla)",
+      "proposed_change": null,
+      "abstentions": [
+        "No unit is proposed for nam pla. Teaspoons, tablespoons or another unit would each be a guess, and nothing in the record supports one over another.",
+        "No amount is re-parsed: the stored amount is the string \"3\", which the renderer already shows as an unknown amount with quantity text \"3\".",
+        "The other five 000250 quantities have the same missing-unit problem and are not covered by this entry."
+      ],
+      "evidence": [
+        {"section": "ingredients", "ref": "ing-2", "key": "original", "sha256": "ffc1e3ef33b89e0af06c9a9fc099d84666b0b4a8e65b28f84508ace5aadf39fd"},
+        {"section": "ingredients", "ref": "ing-2", "key": "quantity_text", "sha256": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"},
+        {"section": "ingredients", "ref": "ing-2", "key": "unit", "sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"},
+        {"section": "raw", "key": "RecipeIngredientQuantities", "sha256": "c9342dcd3fa991ebc1003916ca40405a325e5d7cca797e7200e58c09ab8a6f47"},
+        {"section": "instructions", "ref": "step-0", "sha256": "c86ad25fbb23013ee9cacf9d40cc1acfcde36e2ceedc1c6abcfde1835a5b6a6e"},
+        {"section": "flags", "sha256": "79fbf025dd2c1a01bb10a67e6c889c8b1da46a1e492bd3525b50e3e30a136a68"}
+      ],
+      "establishes": [
+        "The source gives nam pla the bare quantity \"3\" (third raw quantity value) with no unit anywhere in the record.",
+        "Step-0 uses nam pla without an amount; the row is flagged units_unknown."
+      ],
+      "does_not_establish": [
+        "The unit, and therefore how much nam pla to use.",
+        "Whether \"3\" is a count, a volume or something else."
+      ],
+      "scope": "This one field of this one source. It remains unknown; the proposal is an explicit abstention.",
+      "effect_if_accepted": "None on data. Acceptance records that the unknown is deliberate and must not be filled by inference or by a model.",
+      "reviewer": {"type": "ai_assisted", "name": "Claude (AI coding assistant, Claude Code)", "date": "2026-09-24"},
+      "status": "proposed",
+      "owner_decision": "pending"
+    },
+    {
+      "id": "ENR-03",
+      "kind": "source_defect",
+      "title": "FOLLOWUP-01: steps use ingredients the ingredient list omits",
+      "packet_example": "PX-03",
+      "identity": {"dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000322"},
+      "source_fingerprint": {
+        "stored_document_sha256": "128e669333d084ad403dd3bb0c6f1b7963c0260cda843cc68cf54a9fee78fb36",
+        "content_hash": "ea09f63a72ade00ee21a16a9a60cc04ba62b3ade38ad699032447dad3039cf51"
+      },
+      "field": "quality_issues (absent on the stored row)",
+      "proposed_change": {
+        "action": "record_quality_issue",
+        "field": "quality_issues",
+        "issue": {
+          "code": "ingredient_list_inconsistent",
+          "severity": "error",
+          "field": "ingredients",
+          "message": "Steps 1-3 use potatoes, oil and water; the ingredient list does not name them."
+        }
+      },
+      "abstentions": [
+        "No ingredient entries are added for potatoes, oil or water.",
+        "No quantity or unit is assigned to any ingredient, listed or missing.",
+        "The raw quantity values are not aligned to names: 9 values for 6 names cannot be mapped reliably.",
+        "The water range \"1/2 to 3/4 cup\" stays in step-3 text; it is not promoted to an ingredient amount."
+      ],
+      "evidence": [
+        {"section": "ingredient_names", "sha256": "1539ad6a8ce3270691dc05d446f28dba7a84344b50815ecd34285fddae7580bd"},
+        {"section": "instructions", "ref": "step-1", "sha256": "23adb74c0eb2686e5c252f17839800888017f7e291f2e3e8c495f12514ca7616"},
+        {"section": "instructions", "ref": "step-2", "sha256": "be11a4f0ea0e334df2799225b45bc5d5d99fee663af7c4e3792ad25db7eb3cb3"},
+        {"section": "instructions", "ref": "step-3", "sha256": "0b7051e5e9a39d2c6f692b3f5868c360c02502f1fe6efb99a8fe390c8ac8c0b0"},
+        {"section": "raw", "key": "RecipeIngredientParts", "sha256": "c191bec671a9cb9e51a4f70a7f45e6ce0eb32b2b0315d08dc700e8bb8806034b"},
+        {"section": "raw", "key": "RecipeIngredientQuantities", "sha256": "f26b5d3dc8895a4dd1810e1d53aae768e0f299d2d5a4c622cdedcc6c638d7f63"},
+        {"section": "flags", "sha256": "c55a7256fe35085698a1b89d121e361e3115112249bfe11cc6f718ca5b773f37"}
+      ],
+      "establishes": [
+        "Steps 1-3 use potatoes, oil and water.",
+        "None of the six listed ingredient names is potatoes, oil or water.",
+        "The raw quantity list has 9 values for 6 names (flag ingredient_quantity_mismatch). That is consistent with entries missing from the name list, but does not prove it."
+      ],
+      "does_not_establish": [
+        "How many potatoes or how much oil; the kind of oil.",
+        "Which raw quantity value belongs to which ingredient, including whether \"1/2\" is the water.",
+        "That the source is unusable as a discovery pointer; it only cannot be presented as ready to cook.",
+        "Anything about other sources with an ingredient_quantity_mismatch flag."
+      ],
+      "scope": "This one source. Not a rule for other rows, and not an automatic detector.",
+      "effect_if_accepted": "Recording this issue on the row (a separate, authorized data change, not made here) would make the existing gate treat it as not recommendable: it would be kept out of model evidence and shown only as a discovery pointer with why = \"blocking source defect\". tests/test_recommendations_source_consistency.py shows this with an isolated fixture. The stored row is unchanged today and is still presentable.",
+      "reviewer": {"type": "ai_assisted", "name": "Claude (AI coding assistant, Claude Code)", "date": "2026-09-24"},
+      "status": "proposed",
+      "owner_decision": "pending"
+    }
+  ]
+}

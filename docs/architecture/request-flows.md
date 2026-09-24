@@ -1,4 +1,4 @@
-# API and clarification request flows
+# API request flows
 
 Part of the [current architecture](README.md). These are the current code paths.
 
@@ -16,8 +16,11 @@ Part of the [current architecture](README.md). These are the current code paths.
 | `POST /api/v1/clarification/groups/{group_id}/answers` | Validate answers or edits, then atomically save |
 | `POST /api/v1/clarification/groups/{group_id}/replan` | Explicit follow-up planning; at most five successful replans per request |
 | `POST /api/v1/retrieval/search` | Revision-pinned bounded evidence summaries for a ready clarification group (Phase 1; see `docs/retrieval.md`) |
+| `POST /api/v1/recommendations` | Revision-pinned grounded selection for a ready group: `recommendation` / `clarification` / `insufficient_evidence` (Phase 3; see `docs/recommendations.md`) |
 
-There is no recommendation endpoint yet. Retrieval returns ranked bounded summaries; generation must later fetch complete documents by exact identity. It does not generate recipes.
+Retrieval returns ranked bounded summaries. Recommendations fetch
+complete documents by exact identity and server-render the selected
+recipe; the model performs selection only. Neither generates recipes.
 
 ## 2. Recipe discovery
 
@@ -164,14 +167,14 @@ sequenceDiagram
     C->>A: group_id plus request/group revisions, limit, dataset
     A->>S: Read authoritative snapshot (brief lock, deep copies)
     S-->>A: State, group and revisions
-    A->>A: Recompute readiness (never trust caller flags); 409 on stale revisions or superseded group
+    A->>A: Recompute readiness (never trust caller flags), 409 on stale revisions or superseded group
     alt Not ready
         A-->>C: 200 not_ready with reasons and would-be query (no search)
     else Ready
-        A->>Q: Deterministic dish/pantry/time mapping (dish eligibility; pantry ranks only)
+        A->>Q: Deterministic dish/pantry/time mapping (dish eligibility, pantry ranks only)
         Q-->>A: query_text, match mode, max_minutes, unsupported constraints
         A->>D: search_all/search_recipes in a worker thread (off the event loop)
-        D-->>A: Ranked identities (bounded; duration-eligible only under a ceiling)
+        D-->>A: Ranked identities (bounded, duration-eligible only under a ceiling)
         A->>D: Exact-pair get_recipe per hit in a worker thread (full documents)
         D-->>A: Full source documents (bounded)
         A->>S: Re-read revisions and group currency (no lock was held across I/O)
@@ -190,3 +193,85 @@ datasets searched versus those represented. Pantry ingredients never gate
 eligibility for dish queries. Unsupported constraints (cuisine, preferences,
 dietary, equipment, substitutions) are preserved unchanged and reported as
 unverified.
+
+## 7. Recommendation for a ready group
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as Recommendations API
+    participant S as In-memory store
+    participant E as Epicure adapter
+    participant D as Recipe repository
+    participant L as Recommendation provider
+    C->>A: group_id plus request/group revisions, limit, dataset, tool_mode
+    A->>A: Fail closed when generation is disabled (503, zero provider calls)
+    A->>S: Read authoritative snapshot (brief lock, deep copies)
+    S-->>A: State, group and revisions
+    A->>A: Recompute readiness (never trust caller flags), 409 on stale revisions or superseded group
+    alt Not ready (incl. conflicts)
+        A-->>C: 200 clarification with reasons and blockers (no search, no provider call)
+    else Ready
+        A->>E: Early consultation with canonical ingredients (worker thread)
+        E-->>A: consulted / skip / disabled / unavailable / unmapped / insufficient context
+        A->>D: Reused ranking search + exact-pair complete fetch (worker threads)
+        D-->>A: Full source documents from recipes only, recipe_quarantine is never read (bounded)
+        A->>A: Deterministic constraint assessment, exclude violated/unresolved-hard
+        alt No eligible source passes structural admission (sections, no omissions, no recorded error-severity defect)
+            A-->>C: 200 insufficient_evidence with reason + unverified discovery pointers (ready_to_cook false, why, source_defects)
+        else Eligible evidence
+            A->>A: Serialize the complete payload, reduce whole candidates until it fits the evidence/input budgets (never truncate), 200 insufficient_evidence when nothing fits, zero provider calls
+            alt Default path
+                A->>L: Complete evidence + selection-only prompt (one turn)
+                L-->>A: Structured selection (label + refs + typed propositions)
+            else tool_mode (opt-in, native function calling)
+                A->>L: Candidate metadata only + strict get_recipe tool, forced tool choice
+                L-->>A: One native function_call (name, arguments, call_id)
+                A->>D: Allowlisted exact-pair fetch
+                D-->>A: Complete source document
+                A->>A: Fetched document must match the evidence snapshot (fingerprint)
+                A->>L: Final-selection instructions + turn-1 user message + reasoning/function_call items + function_call_output (same call_id), budgeted whole, no tools
+                L-->>A: Structured selection (label + refs + typed propositions)
+            end
+            A->>A: Deterministic validation (identity, refs, step order, injection, constraints, snapshot)
+            A->>A: Proposition prerequisites, server wording, omissions recorded
+            A->>S: Re-read revisions and group currency (no lock was held across I/O)
+            alt Revisions advanced or group superseded meanwhile
+                A-->>C: HTTP 409 - refetch and retry
+            else Still current
+                A-->>C: 200 recommendation with server-rendered recipe, propositions, source checks and usage
+            end
+        end
+    end
+```
+
+Provider refusal is a controlled 502 (`provider_refusal`), never
+insufficient evidence. Failed responses carry no recipe content. Epicure
+suggestions are assessed after evidence (used as pairing notes only when
+present in the selected source, otherwise deferred) and never enter the
+rendered recipe.
+
+## 8. Source checks and review decisions
+
+```mermaid
+flowchart TD
+    Source["Stored source document"] --> Structural{"Sections present, no omissions or recorded blocking defect?"}
+    Structural -->|"No"| Pointer["Incomplete discovery pointer: ready_to_cook false"]
+    Structural -->|"Yes"| Constraints{"Hard constraints supported or not applicable?"}
+    Constraints -->|"No"| Abstain["Insufficient evidence"]
+    Constraints -->|"Yes"| Select["Model selects identity, refs and typed propositions"]
+    Select --> Validate["Validate selection and proposition prerequisites"]
+    Validate --> Render["Python renders source facts and accepted wording"]
+    Render --> Disclosure["Source checks disclose ingredient-list consistency not checked"]
+    Review["Offline review proposals"] -.-> Decision["Owner acceptance as review records only"]
+    Decision -.-> Future["Separate authorization required to change stored data"]
+```
+
+Unknown quantities alone do not prove an ingredient-list inconsistency. Structural
+admission does not detect ingredients mentioned only in instructions. Food.com
+000322 remains presentable; ENR-03 records a defect proposal but has not changed
+the database. The source review spec is never loaded as runtime policy.
+
+Optional propositions that fail their prerequisites are omitted and recorded in
+`rejected_propositions`; invalid selections or hard-constraint failures remain
+controlled errors. No unrestricted model-authored explanation is published.

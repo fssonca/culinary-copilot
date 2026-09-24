@@ -1,0 +1,37 @@
+{
+  "version": "phase3-owner-decision-v1",
+  "date": "2026-09-24",
+  "owner": "Fernando Sousa",
+  "decision": "accepted_bounded_backend_milestone",
+  "basis": "Owner explicitly chose to follow the recommended decisions in this conversation. Acceptance relies on the AI-assisted close-out report; it does not assert personal verification of every source.",
+  "attribution": "AI-assisted review accepted by the project owner; not independently human-verified or culinarily validated.",
+  "accepted_inputs_sha256": {
+    "evals/phase3_review/examples.json": "8ec753b0cda3be2e82b9b1ff0d8a136ea175ecfa460611673f493a4ff1f4da98",
+    "evals/phase3_review/enrichment_proposals.json": "5e2793c3cb5aee60618da2b5c30b22b54bd17114cefe05f32c823ca50b03e103",
+    "evals/results/phase3_review/manifest.json": "f613a674869d74941f7e447d3a331dc7505b68b837127bc7a9e508faf2e75634"
+  },
+  "enrichment_decisions": {
+    "ENR-01": "accepted_as_proposed_correction_record_only",
+    "ENR-02": "accepted_unknown_unit_must_remain_unknown",
+    "ENR-03": "accepted_as_documented_defect_record_only"
+  },
+  "application_data_changes_authorized": false,
+  "known_limitation": "Food.com 000322 remains presentable. The defect has not been written to the application database and automatic ingredient-list versus instruction consistency detection is not implemented.",
+  "deferred": [
+    "selection quality",
+    "automatic source consistency detection",
+    "source screening",
+    "Epicure-driven selection changes",
+    "rejected proposition reference diagnostics",
+    "abstention candidate diagnostics",
+    "accepted-row handling after a later quarantine"
+  ],
+  "phase4": "May proceed under the execution plan; not implemented by this close-out task.",
+  "current_task_authorization": [
+    "record acceptance",
+    "clean up obsolete files and documentation",
+    "update architecture documentation",
+    "git commit"
+  ],
+  "note": "This separate decision supersedes pending-owner labels in immutable AI proposal snapshots. It does not change their authorship, apply proposed corrections, or authorize paid calls, application writes or a push."
+}

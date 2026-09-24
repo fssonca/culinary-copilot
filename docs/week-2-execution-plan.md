@@ -1,3 +1,10 @@
+> Current checkpoint (2026-09-24): Phases 1–3 are complete within their documented
+> scope. Phase 3 is owner-accepted based on AI-assisted review; proposed enrichments
+> are review records only. See [closure](phase3-closure.md) and the
+> [owner decision](../evals/phase3_review/owner_decisions.json). Phase 4 is next.
+> Earlier prompts/checkpoints below are retained as the execution plan, not pending
+> approvals for work already accepted.
+
 # Week 2 execution plan and agent prompts
 
 Based on the architecture snapshot and code inspected on 2026-09-23, plus Milestone 2 in `../../ai-learning-plan.md`.

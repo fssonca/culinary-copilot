@@ -159,3 +159,18 @@ saved/synthetic data and fake providers; integration tests write only disposable
 
 Detailed commands, limits and recovery evidence belong in the maintained
 [Food.com](../recipe-ingestion.md) and [hybrid](../hybrid-ingestion.md) runbooks.
+
+## 5. Runtime reads, quarantine history and review records
+
+Recommendation search and exact lookup read `recipes`, not `recipe_quarantine`.
+A quarantined-only identity is never offered. An accepted version can still be
+served when quarantine contains an older rejected version or a duplicate import
+row. The Foodie loader upserts accepted rows; a later rejection does not delete an
+earlier accepted row. Disposable-Postgres tests cover these boundaries.
+
+Phase 3 adds no database tables or migrations. Review proposals and owner decisions
+live under `evals/phase3_review/`; they are not runtime enrichment overlays.
+Acceptance does not alter recipe documents or capabilities. Source-filled packets
+and provider outputs are local ignored files; the specs and hash-only manifest are
+versioned. PostgreSQL remains the source of runtime recipe facts, and clarification
+state remains process-local memory.

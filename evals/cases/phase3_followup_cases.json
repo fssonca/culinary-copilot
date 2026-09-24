@@ -1,0 +1,59 @@
+{
+  "version": "phase3-followup-v1",
+  "note": "Prepared two-case live follow-up for the repair-pass-4 contracts (typed propositions; corrected native-tool continuation). NOT executed; execution requires explicit opt-in approval. Separate from frozen Phase 1 retrieval inputs and from phase3_live_cases.json; no frozen artifact or historical result is modified. Grading is on source fidelity and contract invariants, not one predetermined recipe identity.",
+  "cases": [
+    {
+      "id": "FOLLOWUP-01",
+      "purpose": "ordinary recommendation with typed propositions (server-worded reasons/questions)",
+      "clarification": {
+        "message": "quick chicken curry under 40 minutes",
+        "dish": "chicken curry",
+        "request": {
+          "ingredients": ["chicken"],
+          "time_minutes": 40
+        }
+      },
+      "answer_steps": [],
+      "recommendation_request": {
+        "limit": 3
+      },
+      "expected_status": 200,
+      "expected_outcome": "recommendation",
+      "source_evidence": "Same request as LIVE-02 (run5). Candidates reporting above 40 minutes are excluded by the ceiling; unknown durations are excluded, never estimated.",
+      "invariants": [
+        "single provider turn; schema accepts only typed reasons/questions (no free text)",
+        "every published selection_reasons/needs string is server wording for an accepted proposition type",
+        "every omitted proposition appears in rejected_propositions with kind/index/type/code only",
+        "reported-time reason, if present, states source-reported figures and no practical-time promise",
+        "rendered recipe source-exact (fidelity match)"
+      ]
+    },
+    {
+      "id": "FOLLOWUP-02",
+      "purpose": "native tool mode with the corrected turn-2 continuation",
+      "clarification": {
+        "message": "thai chicken curry for dinner in 40 minutes",
+        "dish": "thai chicken curry",
+        "request": {
+          "ingredients": ["chicken"],
+          "time_minutes": 40
+        }
+      },
+      "answer_steps": [],
+      "recommendation_request": {
+        "limit": 3,
+        "tool_mode": true
+      },
+      "expected_status": 200,
+      "expected_outcome": "recommendation",
+      "source_evidence": "LIVE-10 request plus an explicit 40-minute limit so the final turn carries an authoritative constraint.",
+      "invariants": [
+        "exactly 2 provider turns and 1 allowlisted native function call",
+        "turn 2 system item is the final-selection prompt with request context; no tool-only instruction; no tools offered",
+        "turn 2 retains the turn-1 user message, reasoning/function_call items and the function_call_output with the same call_id",
+        "fetched source matches the evidence snapshot; selection validated and rendered from that snapshot",
+        "rendered recipe source-exact (fidelity match)"
+      ]
+    }
+  ]
+}

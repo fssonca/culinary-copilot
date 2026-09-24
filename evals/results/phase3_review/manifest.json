@@ -1,0 +1,47 @@
+{
+  "version": "phase3-review-packet-v1",
+  "attribution": "AI-assisted review; pending owner acceptance; not independently human-verified or culinarily validated.",
+  "review_status": "pending_owner_acceptance",
+  "spec_sha256": {
+    "examples.json": "8ec753b0cda3be2e82b9b1ff0d8a136ea175ecfa460611673f493a4ff1f4da98",
+    "enrichment_proposals.json": "5e2793c3cb5aee60618da2b5c30b22b54bd17114cefe05f32c823ca50b03e103"
+  },
+  "artifacts": {
+    "evals/results/phase3_live_run5/case-LIVE-02-live.json": "28f47e5041ae95a937eca4bbe9049a14fdaa14c2b305198699eb969fcc3652a6",
+    "evals/results/phase3_followup_live/case-FOLLOWUP-02-live.json": "b72a6d0dffc04a2253ecc48101043ab8f4a74166c736b8225a846f31f8a7b32b",
+    "evals/results/phase3_followup_live/case-FOLLOWUP-01-live.json": "2d5eb5e181ecf84a0f5054341ae728bf8159bbd8853b8cdeaffb8de8e1037503",
+    "evals/results/phase3_live_run5/case-LIVE-07-live.json": "c556baa53d179f82600ff61dc6fe9446f4349d4b55e8c546b823354e5d998c06",
+    "evals/results/phase3_live_run5/case-LIVE-05-live.json": "d6a0da94643b232696ed24c44b523ee7202128f4a3fd7115240fd1644958291a",
+    "evals/results/phase3_live_run5/case-LIVE-08-live.json": "bd063f483a032e5f5ebcd0db747455eaf7b4428a16d563f2363a8df8702c31e1"
+  },
+  "sources": {
+    "AkashPS11/recipes_data_food.com/000250": {
+      "stored_document_sha256": "10a812407b1e5dfd89eedb8d738034071e27418f13560e56fa32b11eadbabcd6",
+      "content_hash": "05a22d5295dcd98988b8084107a754fe92c6d40e6e2e2ef1f74a145aecb24569"
+    },
+    "AkashPS11/recipes_data_food.com/000322": {
+      "stored_document_sha256": "128e669333d084ad403dd3bb0c6f1b7963c0260cda843cc68cf54a9fee78fb36",
+      "content_hash": "ea09f63a72ade00ee21a16a9a60cc04ba62b3ade38ad699032447dad3039cf51"
+    },
+    "odunola/foodie/foodie-003029": {
+      "stored_document_sha256": "1fdaae0c95e84c9a0e3ee7f3de2027950d18ab097be5a83404c00ece8049f41d",
+      "content_hash": "03c089ef075530130c894027b3b6665bad10f84a39dcbd27c5566f484313994d"
+    },
+    "odunola/foodie/foodie-015219": {
+      "stored_document_sha256": "a1cddaf8a30deb38f0fbf3c57e04efee05361994ff09577f41cc227f670822bd",
+      "content_hash": "a54e41f545da38a8f82c2e62cbbd5ea302868d7984c066940848546a899c5b62"
+    }
+  },
+  "outputs_sha256": {
+    "packet.json": "351dcc5dbddca8502c2b49c15137881946c6640a026b86c0cb890e398216d539",
+    "packet.md": "b34229ff30240a409a72d6cf42d826c3a958db8f0a000badb6dc80ce1519b3f7",
+    "enrichment_fixtures.json": "ae7968be18347030bee19999dfed8fca115ae0d684b976a24b4fb5d468111d21",
+    "enrichment_fixtures.md": "8316ac6e8228186e449b62f72f614a694de2686e3ab47f9462074043a7ace3ee"
+  },
+  "outputs_in_git": false,
+  "note": "Outputs contain source text and saved model responses and stay out of Git; this manifest holds identities and hashes only.",
+  "built_at_git": {
+    "head": "6774e3ddefcb570072ffa865472f569d12d992eb",
+    "dirty": true
+  }
+}

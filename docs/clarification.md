@@ -285,7 +285,10 @@ when enabled; no new Epicure operators were added.
 - Model-inferred updates to not-yet-known fields apply only when
   high-confidence, quote-grounded in the current message, and shape-valid;
   all other inferences stay uncertain or become confirmation questions.
-- No embeddings, vector retrieval, generation, streaming, or agent loop.
+- No embeddings, vector retrieval, streaming, or agent loop. Generation
+  exists only as the grounded recommendation workflow
+  ([docs/recommendations.md](recommendations.md)), which consumes, but
+  never changes, clarification contracts.
 - Conflict detection is keyword-based (veg + meat tokens); richer
   constraint reasoning is future work.
 - Retrieval integration (Phase 1, implemented and repaired): the current
