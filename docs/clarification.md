@@ -285,10 +285,17 @@ when enabled; no new Epicure operators were added.
 - Model-inferred updates to not-yet-known fields apply only when
   high-confidence, quote-grounded in the current message, and shape-valid;
   all other inferences stay uncertain or become confirmation questions.
-- No embeddings, vector retrieval, streaming, or agent loop. Generation
+- No embeddings, vector retrieval, or agent loop. Generation
   exists only as the grounded recommendation workflow
   ([docs/recommendations.md](recommendations.md)), which consumes, but
-  never changes, clarification contracts.
+  never changes, clarification contracts. Streaming is implemented on the
+  recommendation path only
+  ([walkthrough](phase4-streaming-walkthrough.md)); clarification itself
+  is not streamed.
+- Planning telemetry is complete per request (Phase 4): every group
+  creation and replan emits one `clarification_planned` event with the
+  real group id (rule-only, provider-unavailable, provider-exception,
+  and LLM-assisted paths), message length only, and no message text.
 - Conflict detection is keyword-based (veg + meat tokens); richer
   constraint reasoning is future work.
 - Retrieval integration (Phase 1, implemented and repaired): the current

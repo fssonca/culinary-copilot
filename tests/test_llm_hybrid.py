@@ -438,7 +438,7 @@ def _response_body(extraction, usage=None):
     return {
         "id": "resp-1",
         "object": "response",
-        "model": "gpt-5-nano",
+        "model": "gpt-6-luna",
         "status": "completed",
         "output": [
             {
@@ -469,7 +469,7 @@ def _args(run_dir, **overrides):
         csv=None,
         size=3,
         seed=1,
-        model="gpt-5-nano",
+        model="gpt-6-luna",
         limit=50,
         max_output_tokens=500,
         audit_rate=0.0,
@@ -571,7 +571,7 @@ def test_collect_refusal_incomplete_malformed(tmp_path, monkeypatch):
             "body": {
                 "id": "resp-1",
                 "object": "response",
-                "model": "gpt-5-nano",
+                "model": "gpt-6-luna",
                 "status": "completed",
                 "output": [{"type": "refusal", "refusal": "I cannot help."}],
             },
@@ -587,7 +587,7 @@ def test_collect_refusal_incomplete_malformed(tmp_path, monkeypatch):
             "body": {
                 "id": "resp-2",
                 "object": "response",
-                "model": "gpt-5-nano",
+                "model": "gpt-6-luna",
                 "status": "incomplete",
                 "incomplete_details": {"reason": "max_output_tokens"},
                 "output": [],
@@ -1528,7 +1528,7 @@ def _incomplete_error(custom_id):
             "body": {
                 "id": "resp-1",
                 "object": "response",
-                "model": "gpt-5-nano",
+                "model": "gpt-6-luna",
                 "status": "incomplete",
                 "incomplete_details": {"reason": "max_output_tokens"},
                 "output": [],
@@ -1654,11 +1654,11 @@ def test_reconcile_never_resets_attempts(tmp_path, monkeypatch):
 
 def test_reasoning_effort_body_cache_and_stale():
     body = build_request_body(
-        model="gpt-5-nano", system="s", user_content="u", max_output_tokens=10
+        model="gpt-6-luna", system="s", user_content="u", max_output_tokens=10
     )
     assert "reasoning" not in body
     body = build_request_body(
-        model="gpt-5-nano",
+        model="gpt-6-luna",
         system="s",
         user_content="u",
         max_output_tokens=10,
@@ -1667,7 +1667,7 @@ def test_reasoning_effort_body_cache_and_stale():
     assert body["reasoning"] == {"effort": "low"}
     with pytest.raises(ValueError, match="Unknown reasoning effort"):
         build_request_body(
-            model="gpt-5-nano",
+            model="gpt-6-luna",
             system="s",
             user_content="u",
             max_output_tokens=10,
@@ -2164,9 +2164,9 @@ def test_prompt_requires_verbatim_evidence_and_headings():
 
 def test_request_body_uses_responses_structured_outputs():
     body = build_request_body(
-        model="gpt-5-nano", system="s", user_content="u", max_output_tokens=10
+        model="gpt-6-luna", system="s", user_content="u", max_output_tokens=10
     )
-    assert body["model"] == "gpt-5-nano"
+    assert body["model"] == "gpt-6-luna"
     assert body["text"]["format"]["type"] == "json_schema"
     assert body["text"]["format"]["strict"] is True
     assert body["max_output_tokens"] == 10

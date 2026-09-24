@@ -34,8 +34,10 @@ Budget model (conservative, documented):
   configured cap (max_input_chars * 4 bytes/char per turn) as the bound.
 - Output bound = max_output_tokens per attempt (6500: measured 5414-char
   worst-case valid label selection + 1000-token reasoning allowance; covers
-  reasoning + text together). Explicit reasoning effort (minimal) is sent
-  on every call and recorded in every case artifact.
+  reasoning + text together; measured on gpt-5-nano in Phase 3, not yet
+  re-measured on gpt-6-luna). The configured reasoning effort
+  (LLM_REC_REASONING_EFFORT, "none" by default for gpt-6-luna) is sent on
+  every call and recorded in every case artifact.
 - Attempts bound = turns_max * (max_retries + 1); tool calls and turns
   bounded separately by REC_MAX_* settings.
 - Cases that make no provider call cost $0 (reservation released); error
@@ -58,7 +60,10 @@ Usage:
         --cases evals/cases/phase3_live_cases.json \\
         --out evals/results/phase3_live --state-name state.json
     uv run python scripts/recommendations_live/runner.py --cases ... --out ... \\
-        --live --ceiling-usd 1.00 --price-input-per-1m 0.05 --price-output-per-1m 0.40
+        --live --ceiling-usd 1.00 --price-input-per-1m 0.125 --price-output-per-1m 0.50
+    (gpt-6-luna Standard: input $0.10, cache writes $0.125, output $0.50 per
+    1M tokens; pass the cache-write rate as the input price for a
+    conservative bound. See culinary_copilot/llm/models.py.)
 """
 
 from __future__ import annotations
@@ -81,6 +86,7 @@ from culinary_copilot.api.clarification import build_router as build_clarificati
 from culinary_copilot.api.recommendations import build_router as build_recommendations_router
 from culinary_copilot.config import Settings
 from culinary_copilot.llm.client import GET_RECIPE_FUNCTION
+from culinary_copilot.llm.models import DEFAULT_MODEL, SUPPORTED_MODELS
 from culinary_copilot.recommendations.evidence import render_recipe
 from culinary_copilot.tools.epicure import EpicureCore
 
@@ -198,7 +204,7 @@ def _rehearsal_body(
         "id": f"resp-rehearse-{call_no}",
         "object": "response",
         "created_at": 1758720000,
-        "model": "gpt-5-nano",
+        "model": DEFAULT_MODEL,
         "status": status,
         "output": output,
         "usage": {
@@ -1750,9 +1756,15 @@ def main(argv: list[str] | None = None) -> int:
     if rehearse or rehearse_transport:
         # Zero-network rehearsal: no key gate, default budget (overridable).
         ceiling_usd = args.ceiling_usd if args.ceiling_usd > 0 else 1.0
+        # Rehearsal defaults come from the registry (conservative input
+        # bound: the cache-write rate when it exceeds the input rate).
+        spec = SUPPORTED_MODELS[DEFAULT_MODEL].prices
+        default_in = max(spec.input_per_1m, spec.cache_write_per_1m or 0.0)
         prices = {
-            "input": args.price_input_per_1m if args.price_input_per_1m is not None else 0.05,
-            "output": args.price_output_per_1m if args.price_output_per_1m is not None else 0.40,
+            "input": args.price_input_per_1m if args.price_input_per_1m is not None else default_in,
+            "output": args.price_output_per_1m
+            if args.price_output_per_1m is not None
+            else spec.output_per_1m,
         }
     else:
         # Live mode gates.

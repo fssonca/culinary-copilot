@@ -138,7 +138,7 @@ def _turn1(label: str = "1", call_id: str = "call_live") -> NativeTurnResult:
                 "arguments": call.arguments,
             },
         ],
-        model="gpt-5-nano",
+        model="gpt-6-luna",
         latency_ms=5,
         attempts=1,
         input_tokens=307,
@@ -159,7 +159,7 @@ def _turn2(label: str = "1", **overrides: Any) -> NativeTurnResult:
     parsed.update(overrides)
     return NativeTurnResult(
         parsed=parsed,
-        model="gpt-5-nano",
+        model="gpt-6-luna",
         latency_ms=5,
         attempts=1,
         input_tokens=718,

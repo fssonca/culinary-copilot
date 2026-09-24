@@ -359,10 +359,16 @@ detectable refusals, `status="incomplete"` with
 `max_retries=0`) and current official docs (Responses structured
 outputs; reasoning guide: reasoning tokens billed as output tokens and
 count toward `max_output_tokens`; `reasoning.effort` values
-`none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`, model-dependent;
-GPT-5 supports `minimal`, default `medium` when unset per the official
-GPT-5 cookbook; gpt-5-nano pricing input $0.05 / output $0.40 per 1M
-tokens, verified 2026-09-24). One retry owner: SDK retries disabled; the
+`none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`, model-dependent).
+Model (2026-09-24): `gpt-6-luna` only, from the registry in
+`llm/models.py`; configuration refuses any other model. Its model page
+lists Responses, Batch, structured outputs and function calling, and
+reasoning efforts `none`/`low`/`medium` (default)/`high`/`xhigh`/`max`
+(not `minimal`). Standard pricing per 1M tokens: input $0.10, cached input
+$0.01, cache writes $0.125, output $0.50 (both pages verified
+2026-09-24). Phase 3 live results were measured on `gpt-5-nano` with
+`minimal` effort; they are historical and were not re-run on
+`gpt-6-luna`. One retry owner: SDK retries disabled; the
 module retries only timeout/connection/rate-limit/5xx up to
 `LLM_REC_MAX_RETRIES` (400s, refusals, content filters, incomplete, and
 schema failures never retried). Attempts, latency, token usage
@@ -383,8 +389,8 @@ Conservative defaults and rationale:
 | --- | --- | --- |
 | `REC_CANDIDATE_COUNT` / `REC_CANDIDATE_MAX` | 3 / 5 | Selection quality over recall; small evidence bundle |
 | `REC_EVIDENCE_MAX_CHARS` | 6000 | Fits ~3 complete small recipes; overflow abstains |
-| `LLM_REC_REASONING_EFFORT` | `minimal` | Recommendation-only switch (never ingestion's `LLM_REASONING_EFFORT`); lowest effort documented for the GPT-5 family; selection over bounded evidence is the cookbook's minimal use case; sent explicitly and recorded per case |
-| `LLM_REC_MAX_OUTPUT_TOKENS` | 6500 | Measured, not guessed: 5414-char worst-case valid label selection under the historical free-text contract (server-issued 1-char label, evidence-bounded refs, 5×200-char reasons + 5×200-char needs) + 1000-token reasoning allowance (docs floor "few hundred"; minimal effort "few or no" reasoning tokens); covers reasoning + text. Typed propositions shrink the worst case by 1076 chars (≈4338); the cap is unchanged and now more conservative. LIVE-07 observed 224 output / 0 reasoning tokens (observation, not the bound) |
+| `LLM_REC_REASONING_EFFORT` | `none` | Recommendation-only switch (never ingestion's `LLM_REASONING_EFFORT`); the lowest effort `gpt-6-luna` documents (it does not accept `minimal`, the Phase 3 value on `gpt-5-nano`, which produced 0 reasoning tokens); validated against the model at startup; sent explicitly and recorded per case |
+| `LLM_REC_MAX_OUTPUT_TOKENS` | 6500 | Measured on `gpt-5-nano` (not yet re-measured on `gpt-6-luna`), not guessed: 5414-char worst-case valid label selection under the historical free-text contract (server-issued 1-char label, evidence-bounded refs, 5×200-char reasons + 5×200-char needs) + 1000-token reasoning allowance (docs floor "few hundred"; minimal effort "few or no" reasoning tokens); covers reasoning + text. Typed propositions shrink the worst case by 1076 chars (≈4338); the cap is unchanged and now more conservative. LIVE-07 observed 224 output / 0 reasoning tokens (observation, not the bound) |
 | `LLM_REC_TIMEOUT_S` / `LLM_REC_MAX_RETRIES` | 20s / 1 | Interactive latency; single bounded retry |
 | `LLM_REC_MAX_INPUT_CHARS` | 12000 | Total serialized input budget (chars); payloads reduced whole to fit |
 | `REC_EPICURE_MAX_INGREDIENTS` / `REC_EPICURE_SUGGESTION_COUNT` | 5 / 5 | Bounded local consultation |
@@ -554,7 +560,112 @@ closure](phase3-closure.md).
 ## Limits and non-goals
 
 Single-process in-memory clarification store (restart loss, 512-request
-cap) is unchanged. No streaming, embeddings, web search, agent loops, or
+cap) is unchanged. No embeddings, web search, agent loops, or
 frontend. Dietary-constrained requests abstain by design (see constraint
 policy). Failed responses carry no recipe content; insufficient-evidence
 discovery pointers are explicitly unverified.
+
+## Phase 4: streaming and telemetry (implemented 2026-09-24; review fixes applied)
+
+One workflow, two transports. `POST /api/v1/recommendations` keeps its
+behavior and body. `POST /api/v1/recommendations/stream` takes the same
+request body and serves `text/event-stream` via Starlette
+`StreamingResponse` (FastAPI 0.141.1 / Starlette 1.6.0, checked; no new
+dependency; `Cache-Control: no-cache`, `X-Accel-Buffering: no`). Both run
+`recommendations/service.py::recommend_for_group`; the stream passes an
+optional async stage hook (`on_stage(stage, detail)`). No second workflow
+copy exists, and entry checks run only inside the workflow.
+
+Event contract `v1` (`recommendations/stream.py`):
+
+- `stage` events: `accepted`, `readiness`, `epicure`, `retrieval`,
+  `evidence`, `provider_request` (sent before each provider turn; turn
+  number only), `provider_turn` (after a turn completes; turn, attempt and
+  tool-call counts only), `validation`, `revision_check`. No model output
+  deltas are streamed; the model returns only a label, refs and typed
+  propositions, and recipe content is server-rendered after validation.
+  There is no `provisional` event.
+- Exactly one terminal event: a `final` carrying the same validated body as
+  the non-streaming endpoint (`recommendation`, `clarification`, or
+  `insufficient_evidence`), or an `error` carrying status/reason/message/
+  detail and no recipe content.
+- Every event carries `seq` (0, 1, 2, … with no gaps) plus `request_id`,
+  `group_id`, `request_revision`, `group_revision`. Keep-alive comments
+  (`: keep-alive`) carry no sequence number.
+
+Behavior:
+
+- Pre-stream rule: the endpoint starts the workflow and waits for its
+  first stage (`accepted`). Anything the workflow rejects before that
+  (unknown group 404, stale or superseded revisions 409, unsupported
+  dataset 422, disabled generation or corpus unavailable 503) is an HTTP
+  error with exactly the JSON endpoint's status and body. Body-schema
+  errors are 422 from FastAPI before the workflow runs.
+- After `accepted`, every outcome is one terminal event: mid-run revision
+  changes are a 409 `stale_revision` `error`, never a `final`; provider
+  failures, timeouts, refusals and schema/validation rejections are one
+  `error`; an unexpected exception is a 500 `internal_error` with only
+  the exception type in `detail` (no message text).
+- Bounds: `REC_STREAM_MAX_EVENTS` (100, including the terminal event; one
+  slot is always reserved for it), `REC_STREAM_MAX_DURATION_S` (120 s),
+  `REC_STREAM_KEEPALIVE_S` (10 s). The stage queue is bounded and
+  lossless: when the client falls behind, the workflow waits at its next
+  stage. If the stage budget runs out while the workflow is still running,
+  it is cancelled and the stream ends with `stream_event_limit_exceeded`
+  (503); if it runs out after the workflow has finished, leftover progress
+  stages are skipped, the `final` is still sent, and it carries
+  `skipped_stages`. The duration bound cancels the workflow and ends with
+  `stream_duration_exceeded` (504); a workflow that already finished
+  delivers its result instead.
+- Client disconnect: the workflow is cancelled with the reason as the
+  cancellation message, whether the endpoint detects the disconnect
+  (`request.is_disconnected()` is polled every 0.2 s; ASGI spec 2.4+) or
+  Starlette closes the stream itself (spec < 2.4; the generator's cleanup
+  cancels with `stream_closed`). asyncio cancellation reaches the
+  in-flight provider await (best-effort: `AsyncOpenAI` has no explicit
+  abort, and a request already sent may still be billed). Nothing is
+  emitted afterwards. Tested through the real endpoint on both ASGI paths.
+
+Telemetry (`obs/recommendations.py`, logging with structured extras, no
+new backend). Exactly one `recommendation_completed` event per run,
+including cancelled runs and unexpected errors: `request_id`,
+`group_id`, revisions, endpoint/transport, outcome and stable reason
+(`cancelled` with the cancellation reason; `internal_error:<Type>`),
+model, reasoning effort, config/contract/pricing versions, stage timings
+(provider stages keyed per turn, e.g. `provider_turn_2`, so tool mode
+keeps each turn's latency), total latency, and `turns`: one record per
+provider turn with status (`completed`/`failed`/`cancelled`), attempts,
+`request_sent`, latency, input/output/reasoning tokens, response id and
+tool calls. A provider turn is recorded as it happens, so completed turns
+keep their usage after a later failure, validation rejection or
+cancellation, and a failing turn keeps whatever usage the provider
+reported (for example a truncated response). Privacy: never the message
+text, prompts, recipe content, secrets, raw model output, or constraint
+values (dietary/allergy); counts and stable codes only.
+
+Cost (`recommendations/pricing.py`, prices from the `llm/models.py`
+registry, pricing version `2026-09-24-luna-v1`, keyed by model; there is
+no model-independent override): `gpt-6-luna` Standard input $0.10 /
+output $0.50 per 1M tokens. `output_tokens` already includes reasoning
+tokens, so reasoning is never added again. Totals and
+`estimated_cost_usd` are `None` unless every sent turn's usage is known
+(`usage_complete`); `known_cost_usd` sums the turns with known usage and
+is a lower bound otherwise. Cached-input and cache-write token counts are
+not captured, so all input is priced at the list input rate (the $0.01
+cached-input discount and the $0.125 cache-write rate are not applied).
+Re-verify prices before any live run.
+
+Clarification gaps fixed: planning events emit from `api/clarification.py`
+with the real group id for every path (rule-only, provider-unavailable,
+provider-exception, LLM-assisted), replacing the `pending` placeholder
+and the single LLM-success emission site removed from
+`clarification_service.py`.
+
+Tests: `tests/test_phase4_streaming_telemetry.py` and
+`tests/test_phase4_review_fixes.py` (regressions for the review
+findings, mutation-checked).
+
+Walkthrough: [Phase 4 streaming walkthrough](phase4-streaming-walkthrough.md)
+(`curl -N`, generation-disabled, offline). Live smoke (prepared, not
+run): [Phase 4 live smoke](phase4-live-smoke.md) (≤2 cases, exact
+model, verified pricing, reservation, ceiling, stop rules).

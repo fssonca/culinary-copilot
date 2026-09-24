@@ -36,7 +36,7 @@ def _body() -> dict[str, Any]:
         "id": "resp-stub-1",
         "object": "response",
         "created_at": 1758720000,
-        "model": "gpt-5-nano",
+        "model": "gpt-6-luna",
         "status": "completed",
         "output": [
             {
@@ -130,11 +130,11 @@ def test_sdk_level_alternation_across_loops(stub_url: str) -> None:
 
     async def one_call() -> None:
         await client.responses.parse(
-            model="gpt-5-nano",
+            model="gpt-6-luna",
             input=[{"role": "user", "content": "pick one"}],
             text_format=SelectionProposal,
             max_output_tokens=6500,
-            reasoning={"effort": "minimal"},
+            reasoning={"effort": "none"},
         )
 
     results = []

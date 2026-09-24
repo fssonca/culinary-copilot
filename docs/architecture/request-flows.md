@@ -17,6 +17,7 @@ Part of the [current architecture](README.md). These are the current code paths.
 | `POST /api/v1/clarification/groups/{group_id}/replan` | Explicit follow-up planning; at most five successful replans per request |
 | `POST /api/v1/retrieval/search` | Revision-pinned bounded evidence summaries for a ready clarification group (Phase 1; see `docs/retrieval.md`) |
 | `POST /api/v1/recommendations` | Revision-pinned grounded selection for a ready group: `recommendation` / `clarification` / `insufficient_evidence` (Phase 3; see `docs/recommendations.md`) |
+| `POST /api/v1/recommendations/stream` | Same body as above, `text/event-stream`: versioned `stage` / single `final` / single `error` events sharing the same service via a stage hook (Phase 4; see `docs/recommendations.md` + `docs/phase4-streaming-walkthrough.md`) |
 
 Retrieval returns ranked bounded summaries. Recommendations fetch
 complete documents by exact identity and server-render the selected
@@ -250,6 +251,40 @@ insufficient evidence. Failed responses carry no recipe content. Epicure
 suggestions are assessed after evidence (used as pairing notes only when
 present in the selected source, otherwise deferred) and never enter the
 rendered recipe.
+
+### 7b. Streaming the same workflow (SSE)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as Recommendations API (/stream)
+    participant S as In-memory store
+    participant W as Recommendation service (shared)
+    C->>A: group_id + revisions (same body)
+    A->>W: recommend_for_group(..., on_stage=sink, transport=sse)
+    alt Rejected before accepted (404/409/422/503)
+        W-->>A: exception
+        A-->>C: HTTP error, same status and body as the JSON endpoint
+    end
+    W-->>A: stage(accepted) ──► response starts; SSE stage seq 0
+    W-->>A: stage(readiness/epicure/retrieval/evidence) ──► SSE stages
+    W-->>A: stage(provider_request) then stage(provider_turn) per turn (numbers only) ──► SSE stages
+    W-->>A: stage(validation/revision_check) ──► SSE stages
+    alt Success (recommendation/clarification/insufficient_evidence)
+        W-->>A: validated body
+        A-->>C: exactly one final (same body as non-streaming)
+    else Failure / mid-run 409 / unexpected error / stream limit
+        W-->>A: failure (or cancelled by a limit)
+        A-->>C: exactly one error (status/reason/detail, no recipe; 500 internal_error if unexpected)
+    end
+    Note over C,W: Disconnect cancels the workflow with the reason; nothing is emitted after. The workflow emits one telemetry event per run, including cancelled runs.
+```
+
+One workflow, two transports: the non-streaming endpoint calls the
+same service with no hook. No model deltas, no provisional events.
+Bounds: `REC_STREAM_MAX_EVENTS`, `REC_STREAM_MAX_DURATION_S`,
+`REC_STREAM_KEEPALIVE_S`; overflow cancels and emits one terminal
+error. Telemetry (`obs/recommendations.py`) records both transports.
 
 ## 8. Source checks and review decisions
 

@@ -15,24 +15,30 @@ test -f .env || cp .env.example .env   # preserve existing settings; never commi
 | --- | --- | --- |
 | `LLM_INGESTION_ENABLED` | master switch | `false` |
 | `OPENAI_API_KEY` | secret (never logged) | empty |
-| `LLM_EXTRACTION_MODEL` | pinned model; CLI refuses silent substitution | `gpt-5-nano` |
-| `LLM_REASONING_EFFORT` | Responses reasoning effort (`low`…`max`, model-dependent); blank = server default | empty |
+| `LLM_EXTRACTION_MODEL` | pinned model from `llm/models.py`; CLI refuses silent substitution | `gpt-6-luna` |
+| `LLM_REASONING_EFFORT` | Responses reasoning effort, checked against the model at startup (`gpt-6-luna`: `none`/`low`/`medium`/`high`/`xhigh`/`max`); blank = server default (`medium`) | empty |
 | `LLM_BATCH_REQUEST_LIMIT` | max requests per prepare/retry | `200` |
-| `LLM_MAX_OUTPUT_TOKENS` | per-request output cap | `8000` (measured floor: gpt-5-nano spent 5120/6220 output tokens on reasoning for a 9-line recipe; 2000 always truncates) |
+| `LLM_MAX_OUTPUT_TOKENS` | per-request output cap | `8000` (measured floor on gpt-5-nano, historical: 5120/6220 output tokens went to reasoning for a 9-line recipe; 2000 always truncated; not re-measured on gpt-6-luna) |
 | `LLM_RETRY_LIMIT` | attempts before a record goes unresolved | `2` |
 | `LLM_AUDIT_SAMPLE_RATE` / `LLM_AUDIT_SEED` | deterministic audit sample of passed records | `0.0` / `20260707` |
 | `LLM_BUDGET_USD` | spend ceiling on the batch-discounted estimate | empty (check off) |
 | `LLM_PRICE_INPUT_PER_1M` / `LLM_PRICE_OUTPUT_PER_1M` | sync list prices | empty = cost unknown |
 
-Pricing assumptions (verified 2026-09-22): gpt-5-nano sync list prices
-input $0.05 / output $0.40 per 1M tokens
-(<https://developers.openai.com/api/docs/models/gpt-5-nano>); Batch costs
-50% of sync (<https://developers.openai.com/api/docs/guides/batch>).
+Pricing assumptions (verified 2026-09-24): gpt-6-luna Standard list prices
+input $0.10 / output $0.50 per 1M tokens (cached input $0.01, cache writes
+$0.125; <https://developers.openai.com/api/docs/pricing?latest-pricing=standard>);
+the estimator applies the Batch discount documented in
+<https://developers.openai.com/api/docs/guides/batch> (50% of sync when
+verified on 2026-09-22 for gpt-5-nano; re-check the Batch price for
+gpt-6-luna before a submit). Earlier runs and their costs used gpt-5-nano
+at $0.05 / $0.40.
 Estimates are labeled estimates, never exact. With prices unconfigured the
 estimator reports `unknown` and submit requires `--limit` plus `--yes`.
 
-Compatibility verified 2026-09-22: `gpt-5-nano` supports Batch, `/v1/responses`
-and structured outputs; batch bodies use `/v1/responses` with a strict
+Compatibility verified 2026-09-24: `gpt-6-luna` supports Batch, `/v1/responses`
+and structured outputs (the loaded corpus was extracted with `gpt-5-nano`,
+verified 2026-09-22; a batch run prepared with that model cannot be resumed
+under `gpt-6-luna`); batch bodies use `/v1/responses` with a strict
 `json_schema` text format (`recipe_extraction`; current local schema v5, prompt v6).
 The targeted extraction contract introduced in v4 remains in use: scripts preserve title, description, steps,
 servings, durations and notes, and the model resolves only flagged

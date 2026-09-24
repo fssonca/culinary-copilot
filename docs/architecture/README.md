@@ -18,9 +18,11 @@ The backend has four main jobs:
    bounded model to select, then validate and render recipe facts and propositions
    on the server.
 
-There is no frontend, vector retrieval, streaming, or autonomous agent
+There is no frontend, vector retrieval, or autonomous agent
 loop yet. Clarification readiness feeds the implemented recommendation
-workflow (source-grounded selection, backend-only). Phase 3's ordinary and
+workflow (source-grounded selection, backend-only), served over both
+non-streaming JSON and versioned SSE streaming (Phase 4, shared
+service). Phase 3's ordinary and
 native-tool paths have bounded live evidence and owner acceptance based on
 AI-assisted review. Structural admission does not certify completeness or
 practical usefulness; see [closure and limitations](../phase3-closure.md).
@@ -137,13 +139,15 @@ planning call” does not necessarily mean exactly one network attempt.
 | Substitution verification | Limited checks; suggestions remain unverified, not certified equivalents |
 | Durable conversations | Not implemented |
 | Recipe embeddings / pgvector | Not implemented; existing `search_vector` is PostgreSQL full text |
-| Recipe rewriting, scaling, streaming, web search, agent iteration | Not implemented; recommendations select and render stored sources |
+| Recipe rewriting, scaling, web search, agent loops | Not implemented; recommendations select and render stored sources |
+| Streaming | Implemented (Phase 4): `POST /api/v1/recommendations/stream` shares the recommendation service via a stage hook; versioned stage/final/error events, bounded duration/events, disconnect cancellation |
+| Complete telemetry | Implemented (Phase 4): correlated clarification + recommendation events with real ids, stage timings, per-turn usage and estimated cost from the model registry (gpt-6-luna); one event per run including cancelled runs; no message/recipe/secret logging |
 
 Important limits: conflict checks are keyword-based; source quote matching for
-inferred fields is substring-based, not semantic proof. Planning event logging
-exists, but early rule-only/error exits currently bypass the emission site; it
-is not complete per-request telemetry. The emitted planning group ID is currently
-`pending`, before a real group is created.
+inferred fields is substring-based, not semantic proof. Planning and
+recommendation event logging is complete per request (rule-only and error
+paths emit with real group ids; recommendation telemetry covers success,
+insufficient, error, and cancelled stream outcomes).
 
 ## 6. How to verify and navigate
 

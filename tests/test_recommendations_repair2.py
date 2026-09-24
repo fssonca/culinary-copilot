@@ -161,11 +161,12 @@ def test_reasoning_effort_is_sent_explicitly() -> None:
         provider.complete_recommendation(system="s", user="u", response_model=SelectionProposal)
     )
     assert stub.kwargs, "expected one provider call"
-    assert stub.kwargs[0].get("reasoning") == {"effort": "minimal"}
+    assert stub.kwargs[0].get("reasoning") == {"effort": "none"}
 
 
-def test_default_reasoning_effort_is_minimal() -> None:
-    assert _settings().llm_rec_reasoning_effort == "minimal"
+def test_default_reasoning_effort_is_supported_by_the_model() -> None:
+    # gpt-6-luna documents none/low/medium/high/xhigh/max, not "minimal".
+    assert _settings().llm_rec_reasoning_effort == "none"
 
 
 def test_output_cap_covers_measured_max_plus_reasoning_allowance() -> None:

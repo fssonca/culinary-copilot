@@ -277,7 +277,7 @@ def test_request_construction_valid_through_real_sdk() -> None:
                 "id": "resp-mock-1",
                 "object": "response",
                 "created_at": 1758720000,
-                "model": "gpt-5-nano",
+                "model": "gpt-6-luna",
                 "status": "completed",
                 "output": [
                     {
@@ -314,7 +314,7 @@ def test_request_construction_valid_through_real_sdk() -> None:
         )
     )
     assert outcome.ok is True
-    assert outcome.reasoning_effort == "minimal"
+    assert outcome.reasoning_effort == "none"
     assert outcome.parsed and outcome.parsed.get("candidate_label") == "1"
 
 

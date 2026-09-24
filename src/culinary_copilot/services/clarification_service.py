@@ -32,7 +32,6 @@ from culinary_copilot.llm.client import (
     ApplicationLlmProvider,
     ProviderDisabledError,
 )
-from culinary_copilot.obs.clarification import emit_planning_event
 from culinary_copilot.services.answers import init_state
 from culinary_copilot.services.hybrid_planner import (
     EvidenceItem,
@@ -297,25 +296,9 @@ async def plan_group(
     _apply_outcome(state, merged[:max_q], final_outcome, rule_blockers)
     # Epicure hint is best-effort observability only; never blocks planning.
     _ = await _maybe_epicure_hint(epicure=epicure, ingredient="")
-    emit_planning_event(
-        request_id=state.request_id,
-        group_id="pending",
-        planner_version=PLANNER_VERSION,
-        schema_version=CLARIFICATION_SCHEMA_VERSION,
-        rule_count=meta["rule_count"],
-        llm_count=meta["llm_count"],
-        planning_mode=meta["planning_mode"],
-        outcome=state.outcome.value,
-        model=meta["provider_model"],
-        input_tokens=meta["input_tokens"],
-        output_tokens=meta["output_tokens"],
-        latency_ms=meta["latency_ms"],
-        attempts=meta["attempts"] or 1,
-        provider_error=meta["provider_error"],
-        replan_count=state.replan_count,
-        message_chars=len(message or ""),
-        blockers=len(state.blockers),
-    )
+    # Telemetry is emitted by the API layer with the real group id (not
+    # "pending") for every path, including rule-only and error exits; see
+    # api/clarification.py. plan_group only returns meta.
     return merged[:max_q], meta
 
 

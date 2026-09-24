@@ -22,6 +22,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from pydantic import ValidationError
@@ -127,6 +129,29 @@ SIMPLE_TECHNIQUE_DISHES = frozenset({"toast", "boiled egg", "boiled eggs", "plai
 SIMPLE_TECHNIQUE_REASON = (
     "Simple-technique skip: single-ingredient preparation in the documented "
     "skip list; pairing suggestions add no selection value."
+)
+
+# Stage-reporting hook for streaming (Phase 4): one workflow, two
+# transports. The non-streaming endpoint passes no sink; the SSE endpoint
+# passes an async sink receiving (stage, detail). Stages carry counts and
+# stable codes only — never prompts, recipe content, or constraint values.
+# No provisional recipe fragments are emitted; there is no `provisional`
+# event. Allowed stages: accepted, readiness, epicure, retrieval,
+# evidence, provider_request, provider_turn, validation, revision_check.
+StageSink = Callable[[str, dict[str, Any]], Awaitable[None]]
+
+ALLOWED_STAGES = frozenset(
+    {
+        "accepted",
+        "readiness",
+        "epicure",
+        "retrieval",
+        "evidence",
+        "provider_request",
+        "provider_turn",
+        "validation",
+        "revision_check",
+    }
 )
 
 
@@ -506,6 +531,206 @@ def _epicure_section(
     return section
 
 
+async def _emit_stage(sink: StageSink | None, stage: str, detail: dict[str, Any]) -> None:
+    if sink is None:
+        return
+    if stage not in ALLOWED_STAGES:
+        return
+    await sink(stage, dict(detail))
+
+
+class _TurnLedger:
+    """Provider proxy that records each provider turn as it happens.
+
+    Emits ``provider_request`` before a turn is sent and ``provider_turn``
+    when it completes, and keeps per-turn usage for telemetry: completed
+    turns, the known usage of a failing turn, and turns completed before a
+    cancellation. Delegates every call unchanged to the wrapped provider.
+    """
+
+    def __init__(
+        self, provider: Any, stage: Callable[[str, dict[str, Any]], Awaitable[None]]
+    ) -> None:
+        self._provider = provider
+        self._stage = stage
+        self.turns: list[dict[str, Any]] = []
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._provider, name)
+
+    async def complete_recommendation(self, **kwargs: Any) -> Any:
+        return await self._call("complete_recommendation", _turn_record, kwargs)
+
+    async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+        return await self._call("complete_native_tool_turn", _native_turn_record, kwargs)
+
+    async def _call(
+        self, method: str, to_record: Callable[[Any], dict[str, Any]], kwargs: dict[str, Any]
+    ) -> Any:
+        number = len(self.turns) + 1
+        await self._stage("provider_request", {"turn": number})
+        try:
+            outcome = await getattr(self._provider, method)(**kwargs)
+        except asyncio.CancelledError:
+            # Whether the request reached the provider is unknown; so is usage.
+            self.turns.append(_ledger_entry(number, status="cancelled", request_sent=None))
+            raise
+        except BaseException as exc:
+            self.turns.append(
+                _ledger_entry(
+                    number,
+                    status="failed",
+                    request_sent=getattr(exc, "request_sent", None),
+                    attempts=getattr(exc, "attempts", None),
+                    input_tokens=getattr(exc, "input_tokens", None),
+                    output_tokens=getattr(exc, "output_tokens", None),
+                    reasoning_tokens=getattr(exc, "reasoning_tokens", None),
+                    response_id=getattr(exc, "response_id", None),
+                    failure=type(exc).__name__,
+                )
+            )
+            raise
+        record = to_record(outcome)
+        entry = _ledger_entry(
+            number,
+            status="completed",
+            request_sent=True,
+            attempts=record.get("attempts"),
+            latency_ms=record.get("latency_ms"),
+            input_tokens=record.get("input_tokens"),
+            output_tokens=record.get("output_tokens"),
+            reasoning_tokens=record.get("reasoning_tokens"),
+            response_id=record.get("response_id"),
+            tool_calls=int(record.get("tool_calls") or 0),
+        )
+        self.turns.append(entry)
+        await self._stage(
+            "provider_turn",
+            {"turn": number, "attempts": entry["attempts"], "tool_calls": entry["tool_calls"]},
+        )
+        return outcome
+
+
+def _ledger_entry(
+    number: int, *, status: str, request_sent: bool | None, **usage: Any
+) -> dict[str, Any]:
+    return {
+        "turn": number,
+        "status": status,
+        "request_sent": request_sent,
+        "attempts": usage.get("attempts"),
+        "latency_ms": usage.get("latency_ms"),
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        "reasoning_tokens": usage.get("reasoning_tokens"),
+        "response_id": usage.get("response_id"),
+        "tool_calls": int(usage.get("tool_calls") or 0),
+        "failure": usage.get("failure"),
+    }
+
+
+def _ledger_summary(turns: list[dict[str, Any]], model: str | None) -> dict[str, Any]:
+    """Usage totals and cost from per-turn records.
+
+    Turns known not to have been sent are excluded. Totals and the
+    estimated cost are None unless every other turn's usage is known;
+    ``known_cost_usd`` sums the turns whose usage is known (a lower bound
+    when some usage is unknown). ``output_tokens`` already includes
+    reasoning tokens, so reasoning is never added again.
+    """
+    from culinary_copilot.recommendations.pricing import estimate_cost_usd
+
+    counted = [t for t in turns if t["request_sent"] is not False]
+    known = [t for t in counted if t["input_tokens"] is not None and t["output_tokens"] is not None]
+    complete = len(known) == len(counted)
+
+    def _total(key: str) -> int | None:
+        if not complete or any(t[key] is None for t in counted):
+            return None
+        return sum(int(t[key]) for t in counted)
+
+    known_costs = [estimate_cost_usd(t["input_tokens"], t["output_tokens"], model) for t in known]
+    return {
+        "attempts": sum(int(t["attempts"] or 0) for t in turns),
+        "provider_turns": len(counted),
+        "tool_calls": sum(t["tool_calls"] for t in turns),
+        "input_tokens": _total("input_tokens"),
+        "output_tokens": _total("output_tokens"),
+        "reasoning_tokens": _total("reasoning_tokens"),
+        "response_ids": [str(t["response_id"]) for t in turns if t["response_id"]],
+        "usage_complete": complete,
+        "estimated_cost_usd": (
+            estimate_cost_usd(_total("input_tokens"), _total("output_tokens"), model)
+            if complete
+            else None
+        ),
+        "known_cost_usd": (
+            sum(c for c in known_costs if c is not None)
+            if known and all(c is not None for c in known_costs)
+            else None
+        ),
+    }
+
+
+def _emit_rec_telemetry(
+    *,
+    ctx: dict[str, Any],
+    settings: Settings,
+    request_id: str,
+    group_id: str,
+    request_revision: int | None,
+    group_revision: int | None,
+    endpoint: str,
+    transport: str,
+    outcome: str,
+    reason: str | None,
+    stage_timings_ms: dict[str, int],
+    total_latency_ms: int,
+    cancelled: bool = False,
+) -> None:
+    """Emit the one telemetry event for this run (usage from the ledger)."""
+    if ctx.get("emitted"):
+        return
+    ctx["emitted"] = True
+    try:
+        from culinary_copilot.obs.recommendations import emit_recommendation_event
+        from culinary_copilot.recommendations.pricing import app_price_for
+
+        model = settings.llm_rec_model
+        ledger: _TurnLedger | None = ctx.get("ledger")
+        turns = list(ledger.turns) if ledger is not None else []
+        summary = _ledger_summary(turns, model)
+        emit_recommendation_event(
+            request_id=request_id,
+            group_id=group_id,
+            request_revision=request_revision,
+            group_revision=group_revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome=outcome,
+            reason=reason,
+            model=model,
+            reasoning_effort=settings.llm_rec_reasoning_effort,
+            pricing_version=app_price_for(model)[2],
+            stage_timings_ms=dict(stage_timings_ms),
+            total_latency_ms=total_latency_ms,
+            attempts=summary["attempts"],
+            provider_turns=summary["provider_turns"],
+            tool_calls=summary["tool_calls"],
+            input_tokens=summary["input_tokens"],
+            output_tokens=summary["output_tokens"],
+            reasoning_tokens=summary["reasoning_tokens"],
+            response_ids=summary["response_ids"],
+            estimated_cost_usd=summary["estimated_cost_usd"],
+            known_cost_usd=summary["known_cost_usd"],
+            usage_complete=summary["usage_complete"],
+            turns=turns,
+            cancelled=cancelled,
+        )
+    except Exception:
+        pass
+
+
 async def recommend_for_group(
     *,
     store: Any,
@@ -519,12 +744,146 @@ async def recommend_for_group(
     limit: int = 3,
     dataset_id: str | None = None,
     tool_mode: bool = False,
+    on_stage: StageSink | None = None,
+    endpoint: str = "recommendations",
+    transport: str = "json",
 ) -> dict[str, Any]:
-    """Run the fixed recommendation workflow for one clarification group."""
+    """Run the fixed recommendation workflow for one clarification group.
+
+    ``on_stage`` is an optional async stage-reporting hook shared by the
+    non-streaming and SSE transports: both run this same workflow. Stages
+    carry counts and stable codes only.
+
+    Exactly one telemetry event is emitted per run, including runs that are
+    cancelled (a streaming client disconnect or a stream limit; the reason
+    travels as the cancellation message) or that end in an unexpected
+    error. Usage of provider turns completed before the end is kept.
+    """
+    ctx: dict[str, Any] = {
+        "start": time.perf_counter(),
+        "timings": {},
+        "ids": (
+            "unknown",
+            group_id,
+            expected_request_revision,
+            expected_group_revision,
+        ),
+        "emitted": False,
+    }
+
+    def _final_telemetry(outcome: str, reason: str, *, cancelled: bool = False) -> None:
+        request_id, grp, request_revision, group_revision = ctx["ids"]
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=request_id,
+            group_id=grp,
+            request_revision=request_revision,
+            group_revision=group_revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome=outcome,
+            reason=reason,
+            stage_timings_ms=dict(ctx["timings"]),
+            total_latency_ms=int((time.perf_counter() - ctx["start"]) * 1000),
+            cancelled=cancelled,
+        )
+
+    try:
+        return await _recommend_impl(
+            ctx=ctx,
+            store=store,
+            engine=engine,
+            settings=settings,
+            provider=provider,
+            epicure=epicure,
+            group_id=group_id,
+            expected_request_revision=expected_request_revision,
+            expected_group_revision=expected_group_revision,
+            limit=limit,
+            dataset_id=dataset_id,
+            tool_mode=tool_mode,
+            on_stage=on_stage,
+            endpoint=endpoint,
+            transport=transport,
+        )
+    except asyncio.CancelledError as exc:
+        reason = str(exc.args[0]) if exc.args and exc.args[0] else "cancelled"
+        _final_telemetry("cancelled", reason, cancelled=True)
+        raise
+    except RecommendationFailure as exc:
+        _final_telemetry("error", exc.reason)
+        raise
+    except RecommendationNotFoundError:
+        _final_telemetry("error", "unknown_group")
+        raise
+    except RecommendationStaleError:
+        _final_telemetry("error", "stale_revision")
+        raise
+    except ValueError:
+        _final_telemetry("error", "malformed")
+        raise
+    except Exception as exc:
+        _final_telemetry("error", f"internal_error:{type(exc).__name__}")
+        raise
+
+
+async def _recommend_impl(
+    *,
+    ctx: dict[str, Any],
+    store: Any,
+    engine: Any,
+    settings: Settings,
+    provider: Any,
+    epicure: Any,
+    group_id: str,
+    expected_request_revision: int,
+    expected_group_revision: int,
+    limit: int,
+    dataset_id: str | None,
+    tool_mode: bool,
+    on_stage: StageSink | None,
+    endpoint: str,
+    transport: str,
+) -> dict[str, Any]:
     from culinary_copilot.recipes.repository import SUPPORTED_DATASETS
+
+    _start = ctx["start"]
+    _stage_timings: dict[str, int] = ctx["timings"]
+    _last = _start
+
+    async def _stage(name: str, detail: dict[str, Any]) -> None:
+        nonlocal _last
+        now = time.perf_counter()
+        # Provider stages repeat per turn: key them by turn so tool mode
+        # keeps each turn's latency instead of overwriting it.
+        key = f"{name}_{detail['turn']}" if "turn" in detail else name
+        _stage_timings[key] = int((now - _last) * 1000)
+        _last = now
+        await _emit_stage(on_stage, name, detail)
+
+    def _elapsed_ms() -> int:
+        return int((time.perf_counter() - _start) * 1000)
+
+    _ledger = _TurnLedger(provider, _stage)
+    ctx["ledger"] = _ledger
 
     # Disabled generation fails before any network access (503).
     if not settings.llm_recommendation_enabled:
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id="unknown",
+            group_id=group_id,
+            request_revision=expected_request_revision,
+            group_revision=expected_group_revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason="generation_disabled",
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         raise RecommendationFailure(
             http_status=503,
             reason="generation_disabled",
@@ -535,22 +894,87 @@ async def recommend_for_group(
     if dataset_id is not None and (not dataset_id.strip() or dataset_id not in SUPPORTED_DATASETS):
         raise ValueError(f"Unsupported dataset_id; expected one of {sorted(SUPPORTED_DATASETS)}")
     if engine is None:
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id="unknown",
+            group_id=group_id,
+            request_revision=expected_request_revision,
+            group_revision=expected_group_revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason="corpus_unavailable",
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         raise RecommendationFailure(
             http_status=503, reason="corpus_unavailable", message="Recipe corpus unavailable"
         )
 
     snapshot = store.get_snapshot(group_id)
     if snapshot is None:
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id="unknown",
+            group_id=group_id,
+            request_revision=expected_request_revision,
+            group_revision=expected_group_revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason="unknown_group",
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         raise RecommendationNotFoundError("clarification group not found")
     state, group = snapshot
+    ctx["ids"] = (state.request_id, group.group_id, state.revision, group.revision)
     if expected_request_revision != state.revision or expected_group_revision != group.revision:
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason="stale_revision",
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         raise RecommendationStaleError(
             f"stale revision: have request={state.revision} group={group.revision}; "
             f"got request={expected_request_revision} group={expected_group_revision}"
         )
-    _require_current_group(store, state.request_id, group.group_id)
+    try:
+        _require_current_group(store, state.request_id, group.group_id)
+    except RecommendationStaleError:
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason="stale_revision",
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
+        raise
+    await _stage(
+        "accepted",
+        {"request_revision": state.revision, "group_revision": group.revision},
+    )
 
     ready, reason, blockers = evaluate_readiness(state)
+    await _stage("readiness", {"ready": bool(ready), "reason": str(reason)})
     unenforced = [
         target
         for target in SEARCH_UNENFORCED_TARGETS
@@ -568,6 +992,20 @@ async def recommend_for_group(
     if not ready:
         # Conflicting cooking requirements produce clarification (200),
         # never a concurrency 409.
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="clarification",
+            reason=str(reason),
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         return {
             **base,
             "outcome": RecommendationOutcome.CLARIFICATION.value,
@@ -599,6 +1037,7 @@ async def recommend_for_group(
             epicure_suggestions = []
             epicure_note = f"Epicure consultation failed: {type(exc).__name__}"
     epicure_degraded = epicure_outcome in (EpicureOutcome.DISABLED, EpicureOutcome.UNAVAILABLE)
+    await _stage("epicure", {"outcome": epicure_outcome.value, "degraded": epicure_degraded})
 
     # Retrieval (ranking reused unchanged) + complete source fetch by exact
     # identity. No store lock is held across this I/O.
@@ -607,6 +1046,21 @@ async def recommend_for_group(
     query = map_request_to_query(state, dataset_id=dataset_id)
     effective_limit = max(1, min(limit, settings.rec_candidate_count, settings.rec_candidate_max))
     if not query.query_text:
+        await _stage("retrieval", {"retrieved": 0, "fetched": 0})
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="insufficient_evidence",
+            reason=INSUFFICIENT_NO_CANDIDATES,
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         return {
             **base,
             "outcome": RecommendationOutcome.INSUFFICIENT_EVIDENCE.value,
@@ -623,10 +1077,38 @@ async def recommend_for_group(
             _search_sync, engine, query, effective_limit
         )
     except ValueError as exc:
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason="corpus_unavailable",
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         raise RecommendationFailure(
             http_status=503, reason="corpus_unavailable", message="Recipe corpus unavailable"
         ) from exc
     except Exception as exc:
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason="corpus_unavailable",
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         raise RecommendationFailure(
             http_status=503, reason="corpus_unavailable", message="Recipe corpus unavailable"
         ) from exc
@@ -652,6 +1134,10 @@ async def recommend_for_group(
         title = row.get("title") if isinstance(row.get("title"), str) else None
         raw_candidates.append(build_candidate(dataset_id=ds, source_id=sid, title=title, doc=doc))
 
+    await _stage(
+        "retrieval",
+        {"retrieved": len(rows), "fetched": len(raw_candidates), "fetch_failed": fetch_failed},
+    )
     if not raw_candidates:
         if fetch_failed:
             fail_reason = INSUFFICIENT_SOURCE_FETCH
@@ -662,6 +1148,20 @@ async def recommend_for_group(
                 f"No recipes matched query {query.query_text!r}. No constraints "
                 "were dropped or relaxed to force a match."
             )
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="insufficient_evidence",
+            reason=fail_reason,
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         return {
             **base,
             "outcome": RecommendationOutcome.INSUFFICIENT_EVIDENCE.value,
@@ -707,6 +1207,21 @@ async def recommend_for_group(
     ]
 
     if not eligible:
+        await _stage("evidence", {"kept": 0, "dropped": 0, "hard_excluded": hard_excluded})
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="insufficient_evidence",
+            reason=INSUFFICIENT_HARD_CONSTRAINT,
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         return {
             **base,
             "outcome": RecommendationOutcome.INSUFFICIENT_EVIDENCE.value,
@@ -772,6 +1287,21 @@ async def recommend_for_group(
         )["chars"]
 
     if not recommendable_only:
+        await _stage("evidence", {"kept": 0, "dropped": 0, "hard_excluded": hard_excluded})
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="insufficient_evidence",
+            reason=INSUFFICIENT_INCOMPLETE_ONLY,
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         return {
             **base,
             "outcome": RecommendationOutcome.INSUFFICIENT_EVIDENCE.value,
@@ -801,6 +1331,21 @@ async def recommend_for_group(
         total_fn=_selection_request_chars if not tool_mode else None,
     )
     if not kept:
+        await _stage("evidence", {"kept": 0, "dropped": dropped, "hard_excluded": hard_excluded})
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="insufficient_evidence",
+            reason=INSUFFICIENT_BUDGET_EXCEEDED,
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         return {
             **base,
             "outcome": RecommendationOutcome.INSUFFICIENT_EVIDENCE.value,
@@ -849,6 +1394,10 @@ async def recommend_for_group(
 
     max_turns = max(1, settings.rec_max_provider_turns)
 
+    await _stage(
+        "evidence",
+        {"kept": len(kept), "dropped": dropped, "hard_excluded": hard_excluded},
+    )
     try:
         candidate, turns, proposal, payload_sizes = await _select(
             tool_mode=tool_mode,
@@ -856,7 +1405,7 @@ async def recommend_for_group(
             labels=labels,
             engine=engine,
             settings=settings,
-            provider=provider,
+            provider=_ledger,
             dish=dish,
             pantry=pantry,
             ceiling=ceiling,
@@ -883,12 +1432,27 @@ async def recommend_for_group(
         exc.detail.setdefault("offered_candidates", offered_candidates)
         if tool_continuation:
             exc.detail.setdefault("tool_continuation", tool_continuation)
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason=exc.reason,
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         raise
 
     # Typed propositions: prerequisites checked against authoritative
     # request state and the selected source; failing optional ones are
     # omitted and recorded, never invalidating the selection.
     propositions = evaluate_propositions(proposal, candidate, facts)
+    await _stage("validation", {"rejected_propositions": len(propositions["rejected"])})
 
     # Suggestion assessment after evidence is available (deterministic).
     assessment = _assess_epicure_suggestions(epicure_suggestions, candidate)
@@ -898,18 +1462,78 @@ async def recommend_for_group(
     # held during I/O): intervening edits fail closed with 409.
     fresh = store.get_snapshot(group_id)
     if fresh is None:
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=state.revision,
+            group_revision=group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason="unknown_group",
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         raise RecommendationNotFoundError("clarification group not found")
     fresh_state, fresh_group = fresh
     if fresh_state.revision != state.revision or fresh_group.revision != group.revision:
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=fresh_state.revision,
+            group_revision=fresh_group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason="stale_revision",
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
         raise RecommendationStaleError(
             "stale revision: state changed while generating; "
             f"started at request={state.revision} group={group.revision}, "
             f"now request={fresh_state.revision} group={fresh_group.revision}; "
             "refetch the group and retry"
         )
-    _require_current_group(store, state.request_id, group.group_id)
+    try:
+        _require_current_group(store, state.request_id, group.group_id)
+    except RecommendationStaleError:
+        _emit_rec_telemetry(
+            ctx=ctx,
+            settings=settings,
+            request_id=state.request_id,
+            group_id=group.group_id,
+            request_revision=fresh_state.revision,
+            group_revision=fresh_group.revision,
+            endpoint=endpoint,
+            transport=transport,
+            outcome="error",
+            reason="stale_revision",
+            stage_timings_ms=dict(_stage_timings),
+            total_latency_ms=_elapsed_ms(),
+        )
+        raise
+    await _stage("revision_check", {"current": True})
 
     candidate_assessments = candidate.get("_assessments", [])
+    _emit_rec_telemetry(
+        ctx=ctx,
+        settings=settings,
+        request_id=state.request_id,
+        group_id=group.group_id,
+        request_revision=state.revision,
+        group_revision=group.revision,
+        endpoint=endpoint,
+        transport=transport,
+        outcome="recommendation",
+        reason=None,
+        stage_timings_ms=dict(_stage_timings),
+        total_latency_ms=_elapsed_ms(),
+    )
     return {
         **base,
         "outcome": RecommendationOutcome.RECOMMENDATION.value,

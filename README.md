@@ -72,10 +72,12 @@ modifying or committing the upstream assets. Revision is configured in `.env.exa
 
 ## OpenAI integration
 
-Add `OPENAI_API_KEY` to `.env` when ready. The configured default is
-[`gpt-5-nano`](https://developers.openai.com/api/docs/models/gpt-5-nano);
-[`gpt-5.6-luna`](https://developers.openai.com/api/docs/models/gpt-5.6-luna) is an
-alternative configuration. Adding a key alone enables nothing: ingestion calls
+Add `OPENAI_API_KEY` to `.env` when ready. Every model setting uses
+[`gpt-6-luna`](https://developers.openai.com/api/docs/models/gpt-6-luna); the
+registry in `src/culinary_copilot/llm/models.py` lists the supported models,
+their reasoning-effort values and verified prices, and configuration refuses any
+other model. Supporting another model means adding one verified entry there.
+Earlier phases were measured on `gpt-5-nano`; those results stay historical. Adding a key alone enables nothing: ingestion calls
 require `LLM_INGESTION_ENABLED=true` (see [hybrid ingestion](docs/hybrid-ingestion.md)
 for explicit enablement and budgets), and hybrid clarification planning requires
 the separate `LLM_ENABLED=true` (see [clarification backend](docs/clarification.md)).
