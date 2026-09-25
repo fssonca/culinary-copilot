@@ -3,6 +3,11 @@ from typing import Any
 from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from culinary_copilot.embeddings.registry import (
+    DEFAULT_EMBEDDING_MODEL,
+    embedding_spec,
+    require_supported_embedding_model,
+)
 from culinary_copilot.llm.models import DEFAULT_MODEL, model_spec, require_supported_model
 
 
@@ -92,6 +97,25 @@ class Settings(BaseSettings):
     rec_stream_max_events: int = 100
     rec_stream_max_duration_s: float = 120.0
     rec_stream_keepalive_s: float = 10.0
+    # Recipe-text embeddings (Phase 5, prepared offline). Separate registry
+    # from Luna text generation (embeddings/registry.py); query and corpus
+    # vectors must share the same model/dimension, enforced at startup.
+    # Disabled by default: full-text mode makes zero embedding calls.
+    embeddings_enabled: bool = False
+    embedding_model: str = DEFAULT_EMBEDDING_MODEL
+    embedding_dimension: int = 1536
+    embed_timeout_s: float = 20.0
+    embed_max_retries: int = 1
+    embed_batch_inputs: int = 64
+    embed_max_tokens_per_request: int = 300_000
+    embed_budget_usd: float | None = None
+    # Retrieval modes: fulltext (default) | vector | hybrid. Vector/hybrid
+    # require embeddings_enabled plus a pgvector-enabled database; otherwise
+    # they fail closed (no silent full-text fallback unless the caller
+    # explicitly requests it and the fallback is disclosed).
+    retrieval_mode: str = "fulltext"
+    retrieval_vector_candidates: int = 20
+    retrieval_rrf_k: int = 60
 
     @field_validator("llm_rec_reasoning_effort", mode="before")
     @classmethod
@@ -115,6 +139,11 @@ class Settings(BaseSettings):
     def _supported_model(cls, value: str) -> str:
         return require_supported_model(value.strip())
 
+    @field_validator("embedding_model", mode="after")
+    @classmethod
+    def _supported_embedding_model(cls, value: str) -> str:
+        return require_supported_embedding_model(value.strip())
+
     @model_validator(mode="after")
     def _effort_supported_by_model(self) -> "Settings":
         # Per-model support is documented (llm/models.py); refuse at startup
@@ -130,6 +159,15 @@ class Settings(BaseSettings):
                     f"{setting}={effort!r} is not supported by {model}; "
                     f"expected one of {list(spec.reasoning_efforts)}"
                 )
+        espec = embedding_spec(self.embedding_model)
+        if espec is not None and self.embedding_dimension != espec.dimension:
+            raise ValueError(
+                f"EMBEDDING_DIMENSION={self.embedding_dimension} does not match "
+                f"{self.embedding_model} registry dimension {espec.dimension}; "
+                "query and corpus vectors must share one model/dimension"
+            )
+        if self.retrieval_mode not in {"fulltext", "vector", "hybrid"}:
+            raise ValueError("RETRIEVAL_MODE must be one of fulltext, vector, hybrid")
         return self
 
     @field_validator(
@@ -137,6 +175,7 @@ class Settings(BaseSettings):
         "llm_price_input_per_1m",
         "llm_price_output_per_1m",
         "llm_reasoning_effort",
+        "embed_budget_usd",
         mode="before",
     )
     @classmethod

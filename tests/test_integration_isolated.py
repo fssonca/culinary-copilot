@@ -88,11 +88,10 @@ def engine():
             "001_recipes.sql",
             "002_search_version.sql",
             "003_quarantine_status.sql",
+            "004_recipe_embeddings.sql",
         ]
         with eng.begin() as conn:
-            for migration in migrations:
-                for statement in import_data.split_sql_statements(migration.read_text()):
-                    conn.execute(text(statement))
+            import_data.apply_migrations(conn)
         yield eng
         eng.dispose()
         maint = create_engine(maint_url, isolation_level="AUTOCOMMIT")

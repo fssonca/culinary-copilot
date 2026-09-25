@@ -173,4 +173,14 @@ commands, and invariance checks. Do not run it before explicit go-ahead.
 
 `limit` 1–10 (default 5); query text truncated to 500 chars; excerpts to 600
 chars; ingredient names to 30 per record. Full-text search remains the default;
-there are no vectors, no hybrid fusion, and no pgvector tables in Phase 1.
+Phase 5 vector/hybrid code is prepared offline (`recipes/vector_search.py`,
+`embeddings/`, migration `004` skipped on stock Postgres) and inactive until
+the approved pgvector activation and embedding job (see
+[execution package](phase5-execution-package.md)). No vectors are queried in
+production paths; fake-vector tests prove plumbing only, never relevance.
+
+Ready retrieval responses carry two additive keys: `retrieval_mode`
+(`fulltext` | `vector` | `hybrid`; default `fulltext`, which makes zero
+embedding calls) and `retrieval_fallback` (null, or a disclosure string such
+as `fulltext (embeddings unavailable, disclosed)` when an explicitly
+allowed fallback was used — never silent).

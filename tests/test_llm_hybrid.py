@@ -707,11 +707,8 @@ def test_load_boundary_isolated_postgres(tmp_path):
             conn.execute(text('CREATE DATABASE "culinary_test_hybrid"'))
         maint.dispose()
         engine = create_engine(test_url)
-        migrations = sorted(import_data.MIGRATIONS_DIR.glob("*.sql"), key=lambda p: p.name)
         with engine.begin() as conn:
-            for migration in migrations:
-                for statement in import_data.split_sql_statements(migration.read_text()):
-                    conn.execute(text(statement))
+            import_data.apply_migrations(conn)
     except Exception as exc:
         pytest.skip(f"PostgreSQL unavailable: {exc!r}")
     try:
@@ -816,11 +813,10 @@ def test_load_persists_fully_rejected_rows_with_status(tmp_path):
             "001_recipes.sql",
             "002_search_version.sql",
             "003_quarantine_status.sql",
+            "004_recipe_embeddings.sql",
         ]
         with engine.begin() as conn:
-            for migration in migrations:
-                for statement in import_data.split_sql_statements(migration.read_text()):
-                    conn.execute(text(statement))
+            import_data.apply_migrations(conn)
     except Exception as exc:
         pytest.skip(f"PostgreSQL unavailable: {exc!r}")
     try:
@@ -978,7 +974,13 @@ def test_load_apply_schema_upgrades_and_is_idempotent(tmp_path):
                     text("SELECT version FROM recipe_schema_migrations ORDER BY 1")
                 ).all()
             ]
-            assert versions == ["001", "002", "003"]
+            # Stock server skips 004; pgvector-capable server applies it.
+            assert versions in (["001", "002", "003"], ["001", "002", "003", "004"])
+            if "004" in versions:
+                assert (
+                    conn.execute(text("SELECT to_regclass('recipe_embeddings')")).scalar_one()
+                    is not None
+                )
             assert (
                 conn.execute(
                     text(

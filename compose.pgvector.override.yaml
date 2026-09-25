@@ -1,0 +1,8 @@
+services:
+  db:
+    # Phase 5 activation override only — do NOT merge into compose.yaml yet.
+    # Preserves the volume and Postgres 17 major version; adds pgvector.
+    # Pinned by digest (owner checkpoint 3, 2026-09-24), never the moving tag:
+    # pgvector/pgvector:pg17-trixie, Debian 13 trixie, glibc 2.41,
+    # PostgreSQL 17.11, pgvector 0.8.6.
+    image: pgvector/pgvector:pg17-trixie@sha256:724a4041afdb1750446e3f6b5cfa8f3b0ac5a2cf538ddfa6bfee4f94c2fa85c6

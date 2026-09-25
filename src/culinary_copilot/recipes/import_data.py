@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -226,8 +227,42 @@ def audit(
     )
 
 
-def apply_migrations(conn: Any) -> list[str]:
-    """Apply pending versioned migrations with checksum pinning. Returns applied versions."""
+def _migration_required_extension(migration: Path) -> str | None:
+    """Return the extension named by a ``requires-extension:`` header, if any."""
+    for line in migration.read_text(encoding="utf-8").splitlines()[:10]:
+        stripped = line.strip().lstrip("-# ").strip()
+        if stripped.lower().startswith("requires-extension:"):
+            return stripped.split(":", 1)[1].strip()
+    return None
+
+
+def _extension_available(conn: Any, extension: str) -> bool:
+    """True when ``extension`` is installed or installable on this database."""
+    try:
+        row = conn.execute(
+            text(
+                "SELECT 1 FROM pg_available_extensions WHERE name=:name "
+                "UNION SELECT 1 FROM pg_extension WHERE extname=:name LIMIT 1"
+            ),
+            {"name": extension},
+        ).scalar_one_or_none()
+    except Exception:
+        return False
+    return row is not None
+
+
+def apply_migrations(conn: Any, listener: Callable[[str], None] | None = None) -> list[str]:
+    """Apply pending versioned migrations with checksum pinning. Returns applied versions.
+
+    Vector-tagged migrations (``requires-extension: vector`` header, e.g.
+    ``004``) are skipped — never partially applied — when the extension is
+    unavailable on stock ``postgres:17``. Full-text-only operation is
+    preserved; activation requires the pgvector image override. Skipped
+    migrations stay pending and are applied on a pgvector-enabled database.
+    Each skip is reported through ``listener`` (called with one human-
+    readable reason string per skipped migration) when provided, so callers
+    such as the migration-only CLI can surface the reason.
+    """
     conn.execute(
         text(
             "CREATE TABLE IF NOT EXISTS recipe_schema_migrations "
@@ -243,6 +278,15 @@ def apply_migrations(conn: Any) -> list[str]:
             {"v": version},
         ).scalar_one_or_none()
         if previous is None:
+            required = _migration_required_extension(migration)
+            if required is not None and not _extension_available(conn, required):
+                if listener is not None:
+                    listener(
+                        f"skipped {version} ({migration.name}): requires extension "
+                        f"'{required}', unavailable on this database; "
+                        "full-text-only operation preserved"
+                    )
+                continue
             for statement in split_sql_statements(migration.read_text()):
                 conn.execute(text(statement))
             conn.execute(
@@ -253,6 +297,26 @@ def apply_migrations(conn: Any) -> list[str]:
         elif previous != digest:
             raise ValueError(f"Applied migration {version} changed; create a new migration")
     return applied
+
+
+def pending_vector_migrations(conn: Any) -> list[str]:
+    """Versions skipped for a missing extension (informational, no writes)."""
+    pending: list[str] = []
+    for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+        version = migration.name.split("_", 1)[0]
+        try:
+            exists = conn.execute(
+                text("SELECT 1 FROM recipe_schema_migrations WHERE version=:v"),
+                {"v": version},
+            ).scalar_one_or_none()
+        except Exception:
+            return []
+        if exists is not None:
+            continue
+        required = _migration_required_extension(migration)
+        if required is not None and not _extension_available(conn, required):
+            pending.append(version)
+    return pending
 
 
 def persist(

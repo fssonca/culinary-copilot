@@ -315,8 +315,21 @@ async def retrieve_for_group(
     expected_group_revision: int,
     limit: int = DEFAULT_LIMIT,
     dataset_id: str | None = None,
+    mode: str = "fulltext",
+    embed_provider: Any = None,
+    embedding_model: str = "text-embedding-3-small",
+    embedding_dimension: int = 1536,
+    vector_candidates_n: int = 20,
+    rrf_k: int = 60,
+    allow_fallback: bool = False,
 ) -> dict[str, Any]:
-    """Run retrieval for one clarification group; see module docstring."""
+    """Run retrieval for one clarification group; see module docstring.
+
+    ``mode="fulltext"`` (default) makes zero embedding calls. ``vector`` /
+    ``hybrid`` embed the query via ``embed_provider`` and fail closed unless
+    ``allow_fallback`` is set, in which case a disclosed full-text fallback
+    is used.
+    """
     if not 1 <= limit <= MAX_LIMIT:
         raise ValueError(f"limit must be between 1 and {MAX_LIMIT}")
     if engine is None:
@@ -400,7 +413,28 @@ async def retrieve_for_group(
         }
 
     try:
-        rows: list[dict[str, Any]] = await asyncio.to_thread(_search_sync, engine, query, limit)
+        if mode == "fulltext":
+            rows: list[dict[str, Any]] = await asyncio.to_thread(_search_sync, engine, query, limit)
+            retrieval_mode: str = "fulltext"
+            retrieval_fallback: str | None = None
+        else:
+            from culinary_copilot.retrieval.hybrid import retrieve_with_mode
+
+            outcome = await retrieve_with_mode(
+                engine,
+                query,
+                limit=limit,
+                mode=mode,
+                provider=embed_provider,
+                model=embedding_model,
+                dimension=embedding_dimension,
+                vector_candidates_n=vector_candidates_n,
+                rrf_k=rrf_k,
+                allow_fallback=allow_fallback,
+            )
+            rows = list(outcome["rows"])
+            retrieval_mode = str(outcome["mode"])
+            retrieval_fallback = outcome["fallback"]
     except ValueError as exc:
         raise ValueError(str(exc)) from None
     except Exception as exc:
@@ -455,6 +489,8 @@ async def retrieve_for_group(
     return {
         **base,
         "outcome": "ready",
+        "retrieval_mode": retrieval_mode,
+        "retrieval_fallback": retrieval_fallback,
         "datasets_searched": datasets_searched,
         "datasets_in_results": datasets_in_results,
         "query": {

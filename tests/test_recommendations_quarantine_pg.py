@@ -65,9 +65,7 @@ def engine():
     eng = create_engine(test_url)
     try:
         with eng.begin() as conn:
-            for migration in sorted(import_data.MIGRATIONS_DIR.glob("*.sql")):
-                for statement in import_data.split_sql_statements(migration.read_text()):
-                    conn.execute(text(statement))
+            import_data.apply_migrations(conn)
         yield eng
     finally:
         eng.dispose()

@@ -79,9 +79,7 @@ def engine():
         maint.dispose()
         eng = create_engine(test_url)
         with eng.begin() as conn:
-            for migration in sorted(import_data.MIGRATIONS_DIR.glob("*.sql"), key=lambda p: p.name):
-                for statement in import_data.split_sql_statements(migration.read_text()):
-                    conn.execute(text(statement))
+            import_data.apply_migrations(conn)
             for dataset in (FOODCOM, FOODIE):
                 conn.execute(
                     text("""
