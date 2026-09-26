@@ -1,6 +1,12 @@
 services:
   db:
-    image: postgres:17
+    # Pinned pgvector image (Phase 6): the application database already runs
+    # this exact digest with migration 004 applied (vector extension +
+    # recipe_embeddings). Reverting to stock `postgres:17` is UNSAFE: the
+    # stock image cannot load `vector` objects and the database would fail
+    # to start. Recover via the documented revert SQL or a verified backup,
+    # never by swapping the image alone.
+    image: pgvector/pgvector:pg17-trixie@sha256:724a4041afdb1750446e3f6b5cfa8f3b0ac5a2cf538ddfa6bfee4f94c2fa85c6
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-culinary_copilot}
       POSTGRES_USER: ${POSTGRES_USER:-copilot}

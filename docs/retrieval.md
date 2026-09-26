@@ -172,15 +172,47 @@ commands, and invariance checks. Do not run it before explicit go-ahead.
 ## Limits
 
 `limit` 1–10 (default 5); query text truncated to 500 chars; excerpts to 600
-chars; ingredient names to 30 per record. Full-text search remains the default;
-Phase 5 vector/hybrid code is prepared offline (`recipes/vector_search.py`,
-`embeddings/`, migration `004` skipped on stock Postgres) and inactive until
-the approved pgvector activation and embedding job (see
-[execution package](phase5-execution-package.md)). No vectors are queried in
-production paths; fake-vector tests prove plumbing only, never relevance.
+chars; ingredient names to 30 per record. Full-text search remains the
+default; see [ADR 0001](adr/0001-retrieval-default.md) for the recorded
+Phase 6 outcome (winner `vector_c`, default not flipped).
 
-Ready retrieval responses carry two additive keys: `retrieval_mode`
+Ready retrieval responses carry additive keys: `retrieval_mode`
 (`fulltext` | `vector` | `hybrid`; default `fulltext`, which makes zero
-embedding calls) and `retrieval_fallback` (null, or a disclosure string such
+embedding calls), `retrieval_fallback` (null, or a disclosure string such
 as `fulltext (embeddings unavailable, disclosed)` when an explicitly
-allowed fallback was used — never silent).
+allowed fallback was used — never silent),
+`retrieval_abstention_reason` (`vector_cutoff_abstention` when a
+configured cosine-distance cutoff removed every vector result and the
+result is empty — an explicit abstention, never an error and never a
+silent full-text fallback), `retrieval_vector_cutoff` and
+`retrieval_fulltext_gate`.
+
+Settings (validated, but **not yet read by any request path**):
+- `RETRIEVAL_MODE`;
+- `RETRIEVAL_VECTOR_CANDIDATES` (default 20);
+- `RETRIEVAL_RRF_K` (default 60);
+- `RETRIEVAL_VECTOR_CUTOFF`: blank means no cutoff. Hybrid applies it to
+  vector results before fusion and keeps full-text results exactly as they
+  are.
+- `RETRIEVAL_FULLTEXT_GATE`: hybrid adds vector results only when
+  full-text returned at least one result.
+
+The HTTP endpoint calls `retrieve_for_group` with its full-text default, so
+`retrieval_mode` is always `fulltext` in API responses today. Vector and
+hybrid are reachable only through the service parameters, which the
+Phase 6 harness and the tests use. Adopting a mode needs the wiring
+described in [ADR 0001](adr/0001-retrieval-default.md).
+
+## Phase 6 blind comparison (summary)
+
+Frozen three-mode comparison on 20 adversarial blind requests
+(owner-judged; full report in [scoreboard](scoreboard.md), freeze record
+in `evals/results/phase6/freeze.json`). Winner `vector_c` (cutoff 0.66):
+blind HitRate@5 0.812 vs 0.438, MRR 0.703 vs 0.359, nDCG 0.856 vs
+0.426, zero violations, clean abstention 1.000; the vector-vs-hybrid
+tie-break rests on 2 of 16 requests. Runtime cost of vector modes: one
+paid embedding per search (measured p50 ~565–645 ms); embedding outage
+fails closed. Database: `compose.yaml` pins
+`pgvector/pgvector:pg17-trixie@sha256:724a…c2fa85c6` (the stock
+`postgres:17` image cannot start this database now that migration 004
+exists — reverting the image alone is unsafe).

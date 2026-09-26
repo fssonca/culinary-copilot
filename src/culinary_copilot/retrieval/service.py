@@ -322,13 +322,19 @@ async def retrieve_for_group(
     vector_candidates_n: int = 20,
     rrf_k: int = 60,
     allow_fallback: bool = False,
+    vector_distance_cutoff: float | None = None,
+    fulltext_gate: bool = False,
 ) -> dict[str, Any]:
     """Run retrieval for one clarification group; see module docstring.
 
     ``mode="fulltext"`` (default) makes zero embedding calls. ``vector`` /
     ``hybrid`` embed the query via ``embed_provider`` and fail closed unless
     ``allow_fallback`` is set, in which case a disclosed full-text fallback
-    is used.
+    is used. ``vector_distance_cutoff`` (None = no cutoff) keeps only vector
+    results with cosine distance <= cutoff; a cutoff-empty vector result is
+    an explicit abstention (``retrieval_abstention_reason``), never a silent
+    fallback. ``fulltext_gate`` (hybrid only) adds vector results only when
+    full-text returned at least one result.
     """
     if not 1 <= limit <= MAX_LIMIT:
         raise ValueError(f"limit must be between 1 and {MAX_LIMIT}")
@@ -417,6 +423,7 @@ async def retrieve_for_group(
             rows: list[dict[str, Any]] = await asyncio.to_thread(_search_sync, engine, query, limit)
             retrieval_mode: str = "fulltext"
             retrieval_fallback: str | None = None
+            retrieval_abstention: str | None = None
         else:
             from culinary_copilot.retrieval.hybrid import retrieve_with_mode
 
@@ -431,10 +438,13 @@ async def retrieve_for_group(
                 vector_candidates_n=vector_candidates_n,
                 rrf_k=rrf_k,
                 allow_fallback=allow_fallback,
+                vector_distance_cutoff=vector_distance_cutoff,
+                fulltext_gate=fulltext_gate,
             )
             rows = list(outcome["rows"])
             retrieval_mode = str(outcome["mode"])
             retrieval_fallback = outcome["fallback"]
+            retrieval_abstention = outcome.get("abstention_reason")
     except ValueError as exc:
         raise ValueError(str(exc)) from None
     except Exception as exc:
@@ -491,6 +501,9 @@ async def retrieve_for_group(
         "outcome": "ready",
         "retrieval_mode": retrieval_mode,
         "retrieval_fallback": retrieval_fallback,
+        "retrieval_abstention_reason": retrieval_abstention,
+        "retrieval_vector_cutoff": vector_distance_cutoff,
+        "retrieval_fulltext_gate": fulltext_gate,
         "datasets_searched": datasets_searched,
         "datasets_in_results": datasets_in_results,
         "query": {

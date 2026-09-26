@@ -15,6 +15,7 @@ from typing import Any
 
 from culinary_copilot.embeddings.provider import EmbeddingProvider
 from culinary_copilot.embeddings.query import embed_query
+from culinary_copilot.recipes.vector_search import VECTOR_CUTOFF_ABSTENTION
 
 
 async def retrieve_with_mode(
@@ -30,14 +31,39 @@ async def retrieve_with_mode(
     vector_candidates_n: int = 20,
     rrf_k: int = 60,
     allow_fallback: bool = False,
+    vector_distance_cutoff: float | None = None,
+    fulltext_gate: bool = False,
 ) -> dict[str, Any]:
-    """Run one retrieval mode; returns rows plus mode metadata."""
-    from culinary_copilot.recipes.vector_search import rrf_fuse, vector_candidates
+    """Run one retrieval mode; returns rows plus mode metadata.
+
+    ``vector_distance_cutoff`` (None = no cutoff, current behaviour) keeps
+    only vector results with cosine distance <= cutoff. ``fulltext_gate``
+    (hybrid only) adds vector results only when full-text returned at least
+    one result. A cutoff-empty vector result is an explicit abstention with
+    reason ``vector_cutoff_abstention`` — never an error and never a silent
+    full-text fallback. Hybrid carries the same reason when the cutoff
+    removed every vector result and the fused result is empty.
+    """
+    from culinary_copilot.recipes.vector_search import (
+        apply_vector_cutoff,
+        rrf_fuse,
+        vector_candidates,
+    )
     from culinary_copilot.retrieval.service import _search_sync
 
     if mode == "fulltext":
         rows = await asyncio.to_thread(_search_sync, engine, query, limit)
-        return {"mode": "fulltext", "rows": rows, "fallback": None}
+        return {
+            "mode": "fulltext",
+            "rows": rows,
+            "fallback": None,
+            "abstention_reason": None,
+            "fulltext_count": len(rows),
+            "vector_count_raw": 0,
+            "vector_count_kept": 0,
+            "vector_distance_cutoff": vector_distance_cutoff,
+            "fulltext_gate": fulltext_gate,
+        }
     if mode not in {"vector", "hybrid"}:
         raise ValueError("mode must be one of fulltext, vector, hybrid")
     query_vector = await embed_query(
@@ -69,9 +95,44 @@ async def retrieve_with_mode(
         dimension=dimension,
     )
     if mode == "vector":
-        return {"mode": "vector", "rows": vector_rows, "fallback": None}
+        kept = apply_vector_cutoff(vector_rows, vector_distance_cutoff)
+        abstention = (
+            VECTOR_CUTOFF_ABSTENTION
+            if vector_distance_cutoff is not None and vector_rows and not kept
+            else None
+        )
+        return {
+            "mode": "vector",
+            "rows": kept[:limit],
+            "fallback": None,
+            "abstention_reason": abstention,
+            "fulltext_count": 0,
+            "vector_count_raw": len(vector_rows),
+            "vector_count_kept": len(kept),
+            "vector_distance_cutoff": vector_distance_cutoff,
+            "fulltext_gate": fulltext_gate,
+        }
     fulltext_rows = await asyncio.to_thread(
         _search_sync, engine, query, max(limit, vector_candidates_n)
     )
-    fused = rrf_fuse(fulltext_rows, vector_rows, k=rrf_k, limit=limit)
-    return {"mode": "hybrid", "rows": fused, "fallback": None}
+    kept = apply_vector_cutoff(vector_rows, vector_distance_cutoff)
+    vector_input = kept
+    if fulltext_gate and not fulltext_rows:
+        vector_input = []
+    fused = rrf_fuse(fulltext_rows, vector_input, k=rrf_k, limit=limit)
+    hybrid_abstention = (
+        VECTOR_CUTOFF_ABSTENTION
+        if vector_distance_cutoff is not None and vector_rows and not kept and not fused
+        else None
+    )
+    return {
+        "mode": "hybrid",
+        "rows": fused,
+        "fallback": None,
+        "abstention_reason": hybrid_abstention,
+        "fulltext_count": len(fulltext_rows),
+        "vector_count_raw": len(vector_rows),
+        "vector_count_kept": len(kept),
+        "vector_distance_cutoff": vector_distance_cutoff,
+        "fulltext_gate": fulltext_gate,
+    }

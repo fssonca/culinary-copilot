@@ -1,0 +1,257 @@
+{
+  "freeze": "phase6-config-freeze-v1",
+  "cutoff_selection": {
+    "rule": "highest hybrid-(c) HitRate@5 with NonFoodAbstention>=0.90; ties MRR@5 then looser cutoff",
+    "chosen_cutoff": 0.66,
+    "constraint_met": true,
+    "grid": [
+      null,
+      0.2,
+      0.21,
+      0.22,
+      0.23,
+      0.24,
+      0.25,
+      0.26,
+      0.27,
+      0.28,
+      0.29,
+      0.3,
+      0.31,
+      0.32,
+      0.33,
+      0.34,
+      0.35,
+      0.36,
+      0.37,
+      0.38,
+      0.39,
+      0.4,
+      0.41,
+      0.42,
+      0.43,
+      0.44,
+      0.45,
+      0.46,
+      0.47,
+      0.48,
+      0.49,
+      0.5,
+      0.51,
+      0.52,
+      0.53,
+      0.54,
+      0.55,
+      0.56,
+      0.57,
+      0.58,
+      0.59,
+      0.6,
+      0.61,
+      0.62,
+      0.63,
+      0.64,
+      0.65,
+      0.66,
+      0.67,
+      0.68,
+      0.69,
+      0.7,
+      0.71,
+      0.72,
+      0.73,
+      0.74,
+      0.75,
+      0.76,
+      0.77,
+      0.78,
+      0.79,
+      0.8,
+      0.81,
+      0.82,
+      0.83,
+      0.84,
+      0.85,
+      0.86,
+      0.87,
+      0.88,
+      0.89,
+      0.9,
+      0.91,
+      0.92,
+      0.93,
+      0.94,
+      0.95,
+      0.96,
+      0.97,
+      0.98,
+      0.99,
+      1.0
+    ]
+  },
+  "configurations": {
+    "fulltext": {
+      "params": {
+        "model": "text-embedding-3-small",
+        "dimension": 1536,
+        "renderer_version": "1",
+        "chunking_version": "1",
+        "rrf_k": 60,
+        "vector_candidates_n": 20,
+        "derived_limit": 5,
+        "allow_fallback": false,
+        "mode": "fulltext",
+        "note": "frozen Phase 2 baseline, unchanged"
+      },
+      "sha256": "51c05ede63295ac9e3d943d4cacb9427498c818dfc73d4614dd582c0cc6461c5"
+    },
+    "vector_a": {
+      "params": {
+        "model": "text-embedding-3-small",
+        "dimension": 1536,
+        "renderer_version": "1",
+        "chunking_version": "1",
+        "rrf_k": 60,
+        "vector_candidates_n": 20,
+        "derived_limit": 5,
+        "allow_fallback": false,
+        "mode": "vector",
+        "filter": "none"
+      },
+      "sha256": "2b6e93e05e94098e7c2619060ef4b982a26603b5c7caeeb0a15ac67f97f49f62"
+    },
+    "hybrid_a": {
+      "params": {
+        "model": "text-embedding-3-small",
+        "dimension": 1536,
+        "renderer_version": "1",
+        "chunking_version": "1",
+        "rrf_k": 60,
+        "vector_candidates_n": 20,
+        "derived_limit": 5,
+        "allow_fallback": false,
+        "mode": "hybrid",
+        "filter": "none"
+      },
+      "sha256": "59c0c15143500646166b836f5cd64e7dfdfe7a68515d97a2819784882c02a496"
+    },
+    "hybrid_b": {
+      "params": {
+        "model": "text-embedding-3-small",
+        "dimension": 1536,
+        "renderer_version": "1",
+        "chunking_version": "1",
+        "rrf_k": 60,
+        "vector_candidates_n": 20,
+        "derived_limit": 5,
+        "allow_fallback": false,
+        "mode": "hybrid",
+        "filter": "fulltext-gate"
+      },
+      "sha256": "d82f651c5741aca2a1a2921c8d1514f2cfa5a7a35e537ab8c396e0330391dd23"
+    },
+    "vector_c": {
+      "params": {
+        "model": "text-embedding-3-small",
+        "dimension": 1536,
+        "renderer_version": "1",
+        "chunking_version": "1",
+        "rrf_k": 60,
+        "vector_candidates_n": 20,
+        "derived_limit": 5,
+        "allow_fallback": false,
+        "mode": "vector",
+        "filter": "cutoff",
+        "vector_distance_cutoff": 0.66
+      },
+      "sha256": "f1b185dc7e5fb29cb31c0268d681af8eca1cc33cc534ec0e55798ef11c1c49a0"
+    },
+    "hybrid_c": {
+      "params": {
+        "model": "text-embedding-3-small",
+        "dimension": 1536,
+        "renderer_version": "1",
+        "chunking_version": "1",
+        "rrf_k": 60,
+        "vector_candidates_n": 20,
+        "derived_limit": 5,
+        "allow_fallback": false,
+        "mode": "hybrid",
+        "filter": "cutoff",
+        "vector_distance_cutoff": 0.66
+      },
+      "sha256": "717ab6310ac7b75c8e3f5cdc57c91b69c6d8e477743fa1a6f499b3115d1d9391"
+    }
+  },
+  "code_revision": "02b5eba",
+  "dirty_tree": "M .env.example\n M .gitignore\n M compose.pgvector.override.yaml\n M compose.yaml\n M src/culinary_copilot/config.py\n M src/culinary_copilot/recipes/vector_search.py\n M src/culinary_copilot/retrieval/hybrid.py\n M src/culinary_copilot/retrieval/service.py\n?? evals/cases/phase6_dev_additions.json\n?? scripts/retrieval_eval/analyze_phase6.py\n?? scripts/retrieval_eval/build_phase6_labelling_view.py\n?? scripts/retrieval_eval/phase6_cases.py\n?? scripts/retrieval_eval/phase6_eval.py\n?? scripts/retrieval_eval/run_phase6.py\n?? tests/test_phase6_eval.py\n?? tests/test_retrieval_cutoff.py",
+  "corpus_fingerprint": {
+    "pg": "PostgreSQL 17.11",
+    "recipes_total": 16033,
+    "by_dataset": [
+      [
+        "AkashPS11/recipes_data_food.com",
+        1216
+      ],
+      [
+        "odunola/foodie",
+        14817
+      ]
+    ],
+    "imports": [
+      [
+        "AkashPS11/recipes_data_food.com",
+        "aa68f5bf9c9f33a9fe4624e180d9e80a2030c675",
+        "2"
+      ],
+      [
+        "odunola/foodie",
+        "20a451c2a8f22e9161a13346f08e0d7cdd555727",
+        "3"
+      ]
+    ],
+    "quarantine_total": 443,
+    "search_renderer": "1",
+    "search_document_versions": [
+      [
+        "1",
+        16033
+      ]
+    ],
+    "vectors_total": 16033,
+    "embedding_model": "text-embedding-3-small",
+    "embedding_dimension": 1536,
+    "embed_renderer": "1",
+    "chunking_version": "1"
+  },
+  "model": "text-embedding-3-small",
+  "dimension": 1536,
+  "renderer": "1",
+  "eval_files": [
+    "/Users/fernandosousa/Documents/DEV/culinary-copilot/evals/cases/phase1_retrieval.json",
+    "/Users/fernandosousa/Documents/DEV/culinary-copilot/evals/cases/phase6_dev_additions.json"
+  ],
+  "eval_set_hash": "74b4dbd9f61fcde302ca07a3f6b191cbec7c4d9adca9aa5b6c3ed1a3afb1d3a7",
+  "dev_label_layer": {
+    "file": "data/phase6/phase6_dev_labels_v1.json (ignored, recipe-adjacent)",
+    "sha256": "a728b03ae1da2b1bf12d36f38ea25a55754b2a43e56bcea32d4331d0219da67f",
+    "labels": 293,
+    "labeller": "implementing agent (AI-assisted, not owner-reviewed)"
+  },
+  "raw_output_sha256": "a59373c9f76df2518c6d63d25a33ad835731f9ef59f0dc26767e06c21a3c765c",
+  "dev_curve_sha256": "4f1c897444985bb4faa4e4a61f29881ddc9a72c3ee15126d6afb3fab4274d12f",
+  "commitments": {
+    "request_file_sha256": "5a613b5d5b17585a4ee560b23d882bae96103fbf65b7f59ed2d39db2f3c6e71f",
+    "owner_key_sha256": "2bcf7d44cae06ff7e0162b58c4ba91a73fcfea763ef7497e558d7964278aed81",
+    "judging_template_sha256": "2c89b3a1845a01dc1c005ca463856f347e752c095ba5e5ab2bb62d7cd45126a8"
+  },
+  "spend": {
+    "ceiling_usd": 0.05,
+    "reserved_usd": 0.0003252800000000004,
+    "actual_usd": 2.791999999999998e-05,
+    "reserved_tokens": 16264,
+    "actual_tokens": 1396,
+    "calls_reserved": 228,
+    "calls_sent": 228
+  }
+}

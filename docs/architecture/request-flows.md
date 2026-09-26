@@ -195,6 +195,42 @@ eligibility for dish queries. Unsupported constraints (cuisine, preferences,
 dietary, equipment, substitutions) are preserved unchanged and reported as
 unverified.
 
+### Retrieval modes
+
+The diagram above is the only path the HTTP API takes today: full-text,
+with zero embedding calls. `POST /api/v1/retrieval/search` calls
+`retrieve_for_group` without a mode, so it gets the full-text default.
+Recommendations run their own full-text search. The `RETRIEVAL_*` settings
+are validated but no request path reads them yet (see the
+[architecture overview](README.md#4-independent-switches)).
+
+`retrieve_for_group` and `retrieve_with_mode` also accept these parameters,
+which the Phase 6 evaluation harness and the tests use:
+
+- **`mode="vector"`:** embeds the mapped query (`text-embedding-3-small`,
+  1536 dimensions) and ranks `recipe_embeddings` by exact cosine distance.
+  The same ingredient, time and dataset filters apply.
+- **`mode="hybrid"`:** fuses the full-text and vector rankings with
+  reciprocal rank fusion (`rrf_k = 60`, `vector_candidates_n = 20`).
+- **`vector_distance_cutoff`:**
+  - In vector mode, only results with distance ≤ cutoff are kept. An empty
+    result caused by the cutoff is an explicit abstention
+    (`vector_cutoff_abstention`), not an error.
+  - In hybrid mode, the cutoff applies to the vector results before fusion,
+    and full-text results are kept unchanged.
+- **`fulltext_gate` (hybrid):** vector results are added only when
+  full-text returned at least one result.
+- **`allow_fallback` (default `False`):** an embedding failure fails
+  closed as a recorded error. It never silently falls back to full-text.
+  With `True`, a fallback to full-text is disclosed in
+  `retrieval_fallback`.
+
+In the blind comparison, vector mode with a 0.66 cutoff won under the
+frozen rule ([ADR 0001](../adr/0001-retrieval-default.md)). Adopting it
+needs code that passes the mode and an embedding provider on the request
+path, plus owner approval. Setting an environment variable alone changes
+nothing.
+
 ## 7. Recommendation for a ready group
 
 ```mermaid

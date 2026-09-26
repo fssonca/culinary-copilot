@@ -32,6 +32,12 @@ evals/results/phase1/*
 !evals/results/phase1/phase2_inputs_freeze.json
 !evals/results/phase1/phase2_inputs_post_rebuild.json
 
+# Phase 6 blind-comparison artifacts: recipe-filled raw outputs, pools,
+# packets and judgments stay local. Only freeze.json (aggregates, hashes,
+# code) is versioned.
+evals/results/phase6/*
+!evals/results/phase6/freeze.json
+
 # Phase 3 local model responses, source packets and rehearsal payloads.
 evals/results/phase3*/
 !evals/results/phase3_review/

@@ -37,6 +37,36 @@ from culinary_copilot.recipes.repository import SUPPORTED_DATASETS
 
 RRF_DEFAULT_K = 60
 
+#: Stable reason code for an explicit vector abstention: the vector side
+#: had eligible candidates but a configured cosine-distance cutoff removed
+#: every one of them. Not an error; never triggers a silent full-text
+#: fallback. Empty eligible sets (no rows before the cutoff) use no code.
+VECTOR_CUTOFF_ABSTENTION = "vector_cutoff_abstention"
+
+
+def apply_vector_cutoff(rows: list[dict[str, Any]], cutoff: float | None) -> list[dict[str, Any]]:
+    """Keep vector candidates with cosine distance <= cutoff (Phase 6).
+
+    ``None`` leaves current behaviour unchanged. Rows without a finite
+    distance never survive a cutoff. Input order is preserved; rows are
+    copied by reference (no mutation of identity fields).
+    """
+    if cutoff is None:
+        return list(rows)
+    if not isinstance(cutoff, (int, float)) or not math.isfinite(float(cutoff)):
+        raise ValueError("vector distance cutoff must be a finite number or None")
+    bound = float(cutoff)
+    kept: list[dict[str, Any]] = []
+    for row in rows:
+        raw_distance: Any = row.get("distance")
+        try:
+            distance = float(raw_distance)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(distance) and distance <= bound:
+            kept.append(row)
+    return kept
+
 
 def _filters(
     *,

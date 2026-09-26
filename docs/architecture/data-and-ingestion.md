@@ -13,6 +13,7 @@ Both Food.com and Foodie occupy `public.recipes` in the same PostgreSQL database
 erDiagram
     RECIPE_IMPORTS ||--o{ RECIPES : supplies
     RECIPE_IMPORTS ||--o{ RECIPE_QUARANTINE : records
+    RECIPES ||--o{ RECIPE_EMBEDDINGS : "embedded as"
     RECIPE_IMPORTS {
         text id PK
         text dataset_id
@@ -51,11 +52,40 @@ erDiagram
         text version PK
         text checksum
     }
+    RECIPE_EMBEDDINGS {
+        text dataset_id PK, FK
+        text source_id PK, FK
+        text model PK
+        int dimension PK
+        text renderer_version PK
+        text chunking_version PK
+        int chunk_index PK
+        text embedded_text_hash
+        vector embedding
+        text import_id
+        timestamptz created_at
+    }
+    EMBEDDING_RUNS {
+        text run_id PK
+        text model
+        int dimension
+        text renderer_version
+        text chunking_version
+        text status
+        int reserved_tokens
+        int used_tokens
+    }
 ```
 
 `(dataset_id, source_id)` is the composite recipe key. Quarantine uses
 `(import_id, row_number)`; its dataset comes through the import record.
-The migration ledger is independent of the recipe relationships. `float` and
+The migration ledger is independent of the recipe relationships.
+
+Embedding rows cascade-delete with their recipe. Their key includes the
+model, dimension, renderer and chunking versions, so vectors from
+different versions can coexist; vector search reads only the current
+versions. `embedding_runs` is the backfill CLI's run and budget ledger and
+has no foreign key. `float` and
 `text_array` above abbreviate SQL `double precision` and `text[]`.
 
 ### Columns versus JSON
@@ -68,16 +98,28 @@ Consumers must handle absence as unknown, not assume validation succeeded.
 
 `search_vector` is a generated PostgreSQL **tsvector**, an indexable representation
 of words. It is not an embedding. GIN indexes support full-text and ingredient-array
-queries; a duration index supports time filtering. No vector extension/table exists.
+queries; a duration index supports time filtering. Since migration 004 the
+database also carries the pgvector extension and a `recipe_embeddings` table
+(one 1536-dimensional `text-embedding-3-small` vector per recipe, renderer
+version 1); vector search is an exact scan (no HNSW index).
 
 ### Migration history
 
 - **001:** imports, recipes, quarantine and indexes.
 - **002:** search-document renderer version column.
 - **003:** quarantine source ID, status, verdict and problem details.
+- **004:** pgvector extension, `recipe_embeddings` and `embedding_runs`.
 
 Applied migration checksums are preserved; changes require new SQL migrations.
 Startup does not run migrations. Explicit ingestion/load commands can apply them.
+
+Operational note: `compose.yaml` pins the pgvector image by digest
+(`pgvector/pgvector:pg17-trixie@sha256:724a…c2fa85c6`, the image the
+database already runs). Reverting to stock `postgres:17` is unsafe now
+that 004 is applied — the stock image cannot load `vector` objects and
+the database will not start. The former
+`compose.pgvector.override.yaml` was superseded by the pin and removed;
+do not reintroduce an unpinned image.
 
 ### Recorded local migration snapshot
 
@@ -137,9 +179,9 @@ is explicitly selected.
 
 | Location | Contents | Lifetime |
 |---|---|---|
-| PostgreSQL volume | Canonical recipes, quarantine, import reports, migration ledger | Durable across container restarts |
+| PostgreSQL volume | Canonical recipes, quarantine, import reports, migration ledger, recipe embeddings and embedding-run ledger | Durable across container restarts |
 | API process memory | Cooking requests, questions, answers, confirmations, revisions | Lost on restart; bounded eviction |
-| Ignored `data/` | Batch manifests, responses, reviews, migration package and backup | Local files, not Git or conversation storage |
+| Ignored `data/` | Batch manifests, responses, reviews, migration package and backup, Phase 6 evaluation outputs (raw retrieval, judging packet, judgments, scores) | Local files, not Git or conversation storage |
 | Model cache | Pinned Epicure vocabulary and vectors | Local cache / Docker volume |
 | Git repository | Code, migrations, tests, selected fixtures and maintained docs | Versioned; no runtime dataset corpus |
 
@@ -174,3 +216,10 @@ Acceptance does not alter recipe documents or capabilities. Source-filled packet
 and provider outputs are local ignored files; the specs and hash-only manifest are
 versioned. PostgreSQL remains the source of runtime recipe facts, and clarification
 state remains process-local memory.
+
+Phase 6 adds no tables or migrations and writes nothing to the application
+database. Its evaluation only read recipes and `recipe_embeddings`. The
+freeze record (`evals/results/phase6/freeze.json`) and the development
+cases are versioned. Recipe-filled outputs stay in ignored `data/phase6/`.
+Those files are identified by the hashes listed in the
+[scoreboard](../scoreboard.md).

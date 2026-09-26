@@ -1,3 +1,4 @@
+import math
 from typing import Any
 
 from pydantic import SecretStr, field_validator, model_validator
@@ -98,9 +99,11 @@ class Settings(BaseSettings):
     rec_stream_max_duration_s: float = 120.0
     rec_stream_keepalive_s: float = 10.0
     # Recipe-text embeddings (Phase 5, prepared offline). Separate registry
-    # from Luna text generation (embeddings/registry.py); query and corpus
-    # vectors must share the same model/dimension, enforced at startup.
-    # Disabled by default: full-text mode makes zero embedding calls.
+    # from Luna text generation (embeddings/registry.py). Query and corpus
+    # vectors must share the same model/dimension; vector search filters on
+    # both. No startup check exists yet, and no request path reads these
+    # settings (see docs/adr/0001-retrieval-default.md). Disabled by
+    # default: full-text mode makes zero embedding calls.
     embeddings_enabled: bool = False
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     embedding_dimension: int = 1536
@@ -109,13 +112,23 @@ class Settings(BaseSettings):
     embed_batch_inputs: int = 64
     embed_max_tokens_per_request: int = 300_000
     embed_budget_usd: float | None = None
-    # Retrieval modes: fulltext (default) | vector | hybrid. Vector/hybrid
-    # require embeddings_enabled plus a pgvector-enabled database; otherwise
+    # Retrieval modes: fulltext (default) | vector | hybrid. Not yet wired:
+    # the retrieval API and recommendations run full-text regardless of
+    # these settings; mode/cutoff/gate are passed explicitly to
+    # retrieve_for_group by the eval harness and tests. Vector/hybrid need
+    # an embedding provider plus a pgvector-enabled database; otherwise
     # they fail closed (no silent full-text fallback unless the caller
     # explicitly requests it and the fallback is disclosed).
     retrieval_mode: str = "fulltext"
     retrieval_vector_candidates: int = 20
     retrieval_rrf_k: int = 60
+    # Phase 6 tunable filter (None = no cutoff, current behaviour). Vector
+    # mode keeps only vector results with cosine distance <= cutoff;
+    # hybrid applies it to vector results before fusion, keeping full-text
+    # exactly as they are. Full-text gate (hybrid only): add vector results
+    # only when full-text returned at least one result.
+    retrieval_vector_cutoff: float | None = None
+    retrieval_fulltext_gate: bool = False
 
     @field_validator("llm_rec_reasoning_effort", mode="before")
     @classmethod
@@ -168,6 +181,10 @@ class Settings(BaseSettings):
             )
         if self.retrieval_mode not in {"fulltext", "vector", "hybrid"}:
             raise ValueError("RETRIEVAL_MODE must be one of fulltext, vector, hybrid")
+        if self.retrieval_vector_cutoff is not None:
+            cutoff = float(self.retrieval_vector_cutoff)
+            if not math.isfinite(cutoff) or not 0 <= cutoff <= 2:
+                raise ValueError("RETRIEVAL_VECTOR_CUTOFF must be None or within [0, 2]")
         return self
 
     @field_validator(
@@ -176,6 +193,7 @@ class Settings(BaseSettings):
         "llm_price_output_per_1m",
         "llm_reasoning_effort",
         "embed_budget_usd",
+        "retrieval_vector_cutoff",
         mode="before",
     )
     @classmethod
