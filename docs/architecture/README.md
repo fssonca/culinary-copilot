@@ -88,7 +88,8 @@ All paths below are relative to `src/culinary_copilot/`.
 | Application LLM | Async provider interface, fake provider, bounded retries | `llm/client.py` |
 | Recipe access | Parameterized SQL search, exact vector search, RRF fusion and document lookup | `recipes/repository.py`, `search.py`, `vector_search.py` |
 | Ingestion | Source normalization, extraction, validation and loading | `recipes/import_data.py`, `adapters/`, `llm_batch.py`, `llm_sched.py`, supporting modules |
-| Epicure | Load pinned vocabulary/vectors and calculate neighbors | `tools/epicure.py` |
+| Epicure | Load pinned vocabulary/vectors and calculate neighbors (core/cooc/chem) | `tools/epicure.py` |
+| Agent tools (M3 Phase 2) | Typed registry, recipe search, Epicure pairings/substitutions, scaling/conversion, stubs | `tools/registry.py`, `search_tools.py`, `epicure_tools.py`, `measure_tools.py`, `stub_tools.py` (see `docs/tools.md`) |
 | Infrastructure | Settings, database engine, planning events | `config.py`, `db.py`, `obs/clarification.py` |
 
 Development-only tools are under `scripts/`:
@@ -152,14 +153,19 @@ flowchart LR
 
 Defaults are disabled in code.
 
-Embedding and retrieval-mode settings are validated at load but do not yet
-change runtime behavior. That covers `EMBEDDINGS_ENABLED`, `EMBEDDING_*`,
-`RETRIEVAL_MODE`, `RETRIEVAL_VECTOR_CANDIDATES`, `RETRIEVAL_RRF_K`,
-`RETRIEVAL_VECTOR_CUTOFF` and `RETRIEVAL_FULLTEXT_GATE`. No API route or
-recommendation path reads them, so setting them does not switch search to
-vector or hybrid. The mode, cutoff, gate and fallback are parameters of
-`retrieve_for_group` and `retrieve_with_mode`. Today only the evaluation
-harness and tests pass them. The embedding backfill CLI takes its own
+Embedding and retrieval-mode settings are validated at load and, since
+Milestone 3 Phase 2, wired to the retrieval request path (ADR 0001
+steps 1–2 and 5; see `docs/tools.md`): `POST /api/v1/retrieval/search`
+reads `RETRIEVAL_MODE`, `RETRIEVAL_VECTOR_CUTOFF`,
+`RETRIEVAL_FULLTEXT_GATE`, `RETRIEVAL_RRF_K`,
+`RETRIEVAL_VECTOR_CANDIDATES` plus the embedding model/dimension, and
+the query provider starts only when `EMBEDDINGS_ENABLED` is set (with
+a model/dimension check). Code default stays `fulltext`, so
+default-settings behavior is unchanged (zero embedding calls). The
+recommendations path intentionally keeps full-text (ADR step 4 open).
+The mode, cutoff, gate and fallback remain parameters of
+`retrieve_for_group` and `retrieve_with_mode`, which the evaluation
+harness and tests also use. The embedding backfill CLI takes its own
 explicit options and budget. A request can also set `use_llm=false` for rule-only
 clarification. These are configuration defaults, not a claim about local `.env` values.
 Clarification provider limits use `LLM_APP_*`; recommendations use `LLM_REC_*`
@@ -183,8 +189,9 @@ planning call” does not necessarily mean exactly one network attempt.
 | Agent sessions + cooking phases | Implemented (Milestone 3, Phase 1): Postgres `sessions` + append-only `session_events` (migration `005`), phase table with `recommend -> plan` skip-select, create/read/permission endpoints; budgets stored (12 tool calls, 8 steps), not yet enforced. See [sessions](../sessions.md) |
 | Durable clarification conversations | Not implemented (in-memory store stays; sessions link by ID; migration path in [sessions](../sessions.md)) |
 | Recipe embeddings / pgvector | Implemented (Phase 5): migration 004 adds pgvector and `recipe_embeddings`. There is one `text-embedding-3-small` 1536-dimension vector per recipe, and search is an exact cosine scan with no HNSW index. `search_vector` is still the separate PostgreSQL full-text column |
-| Vector / hybrid retrieval | Implemented in the service, not exposed. Vector mode, RRF hybrid, the distance cutoff (explicit `vector_cutoff_abstention`) and the full-text gate are tested and measured, and Phase 6 compared them blind. The HTTP retrieval endpoint and recommendations still call full-text. Adopting a mode needs code wiring plus owner approval (ADR 0001), not just an environment variable |
-| Recipe rewriting, scaling, web search, agent loops | Not implemented; recommendations select and render stored sources. Session budgets (`SESSION_MAX_TOOL_CALLS`, `SESSION_MAX_STEPS`) are stored, not yet enforced; web-search permission is stored off-by-default, not yet executed |
+| Vector / hybrid retrieval | Retrieval endpoint wired (M3 Phase 2, ADR 0001 steps 1–2/5): `RETRIEVAL_MODE` and friends reach `retrieve_for_group`; provider starts only when `EMBEDDINGS_ENABLED`. Code default stays `fulltext` (zero embedding calls); recommendations keep full-text (step 4 open). Vector/hybrid measured in Phase 6; flipping the default still needs owner approval |
+| Typed tool layer (M3 Phase 2) | Implemented: 10 typed tools (search/get, 3 Epicure variants + substitutions, scale/convert, 2 stubs) with server-set 10 s timeout, typed errors + `next_action`, and `session_events` logging; see `docs/tools.md`. No agent loop yet |
+| Recipe rewriting, scaling, web search, agent loops | Recommendations select and render stored sources; scaling/conversion exist as deterministic tools (unknown stays unknown). Session budgets (`SESSION_MAX_TOOL_CALLS`, `SESSION_MAX_STEPS`) are stored, not yet enforced; web-search permission is backend-enforced in the `search_web` stub (off → denied, on → unavailable until Phase 5) |
 | Streaming | Implemented (Phase 4): `POST /api/v1/recommendations/stream` shares the recommendation service via a stage hook; versioned stage/final/error events, bounded duration/events, disconnect cancellation |
 | Complete telemetry | Implemented (Phase 4): correlated clarification + recommendation events with real ids, stage timings, per-turn usage and estimated cost from the model registry (gpt-6-luna); one event per run including cancelled runs; no message/recipe/secret logging |
 

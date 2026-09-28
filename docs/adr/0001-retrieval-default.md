@@ -1,8 +1,9 @@
 # ADR 0001: Retrieval default after the Phase 6 blind comparison
 
-Status: **result recorded, default unchanged**. Full-text remains the
-default. Flipping to `vector_c` requires a separate owner approval; the
-exact change is proposed below, not applied.
+Status: **result recorded, default unchanged; wiring steps 1–2 and 5
+done in Milestone 3, Phase 2 (see docs/tools.md)**. Full-text remains
+the default. Flipping to `vector_c` requires a separate owner
+approval; the exact change is proposed below, not applied.
 
 ## Context
 
@@ -53,25 +54,28 @@ path reads them:
   mode, so it always gets full-text.
 - The recommendation service runs its own full-text search.
 
-Adopting `vector_c` therefore needs a small, separately approved code
-change:
+ Adopting `vector_c` therefore needs a small, separately approved code
+ change (steps 1–2 and 5 done in Phase 2; 3–4 open):
 
-1. **Wire the retrieval endpoint.** Pass `settings.retrieval_mode`,
-   `retrieval_vector_cutoff`, `retrieval_fulltext_gate`,
-   `retrieval_rrf_k`, `retrieval_vector_candidates` and the embedding
-   model and dimension from `Settings` into `retrieve_for_group`.
-2. **Construct the query embedding provider at startup** when
-   `EMBEDDINGS_ENABLED` is true. Check that the configured model and
-   dimension match the stored corpus vectors, and fail at startup if
-   they don't.
-3. **Decide outage behaviour.** Either keep failing closed (today's
-   `allow_fallback = False`) or add a setting for a disclosed full-text
-   fallback. With fail-closed, an embeddings outage makes search
-   unavailable.
-4. **Decide the recommendations path,** as a separate choice: it should
-   either use the same retrieval mode or keep full-text explicitly.
-5. **Add tests** proving that the settings reach the request path and
-   that the full-text default still makes zero embedding calls.
+ 1. **Wire the retrieval endpoint.** ✅ Done (Phase 2): `api/retrieval.py`
+    passes `settings.retrieval_mode`, `retrieval_vector_cutoff`,
+    `retrieval_fulltext_gate`, `retrieval_rrf_k`,
+    `retrieval_vector_candidates` and the embedding model/dimension
+    into `retrieve_for_group`. Code default stays `fulltext`.
+ 2. **Construct the query embedding provider at startup** ✅ Done
+    (Phase 2): `api/app.py` builds it only when `EMBEDDINGS_ENABLED`
+    is set, with a model/dimension check (`check_model_dimension`;
+    `Settings` already refuses registry mismatches at load).
+ 3. **Decide outage behaviour.** Open — still fail closed
+    (`allow_fallback = False`); an embeddings outage makes search
+    unavailable. No disclosed-fallback setting added.
+ 4. **Decide the recommendations path,** as a separate choice: open —
+    recommendations keep explicit full-text (no `retrieval_mode`
+    reference; asserted by `test_recommendations_path_still_fulltext`).
+ 5. **Add tests** ✅ Done (Phase 2): `tests/test_tools.py` proves the
+    settings reach the request path and the full-text default makes
+    zero embedding calls; `tests/test_tools_pg.py` covers the
+    permission gate on a disposable DB.
 
 Once wired, enact it by environment, keeping `fulltext` as the code
 default:

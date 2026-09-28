@@ -30,8 +30,12 @@ class Pairing(BaseModel):
 
 
 class EpicureCore:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings | Any, *, cache_only: bool = False) -> None:
         self.settings = settings
+        # Cache-only mode: pass local_files_only=True to hf_hub_download so
+        # the tool path never makes a network call. Default False preserves
+        # the existing endpoint behaviour (lazy download on first query).
+        self.cache_only = cache_only
         self._lock = Lock()
         self._vectors: Any = None
         self._vocab: dict[str, int] = {}
@@ -51,6 +55,7 @@ class EpicureCore:
                     filename=filename,
                     token=self.settings.hf_token.get_secret_value() or False,
                     cache_dir=str(Path(self.settings.hf_home) / "hub"),
+                    local_files_only=self.cache_only,
                 )
 
             vocab = json.loads(Path(download("vocab.json")).read_text())

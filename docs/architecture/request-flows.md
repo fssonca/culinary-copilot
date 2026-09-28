@@ -200,12 +200,12 @@ unverified.
 
 ### Retrieval modes
 
-The diagram above is the only path the HTTP API takes today: full-text,
-with zero embedding calls. `POST /api/v1/retrieval/search` calls
-`retrieve_for_group` without a mode, so it gets the full-text default.
-Recommendations run their own full-text search. The `RETRIEVAL_*` settings
-are validated but no request path reads them yet (see the
-[architecture overview](README.md#4-independent-switches)).
+With default settings the HTTP API still takes the full-text path
+(zero embedding calls). Since Milestone 3 Phase 2,
+`POST /api/v1/retrieval/search` passes `RETRIEVAL_MODE` and friends
+from `Settings` into `retrieve_for_group` (ADR 0001 steps 1–2 and 5;
+see `docs/tools.md`); code default stays `fulltext`. Recommendations
+keep their own explicit full-text search (ADR step 4 open).
 
 `retrieve_for_group` and `retrieve_with_mode` also accept these parameters,
 which the Phase 6 evaluation harness and the tests use:

@@ -194,6 +194,14 @@ class Settings(BaseSettings):
             raise ValueError("SESSION_MAX_TOOL_CALLS must be >= 1")
         if self.session_max_steps < 1:
             raise ValueError("SESSION_MAX_STEPS must be >= 1")
+        if not math.isfinite(float(self.tool_timeout_s)) or float(self.tool_timeout_s) <= 0:
+            raise ValueError("TOOL_TIMEOUT_S must be a finite positive number")
+        for label, model_id, revision in (
+            ("EPICURE_COOC", self.epicure_cooc_model_id, self.epicure_cooc_revision),
+            ("EPICURE_CHEM", self.epicure_chem_model_id, self.epicure_chem_revision),
+        ):
+            if not model_id.strip() or not revision.strip():
+                raise ValueError(f"{label}_MODEL_ID and {label}_REVISION must be non-empty")
         return self
 
     @field_validator(
@@ -217,3 +225,15 @@ class Settings(BaseSettings):
     epicure_enabled: bool = False
     epicure_model_id: str = "Kaikaku/epicure-core"
     epicure_revision: str = "d31ebb5af8e92bbaf5cb67381d5006d4ea8368b7"
+    # Epicure siblings (Milestone 3, Phase 2, Checkpoint 0 decision 5):
+    # cooc = recipe-context only, chem = chemistry only. Same publisher
+    # (Kaikaku), same licence (CC BY 4.0) as epicure-core; verified
+    # 2026-09-28 via HfApi + model cards (see docs/tools.md). Revisions
+    # pinned the same way EPICURE_REVISION pins epicure-core.
+    epicure_cooc_model_id: str = "Kaikaku/epicure-cooc"
+    epicure_cooc_revision: str = "03edd311adde6e39a2eb6f9f3fa78f7396be6b53"
+    epicure_chem_model_id: str = "Kaikaku/epicure-chem"
+    epicure_chem_revision: str = "2461ef3fbafab36d2b1111187a3df98721146861"
+    # Typed tool layer (Milestone 3, Phase 2, Checkpoint 0 budgets):
+    # per-tool timeout 10 s. Read by tools/registry.py on every call.
+    tool_timeout_s: float = 10.0

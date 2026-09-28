@@ -30,7 +30,19 @@ class RetrievalRequest(BaseModel):
     dataset_id: str | None = Field(default=None, max_length=200)
 
 
-def build_router(*, store: Any, engine: Any) -> APIRouter:
+def build_router(
+    *, store: Any, engine: Any, settings: Any | None = None, embed_provider: Any = None
+) -> APIRouter:
+    """Retrieval routes (ADR 0001 steps 1-2 wired; step 4 not done).
+
+    ``RETRIEVAL_MODE`` and friends are read from ``settings`` here
+    (code default ``fulltext`` preserves existing behavior). The query
+    embedding provider is built at startup only when
+    ``EMBEDDINGS_ENABLED`` is set, with a model/dimension check. The
+    recommendations path intentionally keeps full-text (ADR step 4 is a
+    separate owner decision).
+    """
+
     bound = APIRouter(prefix="/api/v1/retrieval", tags=["retrieval"])
 
     @bound.post("/search")
@@ -42,6 +54,9 @@ def build_router(*, store: Any, engine: Any) -> APIRouter:
                 status_code=422,
                 detail=(f"Unsupported dataset_id; expected one of {sorted(SUPPORTED_DATASETS)}"),
             )
+        mode = str(getattr(settings, "retrieval_mode", "fulltext") or "fulltext")
+        if mode not in ("fulltext", "vector", "hybrid"):
+            mode = "fulltext"
         try:
             return await retrieve_for_group(
                 store=store,
@@ -51,6 +66,15 @@ def build_router(*, store: Any, engine: Any) -> APIRouter:
                 expected_group_revision=body.group_revision,
                 limit=body.limit,
                 dataset_id=body.dataset_id,
+                mode=mode,
+                embed_provider=embed_provider,
+                embedding_model=str(getattr(settings, "embedding_model", "text-embedding-3-small")),
+                embedding_dimension=int(getattr(settings, "embedding_dimension", 1536)),
+                vector_candidates_n=int(getattr(settings, "retrieval_vector_candidates", 20)),
+                rrf_k=int(getattr(settings, "retrieval_rrf_k", 60)),
+                allow_fallback=False,
+                vector_distance_cutoff=getattr(settings, "retrieval_vector_cutoff", None),
+                fulltext_gate=bool(getattr(settings, "retrieval_fulltext_gate", False)),
             )
         except RetrievalNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None

@@ -105,6 +105,23 @@ REASON_INVALID_PHASE_TRANSITION = "invalid_phase_transition"
 REASON_SESSION_UNAVAILABLE = "session_unavailable"
 REASON_SESSION_NOT_MIGRATED = "session_store_not_migrated"
 
+# Stable reason codes for the typed tool layer (Milestone 3, Phase 2,
+# reviewed: "unavailable" split into permanent vs transient).
+# Tool failures are typed error results, never exceptions into the caller.
+# Every code below is mapped in ``_NEXT_ACTION_BY_REASON``, and
+# tests/test_next_action.py scans domain/recommendations.py plus
+# src/culinary_copilot/tools/*.py so a new tool reason without a mapping fails.
+# ``error_type`` stays "unavailable" for both not-configured and transient
+# unavailable (schema); the ``reason`` carries the distinction.
+REASON_TOOL_TIMEOUT = "tool_timeout"
+REASON_TOOL_INVALID_ARGUMENTS = "tool_invalid_arguments"
+REASON_TOOL_NOT_CONFIGURED = "tool_not_configured"
+REASON_TOOL_UNAVAILABLE = "tool_unavailable"
+REASON_TOOL_INTERNAL_ERROR = "tool_internal_error"
+REASON_TOOL_PERMISSION_DENIED = "tool_permission_denied"
+REASON_SCALE_MISSING_SERVINGS = "scale_missing_servings"
+REASON_CONVERT_UNSUPPORTED_UNIT = "convert_unsupported_unit"
+
 # What a client should do after a failure (P4-REV-01). Messages state the
 # failure; ``next_action`` states the remedy, so a retry is never suggested
 # where it cannot succeed.
@@ -137,6 +154,14 @@ _NEXT_ACTION_BY_REASON: dict[str, str] = {
     REASON_INVALID_PHASE_TRANSITION: NEXT_CHANGE_REQUEST,
     REASON_SESSION_UNAVAILABLE: NEXT_RETRY,
     REASON_SESSION_NOT_MIGRATED: NEXT_CONTACT_OPERATOR,
+    REASON_TOOL_TIMEOUT: NEXT_RETRY,
+    REASON_TOOL_INVALID_ARGUMENTS: NEXT_CHANGE_REQUEST,
+    REASON_TOOL_NOT_CONFIGURED: NEXT_CONTACT_OPERATOR,
+    REASON_TOOL_UNAVAILABLE: NEXT_RETRY,
+    REASON_TOOL_INTERNAL_ERROR: NEXT_CONTACT_OPERATOR,
+    REASON_TOOL_PERMISSION_DENIED: NEXT_CHANGE_REQUEST,
+    REASON_SCALE_MISSING_SERVINGS: NEXT_CHANGE_REQUEST,
+    REASON_CONVERT_UNSUPPORTED_UNIT: NEXT_CHANGE_REQUEST,
     "malformed": NEXT_CHANGE_REQUEST,
     # State moved on while running.
     "stale_revision": NEXT_REFETCH_AND_RETRY,

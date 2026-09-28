@@ -79,7 +79,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             epicure=epicure,
         )
     )
-    app.include_router(build_retrieval_router(store=clarification_store, engine=engine))
+    # ADR 0001 step 2: the query embedding provider starts only when
+    # EMBEDDINGS_ENABLED is set, with a model/dimension check. With
+    # defaults (disabled, fulltext) this is None and behavior is unchanged.
+    # When enabled but the provider cannot be built, fail startup loudly
+    # instead of silently serving vector-unavailable.
+    from culinary_copilot.tools.search_tools import build_embed_provider
+
+    if bool(getattr(settings, "embeddings_enabled", False)):
+        try:
+            query_embed_provider = build_embed_provider(settings)
+        except Exception as exc:
+            raise RuntimeError(
+                f"EMBEDDINGS_ENABLED=true but the query embedding provider failed to start: {exc}"
+            ) from exc
+        if query_embed_provider is None:
+            raise RuntimeError("EMBEDDINGS_ENABLED=true but no query embedding provider was built")
+    else:
+        query_embed_provider = None
+    app.state.query_embed_provider = query_embed_provider
+    app.include_router(
+        build_retrieval_router(
+            store=clarification_store,
+            engine=engine,
+            settings=settings,
+            embed_provider=query_embed_provider,
+        )
+    )
     # Recommendation-stage Epicure uses cached assets only (Stage B wiring);
     # Stage A tests inject the fake adapter directly at the service layer.
     from culinary_copilot.recommendations.epicure import CachedEpicureAdapter

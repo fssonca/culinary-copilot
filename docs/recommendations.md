@@ -88,10 +88,10 @@ message (finding P4-REV-01, owner review 2026-09-27). Mapping lives in
 
 | `next_action` | Reasons |
 | --- | --- |
-| `retry` (a new attempt, and a new paid model call, may succeed) | `schema_failure`, `validation_rejected` (except hard constraints), `truncated_incomplete_response`, `empty_response`, `invalid_tool_call`, `turn_limit_exceeded`, `provider_timeout`, `provider_unavailable`, `provider_rate_limited`, `corpus_unavailable`, `stream_duration_exceeded`, `session_unavailable` (Phase 1: other session DB errors) |
+| `retry` (a new attempt, and a new paid model call, may succeed) | `schema_failure`, `validation_rejected` (except hard constraints), `truncated_incomplete_response`, `empty_response`, `invalid_tool_call`, `turn_limit_exceeded`, `provider_timeout`, `provider_unavailable`, `provider_rate_limited`, `corpus_unavailable`, `stream_duration_exceeded`, `session_unavailable` (Phase 1: other session DB errors), `tool_timeout`, `tool_unavailable` (Phase 2 review: transient DB/provider failures only) |
 | `refetch_and_retry` | `stale_revision` (409, clarification and sessions) |
-| `change_request` (the same request fails the same way) | `validation_rejected` with `hard_constraint_violation`, `input_budget_exceeded`, `provider_refusal`, `provider_content_filter`, `unknown_group`, `unknown_session`, `invalid_phase_transition`, `malformed` |
-| `contact_operator` (server configuration or code; retrying cannot help) | `generation_disabled`, `provider_auth`, `provider_not_found`, `provider_bad_request`, `provider_request_error`, `provider_internal_error`, `stream_event_limit_exceeded`, `session_store_not_migrated` (Phase 1: 005 tables missing), `internal_error`, and any unmapped reason |
+| `change_request` (the same request fails the same way) | `validation_rejected` with `hard_constraint_violation`, `input_budget_exceeded`, `provider_refusal`, `provider_content_filter`, `unknown_group`, `unknown_session`, `invalid_phase_transition`, `malformed`, `tool_invalid_arguments`, `tool_permission_denied`, `scale_missing_servings`, `convert_unsupported_unit` (Phase 2 tools) |
+| `contact_operator` (server configuration or code; retrying cannot help) | `generation_disabled`, `provider_auth`, `provider_not_found`, `provider_bad_request`, `provider_request_error`, `provider_internal_error`, `stream_event_limit_exceeded`, `session_store_not_migrated` (Phase 1: 005 tables missing), `tool_not_configured` (Phase 2 review: stubs, disabled/missing assets or embeddings), `tool_internal_error` (Phase 2 review: defect), `internal_error`, and any unmapped reason |
 
 The JSON endpoint's 404/409/422 bodies keep their plain-string `detail`
 (the 409 text already says to refetch and retry); `next_action` is added

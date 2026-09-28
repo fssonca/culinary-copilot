@@ -49,8 +49,17 @@ def _failure_reasons_in_source() -> set[str]:
         SRC / "recommendations" / "service.py",
         SRC / "api" / "recommendations.py",
         SRC / "api" / "sessions.py",
+        SRC / "tools" / "search_tools.py",
+        SRC / "tools" / "epicure_tools.py",
+        SRC / "tools" / "measure_tools.py",
+        SRC / "tools" / "stub_tools.py",
+        SRC / "tools" / "registry.py",
     ):
         reasons |= set(pattern.findall(path.read_text(encoding="utf-8")))
+    # Tool reason constants (REASON_TOOL_*, REASON_SCALE_*, REASON_CONVERT_*)
+    # live in domain/recommendations.py (already covered via vars(domain))
+    # and are re-used across tools/*.py; string literals above catch any
+    # hardcoded reason="..." in the tool layer.
     api = (SRC / "api" / "recommendations.py").read_text(encoding="utf-8")
     # Stream-only codes: _error_fields tuples and stream-limit cancellations.
     reasons |= set(re.findall(r'return \d{3}, "([a-z_]+)"', api))
