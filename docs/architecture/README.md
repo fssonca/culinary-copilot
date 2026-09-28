@@ -1,6 +1,6 @@
 # Current system architecture
 
-Code snapshot: **2026-09-25**. Phase 3 is accepted as a bounded backend
+Code snapshot: **2026-09-28 (Milestone 3, Phase 1 sessions added)**. Phase 3 is accepted as a bounded backend
 milestone. Phase 5 added recipe embeddings and vector/hybrid retrieval code.
 Phase 6 compared the retrieval modes blind. Runtime search is still full-text
 only (see §5).
@@ -131,9 +131,11 @@ flowchart LR
   004 created `vector` objects, so the stock `postgres:17` image can no
   longer start this database. Never swap the image back on its own.
 - PostgreSQL and cached model files survive container replacement through named volumes.
-- Conversation state does **not** survive an API restart. Each worker would have
-  its own state: the current store is for a single-process development deployment.
-- The store caps retained requests at 512 and removes associated groups on eviction.
+- Clarification state does **not** survive an API restart (in-memory store,
+  512-request cap, single worker). Agent sessions **do** survive a restart:
+  Phase 1 stores them in Postgres (`sessions` / `session_events`,
+  migration `005`); see [sessions](../sessions.md).
+- The clarification store caps retained requests at 512 and removes associated groups on eviction.
 - App startup creates the engine, services and store. It initializes the application
   provider when enabled; shutdown closes that client and disposes the engine.
 - `/health/live` reports process availability; `/health/ready` checks PostgreSQL
@@ -178,10 +180,11 @@ planning call” does not necessarily mean exactly one network attempt.
 | Source-grounded recommendations | Implemented backend-only (Phase 3): `POST /api/v1/recommendations` selects one source recipe with server-rendered content, deterministic validation, and Epicure consultation or a recorded skip/degraded outcome; see `docs/recommendations.md` |
 | Epicure inside recommendations | Implemented: early consultation with canonical ingredients via cached assets (`CachedEpicureAdapter`), distinct outcomes (consulted/skip/disabled/unavailable/unmapped/insufficient context), opt-in `get_recipe` tool mode |
 | Substitution verification | Limited checks; suggestions remain unverified, not certified equivalents |
-| Durable conversations | Not implemented |
+| Agent sessions + cooking phases | Implemented (Milestone 3, Phase 1): Postgres `sessions` + append-only `session_events` (migration `005`), phase table with `recommend -> plan` skip-select, create/read/permission endpoints; budgets stored (12 tool calls, 8 steps), not yet enforced. See [sessions](../sessions.md) |
+| Durable clarification conversations | Not implemented (in-memory store stays; sessions link by ID; migration path in [sessions](../sessions.md)) |
 | Recipe embeddings / pgvector | Implemented (Phase 5): migration 004 adds pgvector and `recipe_embeddings`. There is one `text-embedding-3-small` 1536-dimension vector per recipe, and search is an exact cosine scan with no HNSW index. `search_vector` is still the separate PostgreSQL full-text column |
 | Vector / hybrid retrieval | Implemented in the service, not exposed. Vector mode, RRF hybrid, the distance cutoff (explicit `vector_cutoff_abstention`) and the full-text gate are tested and measured, and Phase 6 compared them blind. The HTTP retrieval endpoint and recommendations still call full-text. Adopting a mode needs code wiring plus owner approval (ADR 0001), not just an environment variable |
-| Recipe rewriting, scaling, web search, agent loops | Not implemented; recommendations select and render stored sources |
+| Recipe rewriting, scaling, web search, agent loops | Not implemented; recommendations select and render stored sources. Session budgets (`SESSION_MAX_TOOL_CALLS`, `SESSION_MAX_STEPS`) are stored, not yet enforced; web-search permission is stored off-by-default, not yet executed |
 | Streaming | Implemented (Phase 4): `POST /api/v1/recommendations/stream` shares the recommendation service via a stage hook; versioned stage/final/error events, bounded duration/events, disconnect cancellation |
 | Complete telemetry | Implemented (Phase 4): correlated clarification + recommendation events with real ids, stage timings, per-turn usage and estimated cost from the model registry (gpt-6-luna); one event per run including cancelled runs; no message/recipe/secret logging |
 

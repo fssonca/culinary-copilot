@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from culinary_copilot.api.clarification import build_router as build_clarification_router
 from culinary_copilot.api.recommendations import build_router as build_recommendations_router
 from culinary_copilot.api.retrieval import build_router as build_retrieval_router
+from culinary_copilot.api.sessions import build_router as build_sessions_router
 from culinary_copilot.config import Settings
 from culinary_copilot.db import check_database, create_db_engine
 from culinary_copilot.llm.client import OpenAIApplicationProvider
@@ -64,6 +65,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Culinary Copilot", version="0.1.0", lifespan=lifespan)
     app.state.clarification_store = clarification_store
     app.state.llm_provider = llm_provider
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    session_store = PostgresSessionStore(engine)
+    app.state.session_store = session_store
+    app.include_router(build_sessions_router(store=session_store, settings=settings))
     app.include_router(
         build_clarification_router(
             settings=settings,

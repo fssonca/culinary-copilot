@@ -75,6 +75,33 @@ erDiagram
         int reserved_tokens
         int used_tokens
     }
+    SESSIONS {
+        text id PK
+        int revision
+        text current_phase
+        text clarification_request_id
+        text clarification_group_id
+        jsonb constraints
+        jsonb confirmed_answers
+        jsonb unresolved_questions
+        text epicure_outcome
+        text epicure_skip_reason
+        jsonb suggestions
+        jsonb selected_dish
+        jsonb cooking_plan
+        jsonb evidence
+        bool internet_search_allowed
+        int tool_calls_remaining
+        int steps_remaining
+    }
+    SESSION_EVENTS {
+        bigint id PK
+        text session_id FK
+        int seq
+        text event_type
+        jsonb payload
+    }
+    SESSIONS ||--o{ SESSION_EVENTS : logs
 ```
 
 `(dataset_id, source_id)` is the composite recipe key. Quarantine uses
@@ -109,6 +136,10 @@ version 1); vector search is an exact scan (no HNSW index).
 - **002:** search-document renderer version column.
 - **003:** quarantine source ID, status, verdict and problem details.
 - **004:** pgvector extension, `recipe_embeddings` and `embedding_runs`.
+- **005:** agent sessions + append-only `session_events` (Milestone 3,
+  Phase 1; plain Postgres, no extension). Rehearsed on disposable
+  databases only; not yet applied to the application database in this
+  change. See [sessions](../sessions.md).
 
 Applied migration checksums are preserved; changes require new SQL migrations.
 Startup does not run migrations. Explicit ingestion/load commands can apply them.
@@ -179,7 +210,7 @@ is explicitly selected.
 
 | Location | Contents | Lifetime |
 |---|---|---|
-| PostgreSQL volume | Canonical recipes, quarantine, import reports, migration ledger, recipe embeddings and embedding-run ledger | Durable across container restarts |
+| PostgreSQL volume | Canonical recipes, quarantine, import reports, migration ledger, recipe embeddings and embedding-run ledger, agent sessions + session event log (005) | Durable across container restarts |
 | API process memory | Cooking requests, questions, answers, confirmations, revisions | Lost on restart; bounded eviction |
 | Ignored `data/` | Batch manifests, responses, reviews, migration package and backup, Phase 6 evaluation outputs (raw retrieval, judging packet, judgments, scores) | Local files, not Git or conversation storage |
 | Model cache | Pinned Epicure vocabulary and vectors | Local cache / Docker volume |
@@ -216,6 +247,11 @@ Acceptance does not alter recipe documents or capabilities. Source-filled packet
 and provider outputs are local ignored files; the specs and hash-only manifest are
 versioned. PostgreSQL remains the source of runtime recipe facts, and clarification
 state remains process-local memory.
+
+Milestone 3, Phase 1 adds migration `005` (`sessions`, append-only
+`session_events`). Sessions link to clarification by ID and survive restarts;
+clarification itself stays in memory (see [sessions](../sessions.md) for the
+later migration path).
 
 Phase 6 adds no tables or migrations and writes nothing to the application
 database. Its evaluation only read recipes and `recipe_embeddings`. The

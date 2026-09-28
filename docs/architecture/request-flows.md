@@ -18,6 +18,9 @@ Part of the [current architecture](README.md). These are the current code paths.
 | `POST /api/v1/retrieval/search` | Revision-pinned bounded evidence summaries for a ready clarification group (Phase 1; see `docs/retrieval.md`) |
 | `POST /api/v1/recommendations` | Revision-pinned grounded selection for a ready group: `recommendation` / `clarification` / `insufficient_evidence` (Phase 3; see `docs/recommendations.md`) |
 | `POST /api/v1/recommendations/stream` | Same body as above, `text/event-stream`: versioned `stage` / single `final` / single `error` events sharing the same service via a stage hook (Phase 4; see `docs/recommendations.md` + `docs/phase4-streaming-walkthrough.md`) |
+| `POST /api/v1/sessions` | Create a Postgres-backed agent session (Phase 1; see `docs/sessions.md`) |
+| `GET /api/v1/sessions/{session_id}` | Read a session + its append-only events |
+| `POST /api/v1/sessions/{session_id}/permission` | Revision-pinned internet-search permission update (off by default) |
 
 Retrieval returns ranked bounded summaries. Recommendations fetch
 complete documents by exact identity and server-render the selected

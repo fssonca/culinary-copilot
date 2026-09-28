@@ -48,12 +48,19 @@ def _failure_reasons_in_source() -> set[str]:
     for path in (
         SRC / "recommendations" / "service.py",
         SRC / "api" / "recommendations.py",
+        SRC / "api" / "sessions.py",
     ):
         reasons |= set(pattern.findall(path.read_text(encoding="utf-8")))
     api = (SRC / "api" / "recommendations.py").read_text(encoding="utf-8")
     # Stream-only codes: _error_fields tuples and stream-limit cancellations.
     reasons |= set(re.findall(r'return \d{3}, "([a-z_]+)"', api))
     reasons |= set(re.findall(r'"(stream_[a-z_]+_exceeded)"', api))
+    # Session reason constants live in domain/sessions.py; every
+    # SESSION_*_REASON there must also map in domain/recommendations.py.
+    import re as _re
+
+    sessions_src = (SRC / "domain" / "sessions.py").read_text(encoding="utf-8")
+    reasons |= set(_re.findall(r'SESSION_\w+_REASON\s*=\s*"([a-z_]+)"', sessions_src))
     return reasons
 
 

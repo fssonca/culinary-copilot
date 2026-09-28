@@ -129,6 +129,11 @@ class Settings(BaseSettings):
     # only when full-text returned at least one result.
     retrieval_vector_cutoff: float | None = None
     retrieval_fulltext_gate: bool = False
+    # Agent sessions (Milestone 3, Phase 1, Checkpoint 0 budgets): MAX_STEPS 8,
+    # 12 tool calls per session. Phase 1 stores the remaining budgets on the
+    # session row (defaults below); the bounded loop in Phase 3 enforces them.
+    session_max_tool_calls: int = 12
+    session_max_steps: int = 8
 
     @field_validator("llm_rec_reasoning_effort", mode="before")
     @classmethod
@@ -185,6 +190,10 @@ class Settings(BaseSettings):
             cutoff = float(self.retrieval_vector_cutoff)
             if not math.isfinite(cutoff) or not 0 <= cutoff <= 2:
                 raise ValueError("RETRIEVAL_VECTOR_CUTOFF must be None or within [0, 2]")
+        if self.session_max_tool_calls < 1:
+            raise ValueError("SESSION_MAX_TOOL_CALLS must be >= 1")
+        if self.session_max_steps < 1:
+            raise ValueError("SESSION_MAX_STEPS must be >= 1")
         return self
 
     @field_validator(

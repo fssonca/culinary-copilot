@@ -97,6 +97,14 @@ REJECT_EVIDENCE_CHANGED = "evidence_changed"
 # input budget. Raised before that turn is sent (earlier turns' usage kept).
 REASON_BUDGET_EXCEEDED = "input_budget_exceeded"
 
+# Stable reason codes for agent sessions (Milestone 3, Phase 1). Session
+# errors reuse the same ``next_action`` contract as recommendations so a
+# client knows what to do without parsing the message.
+REASON_UNKNOWN_SESSION = "unknown_session"
+REASON_INVALID_PHASE_TRANSITION = "invalid_phase_transition"
+REASON_SESSION_UNAVAILABLE = "session_unavailable"
+REASON_SESSION_NOT_MIGRATED = "session_store_not_migrated"
+
 # What a client should do after a failure (P4-REV-01). Messages state the
 # failure; ``next_action`` states the remedy, so a retry is never suggested
 # where it cannot succeed.
@@ -125,6 +133,10 @@ _NEXT_ACTION_BY_REASON: dict[str, str] = {
     REASON_CONTENT_FILTER: NEXT_CHANGE_REQUEST,
     REASON_BUDGET_EXCEEDED: NEXT_CHANGE_REQUEST,
     "unknown_group": NEXT_CHANGE_REQUEST,
+    REASON_UNKNOWN_SESSION: NEXT_CHANGE_REQUEST,
+    REASON_INVALID_PHASE_TRANSITION: NEXT_CHANGE_REQUEST,
+    REASON_SESSION_UNAVAILABLE: NEXT_RETRY,
+    REASON_SESSION_NOT_MIGRATED: NEXT_CONTACT_OPERATOR,
     "malformed": NEXT_CHANGE_REQUEST,
     # State moved on while running.
     "stale_revision": NEXT_REFETCH_AND_RETRY,

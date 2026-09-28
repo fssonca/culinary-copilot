@@ -814,6 +814,7 @@ def test_load_persists_fully_rejected_rows_with_status(tmp_path):
             "002_search_version.sql",
             "003_quarantine_status.sql",
             "004_recipe_embeddings.sql",
+            "005_sessions.sql",
         ]
         with engine.begin() as conn:
             import_data.apply_migrations(conn)
@@ -975,7 +976,11 @@ def test_load_apply_schema_upgrades_and_is_idempotent(tmp_path):
                 ).all()
             ]
             # Stock server skips 004; pgvector-capable server applies it.
-            assert versions in (["001", "002", "003"], ["001", "002", "003", "004"])
+            # 005 (sessions) is plain Postgres and always applies.
+            assert versions in (
+                ["001", "002", "003", "005"],
+                ["001", "002", "003", "004", "005"],
+            )
             if "004" in versions:
                 assert (
                     conn.execute(text("SELECT to_regclass('recipe_embeddings')")).scalar_one()
