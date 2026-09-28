@@ -48,9 +48,11 @@ not SSE):
 HTTP 503 {"reason": "generation_disabled", ...}
 ```
 
-To see SSE events without a paid call, enable generation with an
-unreachable provider is NOT needed: run the bundled offline test that
-drives the same endpoint with a fake provider instead:
+With generation disabled, curl shows only this 503. Real SSE events over
+curl need generation enabled, a key and a paid call (see the
+[live smoke plan](phase4-live-smoke.md), which needs its own approval).
+To see the events without spending anything, run the offline tests. They
+drive the same endpoint with a fake provider:
 
 ```sh
 uv run pytest tests/test_phase4_streaming_telemetry.py tests/test_phase4_review_fixes.py -q
@@ -93,7 +95,8 @@ data: {..., "stage": "evidence", ...}
 
 event: error
 data: {"v": "v1", "type": "error", "seq": 6, "status": 502,
-        "reason": "validation_rejected", "message": "...", "detail": {...}}
+        "reason": "validation_rejected", "message": "...",
+        "next_action": "retry", "detail": {...}}
 ```
 
 Mid-run edits (answer/replan in another terminal while streaming) end
@@ -102,7 +105,7 @@ with:
 ```text
 event: error
 data: {"v": "v1", "type": "error", "seq": 7, "status": 409,
-        "reason": "stale_revision", ...}
+        "reason": "stale_revision", ..., "next_action": "refetch_and_retry", ...}
 ```
 
 ## Notes
@@ -120,3 +123,14 @@ data: {"v": "v1", "type": "error", "seq": 7, "status": 409,
 - Limits: `REC_STREAM_MAX_EVENTS=100` (including the terminal event),
   `REC_STREAM_MAX_DURATION_S=120`, `REC_STREAM_KEEPALIVE_S=10` (see
   `.env.example`).
+
+## Owner review (2026-09-27)
+
+The owner reviewed an offline transcript instead of running curl; see
+[evals/phase4_review](../evals/phase4_review/README.md). Progress was
+found understandable, and nothing before `final` could be mistaken for
+the recommendation. Finding P4-REV-01 (error messages stated the failure but not the next
+action) was fixed on the same day: every `error` event now carries
+`next_action` (`retry`, `refetch_and_retry`, `change_request` or
+`contact_operator`); see [recommendations](recommendations.md). The
+reviewed transcript predates the fix, so it has no `next_action` field.

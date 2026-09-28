@@ -28,6 +28,7 @@ from sqlalchemy import create_engine, text
 from culinary_copilot.config import Settings
 from culinary_copilot.embeddings.provider import FakeEmbeddingProvider
 from culinary_copilot.embeddings.query import embed_query
+from culinary_copilot.embeddings.rendering import CHUNKING_VERSION, EMBED_DOCUMENT_VERSION
 from culinary_copilot.recipes import import_data
 from culinary_copilot.recipes.vector_search import vector_candidates
 
@@ -120,6 +121,63 @@ def engine() -> Any:
     eng.dispose()
 
 
+# Minimal corpus for the isolated tier. The tier used to rely on a
+# hand-seeded rehearsal container; on a fresh one every recipe lookup came
+# back empty. Ingredient sets differ so the pantry-boost test has a
+# distinguishing term between the first two recipes.
+_PGVECTOR_SEED = (
+    ("900001", "Chicken Curry", ["chicken", "curry powder", "onion"]),
+    ("900002", "Tomato Basil Pasta", ["pasta", "tomato", "basil"]),
+    ("900003", "Lemon Garlic Salmon", ["salmon", "lemon", "garlic"]),
+)
+
+
+def _seed_pgvector(eng: Any, url: str) -> None:
+    import sys
+
+    sys.path.insert(0, "scripts/embeddings")
+    from embed import _require_disposable_db
+
+    refusal = _require_disposable_db(url)
+    if refusal:
+        pytest.fail(f"PGVECTOR_TEST_URL must name a disposable database: {refusal}")
+    with eng.begin() as conn:
+        import_data.apply_migrations(conn)
+        conn.execute(
+            text(
+                "INSERT INTO recipe_imports (id, dataset_id, revision, checksum, "
+                "normalizer_version, vocabulary_checksum, dataset_url, report) "
+                "VALUES ('test-pgvector-seed', :d, 'test-rev', 'test-checksum', '3', "
+                "'test-vocab', 'https://example.invalid/test', CAST('{}' AS jsonb)) "
+                "ON CONFLICT (id) DO NOTHING"
+            ),
+            {"d": FOODCOM},
+        )
+        for source_id, title, names in _PGVECTOR_SEED:
+            doc = {
+                "title": title,
+                "provenance": {"dataset_id": FOODCOM, "source_id": source_id},
+                "ingredients": [{"canonical": name} for name in names],
+                "instructions": ["Cook it."],
+            }
+            conn.execute(
+                text(
+                    "INSERT INTO recipes (dataset_id, source_id, import_id, title, "
+                    "total_minutes, servings, ingredient_names, document, search_text) "
+                    "VALUES (:d, :s, 'test-pgvector-seed', :t, 20, 2, CAST(:n AS text[]), "
+                    "CAST(:doc AS jsonb), :st) ON CONFLICT (dataset_id, source_id) DO NOTHING"
+                ),
+                {
+                    "d": FOODCOM,
+                    "s": source_id,
+                    "t": title,
+                    "n": names,
+                    "doc": json.dumps(doc),
+                    "st": f"{title} {' '.join(names)}".lower(),
+                },
+            )
+
+
 def _pgvector_engine() -> Any:
     url = os.environ.get("PGVECTOR_TEST_URL", "")
     if not url:
@@ -130,6 +188,7 @@ def _pgvector_engine() -> Any:
             conn.execute(text("SELECT 1"))
     except Exception as exc:
         pytest.skip(f"Isolated pgvector unreachable: {exc}")
+    _seed_pgvector(eng, url)
     return eng
 
 
@@ -203,12 +262,34 @@ def test_stale_renderer_rows_excluded_from_search() -> None:
                     "v": "[" + ",".join(["0.01"] * 1536) + "]",
                 },
             )
+            # One current-version chunk, so the recipe must appear and the
+            # assertion below cannot pass vacuously.
+            conn.execute(
+                text(
+                    "INSERT INTO recipe_embeddings "
+                    "(dataset_id, source_id, model, dimension, renderer_version, "
+                    "chunking_version, chunk_index, embedded_text_hash, embedding) "
+                    "VALUES (:d, :s, :m, 1536, :r, :c, 0, :h, CAST(:v AS vector)) "
+                    "ON CONFLICT DO NOTHING"
+                ),
+                {
+                    "d": dataset_id,
+                    "s": source_id,
+                    "m": "text-embedding-3-small",
+                    "r": EMBED_DOCUMENT_VERSION,
+                    "c": CHUNKING_VERSION,
+                    "h": "current-test-hash",
+                    "v": "[" + ",".join(repr(x) for x in query_vector) + "]",
+                },
+            )
         rows = vector_candidates(
             eng, list(query_vector), limit=25, model="text-embedding-3-small", dimension=1536
         )
-        for row in rows:
-            if row["source_id"] == source_id and row["dataset_id"] == dataset_id:
-                assert row["chunks"] == 1  # stale chunk 99 never counted
+        matches = [
+            row for row in rows if row["source_id"] == source_id and row["dataset_id"] == dataset_id
+        ]
+        assert len(matches) == 1
+        assert matches[0]["chunks"] == 1  # stale chunk 99 never counted
     finally:
         eng.dispose()
 
@@ -361,6 +442,7 @@ def test_cli_resume_embeds_zero_chunks_on_second_run(tmp_path: Path) -> None:
     url = os.environ.get("PGVECTOR_TEST_URL", "")
     if not url:
         pytest.skip("PGVECTOR_TEST_URL not set; CLI resume tier skipped")
+    _pgvector_engine().dispose()  # reachability skip + seeded corpus
     import sys
 
     sys.path.insert(0, "scripts/embeddings")
@@ -384,6 +466,7 @@ def test_cli_crash_recovery_reembeds_idempotently(tmp_path: Path) -> None:
     url = os.environ.get("PGVECTOR_TEST_URL", "")
     if not url:
         pytest.skip("PGVECTOR_TEST_URL not set; crash-recovery tier skipped")
+    _pgvector_engine().dispose()  # reachability skip + seeded corpus
     import sys
 
     sys.path.insert(0, "scripts/embeddings")

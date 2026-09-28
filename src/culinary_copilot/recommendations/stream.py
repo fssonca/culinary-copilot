@@ -18,7 +18,9 @@ Contract version ``v1``:
   non-streaming endpoint (recommendation, clarification, or
   insufficient_evidence).
 - exactly one ``error`` carrying the same stable status/reason/detail
-  envelope, with no recipe content.
+  envelope, with no recipe content, plus ``next_action`` (``retry``,
+  ``refetch_and_retry``, ``change_request`` or ``contact_operator``;
+  see ``domain/recommendations.py``). Additive field; still ``v1``.
 
 Every event carries ``seq`` (0, 1, 2, …) plus correlation IDs
 (``request_id``, ``group_id``, ``request_revision``,
@@ -51,6 +53,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from culinary_copilot.domain.recommendations import next_action_for
 from culinary_copilot.recommendations.service import ALLOWED_STAGES
 
 STREAM_CONTRACT_VERSION = "v1"
@@ -130,5 +133,6 @@ def error_payload(
         "status": status,
         "reason": reason,
         "message": message,
+        "next_action": next_action_for(reason, detail),
         "detail": dict(detail or {}),
     }

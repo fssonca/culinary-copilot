@@ -1,0 +1,93 @@
+===== 1. success (fake model picks a real recipe) =====
+HTTP 200 text/event-stream; charset=utf-8
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 0, "request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "stage": "accepted", "detail": {"request_revision": 1, "group_revision": 1}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 1, "request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "stage": "readiness", "detail": {"ready": true, "reason": "ready"}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 2, "request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "stage": "epicure", "detail": {"outcome": "consulted", "degraded": false}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 3, "request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "stage": "retrieval", "detail": {"retrieved": 1, "fetched": 1, "fetch_failed": 0}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 4, "request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "stage": "evidence", "detail": {"kept": 1, "dropped": 0, "hard_excluded": 0}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 5, "request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "stage": "provider_request", "detail": {"turn": 1}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 6, "request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "stage": "provider_turn", "detail": {"turn": 1, "attempts": 1, "tool_calls": 0}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 7, "request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "stage": "validation", "detail": {"rejected_propositions": 0}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 8, "request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "stage": "revision_check", "detail": {"current": true}}
+
+event: final
+data: {"v": "v1", "type": "final", "seq": 9, "request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "body": {"request_id": "req-p4", "group_id": "grp-da6e9ea367ea", "request_revision": 1, "group_revision": 1, "readiness_note": "Ready for retrieval means sufficient search information only. It does not establish dietary compatibility, allergy safety, validated quantities, nutritional verification, or permission to scale. Constraints listed in unenforced_constraints are preserved in state but are not enforced by the current search implementation and must be checked downstream.", "unenforced_constraints": [], "constraints_not_verified": ["dietary_compatibility", "allergy_safety", "nutrition", "quantities_units", "scaling", "completeness", "equipment_compatibility"], "outcome": "recommendation", "selection": {"dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000159", "title": "Chicken Curry"}, "recipe": {"dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000159", "title": "Chicken Curry", "ingredients": [{"ref": "ing-0", "name": "chicken", "original": "1 lb chicken", "amount": 1.0, "unit": "lb", "quantity_text": "1 lb", "optional": false}, {"ref": "ing-1", "name": "curry powder", "original": "2 tbsp curry powder", "amount": 2.0, "unit": "tbsp", "quantity_text": "2 tbsp", "optional": false}], "instructions": [{"ref": "step-0", "text": "Cook the chicken."}, {"ref": "step-1", "text": "Add curry and serve hot."}], "servings": 4.0, "total_minutes_reported": 25.0, "duration_status": "reported_positive", "provenance": {"dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000159"}}, "ingredient_refs": ["ing-0", "ing-1"], "step_refs": ["step-0", "step-1"], "selection_reasons": [], "selection_reasons_note": "Server-worded from allowlisted proposition types whose prerequisites were checked against your request and the selected source; the model supplied no text. Each sentence states only what it says: no dietary, allergy, nutrition, scaling, or practical-time claims. All recipe content was rendered by the server from the stored source.", "needs": [], "propositions": {"reasons": [], "questions": []}, "rejected_propositions": [], "source_checks": {"structural_admission": "passed", "recorded_blocking_defects": [], "recorded_quality_context": [], "source_flags": [], "ingredient_list_vs_steps": "not_checked", "note": "Structural checks confirm that the ingredient and instruction sections exist and no entries were dropped. They do not establish that the ingredient list covers everything the steps use, or that the recipe is complete. No automatic consistency check exists; only a defect recorded on the stored source blocks a recommendation."}, "constraints": [{"constraint": "time_limit", "verdict": "supported", "detail": "Source-reported total 25 within ceiling 30. Source-reported only; not a deadline-feasibility promise."}, {"constraint": "cuisine", "verdict": "not_applicable", "detail": "Not enforced by retrieval or source evidence; preserved unverified."}, {"constraint": "preferences", "verdict": "not_applicable", "detail": "Not enforced by retrieval or source evidence; preserved unverified."}, {"constraint": "equipment", "verdict": "not_applicable", "detail": "Not enforced by retrieval or source evidence; preserved unverified."}, {"constraint": "substitution_choice", "verdict": "not_applicable", "detail": "Not enforced by retrieval or source evidence; preserved unverified."}], "epicure": {"outcome": "consulted", "suggestions": [{"ingredient": "garlic", "score": 0.5, "for": "chicken"}], "note": "fake consultation", "degraded": false, "unverified_note": "Epicure suggestions are unverified pairing notes. They do not establish substitutions, dietary safety, nutrition, or chemistry, and were never incorporated into the rendered recipe.", "assessment": {"used": [], "rejected": [{"ingredient": "garlic", "score": 0.5, "for": "chicken", "use": "deferred", "reason": "Not in the selected source; deferred as a future adaptation, not a substitution."}]}}, "usage": {"attempts": 1, "latency_ms": 1, "input_tokens": null, "output_tokens": null, "reasoning_tokens": null, "reasoning_effort": null, "turns": [{"model": "fake", "attempts": 1, "latency_ms": 1, "input_tokens": null, "output_tokens": null, "reasoning_tokens": null, "reasoning_effort": null, "response_id": null, "attempt_errors": []}], "model": "fake", "cost_note": "Unknown usage/cost stays unknown; no pricing applied offline."}, "evidence": {"candidate_count": 1, "retrieved_count": 1, "hard_excluded": 0, "dropped_for_budget": 0, "evidence_budget_chars": 6000, "input_budget_chars": 12000, "request_chars_per_turn": [4782], "request_utf8_bytes_per_turn": [4782], "budget_unit_note": "Budgets are characters of the serialized request (messages, continuation items, tools, schemas), not tokens; cost reservations use UTF-8 bytes as a token upper bound.", "evidence_fingerprint": "69b6c4b706e9e1b63d05cd67e33d6e97439267b246aa9e4f8886ef52e7469801", "offered_candidates": [{"candidate_label": "1", "dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000159", "title": "Chicken Curry", "evidence_fingerprint": "69b6c4b706e9e1b63d05cd67e33d6e97439267b246aa9e4f8886ef52e7469801"}]}}}
+
+
+===== 2. model cites a recipe that was not retrieved (validation rejects it) =====
+HTTP 200 text/event-stream; charset=utf-8
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 0, "request_id": "req-p4", "group_id": "grp-b2d6f1564443", "request_revision": 1, "group_revision": 1, "stage": "accepted", "detail": {"request_revision": 1, "group_revision": 1}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 1, "request_id": "req-p4", "group_id": "grp-b2d6f1564443", "request_revision": 1, "group_revision": 1, "stage": "readiness", "detail": {"ready": true, "reason": "ready"}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 2, "request_id": "req-p4", "group_id": "grp-b2d6f1564443", "request_revision": 1, "group_revision": 1, "stage": "epicure", "detail": {"outcome": "consulted", "degraded": false}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 3, "request_id": "req-p4", "group_id": "grp-b2d6f1564443", "request_revision": 1, "group_revision": 1, "stage": "retrieval", "detail": {"retrieved": 1, "fetched": 1, "fetch_failed": 0}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 4, "request_id": "req-p4", "group_id": "grp-b2d6f1564443", "request_revision": 1, "group_revision": 1, "stage": "evidence", "detail": {"kept": 1, "dropped": 0, "hard_excluded": 0}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 5, "request_id": "req-p4", "group_id": "grp-b2d6f1564443", "request_revision": 1, "group_revision": 1, "stage": "provider_request", "detail": {"turn": 1}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 6, "request_id": "req-p4", "group_id": "grp-b2d6f1564443", "request_revision": 1, "group_revision": 1, "stage": "provider_turn", "detail": {"turn": 1, "attempts": 1, "tool_calls": 0}}
+
+event: error
+data: {"v": "v1", "type": "error", "seq": 7, "request_id": "req-p4", "group_id": "grp-b2d6f1564443", "request_revision": 1, "group_revision": 1, "status": 502, "reason": "validation_rejected", "message": "Proposal selection is not in the supplied evidence", "detail": {"validation_reason": "unknown_identity", "proposed": {"dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "no-such-id"}, "offered": [{"candidate_label": "1", "dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000159"}], "attempts": 1, "provider_reached": true, "offered_candidates": [{"candidate_label": "1", "dataset_id": "AkashPS11/recipes_data_food.com", "source_id": "000159", "title": "Chicken Curry", "evidence_fingerprint": "69b6c4b706e9e1b63d05cd67e33d6e97439267b246aa9e4f8886ef52e7469801"}]}}
+
+
+===== 3. request edited in another tab while streaming =====
+HTTP 200 text/event-stream; charset=utf-8
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 0, "request_id": "req-p4", "group_id": "grp-2f0c2090c92d", "request_revision": 1, "group_revision": 1, "stage": "accepted", "detail": {"request_revision": 1, "group_revision": 1}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 1, "request_id": "req-p4", "group_id": "grp-2f0c2090c92d", "request_revision": 1, "group_revision": 1, "stage": "readiness", "detail": {"ready": true, "reason": "ready"}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 2, "request_id": "req-p4", "group_id": "grp-2f0c2090c92d", "request_revision": 1, "group_revision": 1, "stage": "epicure", "detail": {"outcome": "consulted", "degraded": false}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 3, "request_id": "req-p4", "group_id": "grp-2f0c2090c92d", "request_revision": 1, "group_revision": 1, "stage": "retrieval", "detail": {"retrieved": 1, "fetched": 1, "fetch_failed": 0}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 4, "request_id": "req-p4", "group_id": "grp-2f0c2090c92d", "request_revision": 1, "group_revision": 1, "stage": "evidence", "detail": {"kept": 1, "dropped": 0, "hard_excluded": 0}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 5, "request_id": "req-p4", "group_id": "grp-2f0c2090c92d", "request_revision": 1, "group_revision": 1, "stage": "provider_request", "detail": {"turn": 1}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 6, "request_id": "req-p4", "group_id": "grp-2f0c2090c92d", "request_revision": 1, "group_revision": 1, "stage": "provider_turn", "detail": {"turn": 1, "attempts": 1, "tool_calls": 0}}
+
+event: stage
+data: {"v": "v1", "type": "stage", "seq": 7, "request_id": "req-p4", "group_id": "grp-2f0c2090c92d", "request_revision": 1, "group_revision": 1, "stage": "validation", "detail": {"rejected_propositions": 0}}
+
+event: error
+data: {"v": "v1", "type": "error", "seq": 8, "request_id": "req-p4", "group_id": "grp-2f0c2090c92d", "request_revision": 1, "group_revision": 1, "status": 409, "reason": "stale_revision", "message": "stale revision: state changed while generating; started at request=1 group=1, now request=2 group=2; refetch the group and retry", "detail": {}}
+
+

@@ -199,8 +199,17 @@ No live model reliability claim follows from fake-provider tests.
 
 The pgvector tier (`PGVECTOR_TEST_URL`, `tests/test_embeddings_pg.py`) needs
 a disposable database whose name contains `test`, `disposable` or `check`.
-It currently has 5 known failures, which also reproduce on the Phase 5
-commit (`02b5eba`); see the scoreboard's limits.
+The tier migrates and seeds that database itself (three recipes), so a
+fresh `pgvector/pgvector` container is enough:
+
+```sh
+docker run -d --rm --name cc-pgv-test -e POSTGRES_USER=t -e POSTGRES_PASSWORD=t \
+  -e POSTGRES_DB=cc_disposable_test -p 127.0.0.1:55439:5432 \
+  pgvector/pgvector:pg17-trixie@sha256:724a4041afdb1750446e3f6b5cfa8f3b0ac5a2cf538ddfa6bfee4f94c2fa85c6
+PGVECTOR_TEST_URL=postgresql+psycopg://t:t@127.0.0.1:55439/cc_disposable_test \
+  uv run pytest -q tests/test_embeddings_pg.py
+docker stop cc-pgv-test
+```
 
 - [Clarification contracts and HTTP examples](../clarification.md)
 - [Retrieval evidence summaries](../retrieval.md)

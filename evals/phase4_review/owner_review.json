@@ -1,0 +1,48 @@
+{
+  "version": "phase4-owner-review-v1",
+  "date": "2026-09-27",
+  "owner": "Fernando Sousa",
+  "checkpoint": "Phase 4 human role: progress is understandable and provisional content cannot be confused with the authoritative final response",
+  "method": "Offline transcript instead of curl. With generation disabled, curl receives only HTTP 503 generation_disabled and no events; seeing events over curl needs a paid live call, which was not authorized. The transcript was captured from the real stream endpoint driven by the Phase 4 test fakes (fake model, stubbed one-recipe lookup, no paid calls, no database).",
+  "attribution": "Answers drafted by an external AI assistant from the transcript and a plain-language explainer written by Claude; the owner read them and explicitly agreed. Not a live-model evaluation.",
+  "reviewed_inputs_sha256": {
+    "evals/phase4_review/sse_transcript.txt": "e21af0a0488c64c6aaa2b8ae7b4091ee872ad3f446e738d10dfbc596daeebcc2",
+    "evals/phase4_review/capture_sse.py": "df17d8e6e0002582ae9fd3660fc08809717c6aa927066126bd9533c21945fc40"
+  },
+  "scenarios": [
+    "1. success: 9 stage events (seq 0-8), one final",
+    "2. model selects a recipe it was not given: stages, one error 502 validation_rejected, no final",
+    "3. request edited mid-stream: stages, one error 409 stale_revision, no final"
+  ],
+  "answers": {
+    "progress_understandable": {
+      "answer": "yes",
+      "note": "With the stage-name table the sequence is understandable (accepted, readiness, helper consultation, retrieval, evidence, model request/response, validation, revision check); detail counts match the stages."
+    },
+    "nothing_before_final_mistakable_for_recommendation": {
+      "answer": "yes",
+      "note": "No stage event contains ingredients, instructions or recommendation text; the recipe appears only in the final event of recording 1."
+    },
+    "error_endings_clear": {
+      "answer": "no",
+      "note": "Both failure streams end with exactly one error and no final. Recording 3 states the problem and the action (refetch and retry). Recording 2 states the problem but its message does not tell the user what to do next."
+    }
+  },
+  "finding": {
+    "id": "P4-REV-01",
+    "summary": "Error messages state the failure but not the next action.",
+    "scope_observed": "validation_rejected in recording 2; the same holds for most non-409 recommendation errors (provider, schema, corpus, configuration).",
+    "status": "fixed",
+    "note": "A blanket 'Please retry' would be wrong for configuration failures (authentication, generation disabled), where a retry cannot succeed. Fix design is pending owner decision.",
+    "resolution": "2026-09-27, owner-approved proposal: every failure body with a reason and every stream error event carries next_action (retry | refetch_and_retry | change_request | contact_operator), mapped per reason in domain/recommendations.py; messages unchanged. Tests: tests/test_next_action.py. The reviewed transcript predates the fix."
+  },
+  "decision": "streaming_contract_accepted_with_open_finding",
+  "not_covered": [
+    "live model streaming (live smoke prepared in docs/phase4-live-smoke.md, not run)",
+    "client disconnect and keep-alive behaviour (covered by offline tests only)"
+  ],
+  "authorizations": {
+    "paid_calls": false,
+    "application_writes": false
+  }
+}

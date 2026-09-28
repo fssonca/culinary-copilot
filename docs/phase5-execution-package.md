@@ -171,6 +171,10 @@ Debian 13 trixie, glibc 2.41, PostgreSQL 17.11, pgvector 0.8.6.
 - **Test tier**: `PGVECTOR_TEST_URL` → trixie: **26 passed** (migration CLI,
   pantry boost, dimension CHECKs, resume, crash recovery, ledger guard,
   hybrid plumbing). Stock tier: 004-skip + full-text intact.
+  *(Historical note, 2026-09-27: this result depended on the 25 recipes
+  seeded by hand above. On a fresh container, 5 tier tests failed
+  because the database was empty. The tier now seeds itself; see the
+  scoreboard's limits.)*
 
 ## 8. Recovery, stated honestly
 

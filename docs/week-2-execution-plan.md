@@ -1,9 +1,24 @@
-> Current checkpoint (2026-09-24): Phases 1–3 are complete within their documented
-> scope. Phase 3 is owner-accepted based on AI-assisted review; proposed enrichments
-> are review records only. See [closure](phase3-closure.md) and the
-> [owner decision](../evals/phase3_review/owner_decisions.json). Phase 4 is next.
-> Earlier prompts/checkpoints below are retained as the execution plan, not pending
-> approvals for work already accepted.
+> Current checkpoint (2026-09-27): Phases 1–6 are implemented within their
+> documented scope.
+> - Phase 3 is owner-accepted based on AI-assisted review
+>   ([closure](phase3-closure.md), [owner decision](../evals/phase3_review/owner_decisions.json)).
+> - Phase 5's pgvector change and embedding run were owner-approved and executed
+>   ([execution package](phase5-execution-package.md)).
+> - Phase 6 is recorded in the [scoreboard](scoreboard.md) and
+>   [ADR 0001](adr/0001-retrieval-default.md): `vector_c` won the blind comparison,
+>   and full-text stays the default.
+> - The pgvector test tier now seeds its own disposable database and passes.
+> - Phase 4's streaming review was done by the owner on 2026-09-27 from an offline
+>   transcript ([record](../evals/phase4_review/owner_review.json)), because curl
+>   alone shows only a 503 while generation is disabled. Its one finding
+>   (P4-REV-01: errors didn't say what to do next) is fixed with a `next_action` field.
+>
+> Still open:
+> - merging branch `phase6-retrieval-comparison`.
+>
+> Live streaming was never exercised ([live smoke](phase4-live-smoke.md) prepared,
+> not run). Earlier prompts/checkpoints below are retained as the execution plan,
+> not pending approvals for work already accepted.
 
 # Week 2 execution plan and agent prompts
 

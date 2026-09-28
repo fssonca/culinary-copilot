@@ -81,6 +81,24 @@ collapsed into `provider_unavailable`), and `provider_internal_error`
 (local failure before send or during response processing, with the
 exception type and a `request_sent` flag; stops the live runner).
 
+Every failure body with a `reason` (and every stream `error` event) also
+carries `next_action`, so a client knows what to do without parsing the
+message (finding P4-REV-01, owner review 2026-09-27). Mapping lives in
+`domain/recommendations.py::next_action_for`:
+
+| `next_action` | Reasons |
+| --- | --- |
+| `retry` (a new attempt, and a new paid model call, may succeed) | `schema_failure`, `validation_rejected` (except hard constraints), `truncated_incomplete_response`, `empty_response`, `invalid_tool_call`, `turn_limit_exceeded`, `provider_timeout`, `provider_unavailable`, `provider_rate_limited`, `corpus_unavailable`, `stream_duration_exceeded` |
+| `refetch_and_retry` | `stale_revision` (409) |
+| `change_request` (the same request fails the same way) | `validation_rejected` with `hard_constraint_violation`, `input_budget_exceeded`, `provider_refusal`, `provider_content_filter`, `unknown_group`, `malformed` |
+| `contact_operator` (server configuration or code; retrying cannot help) | `generation_disabled`, `provider_auth`, `provider_not_found`, `provider_bad_request`, `provider_request_error`, `provider_internal_error`, `stream_event_limit_exceeded`, `internal_error`, and any unmapped reason |
+
+The JSON endpoint's 404/409/422 bodies keep their plain-string `detail`
+(the 409 text already says to refetch and retry); `next_action` is added
+wherever the body has a `reason`. The field is additive, so the stream
+contract stays `v1`. A test fails if a new reason code has no explicit
+mapping.
+
 **Provider refusal is a controlled failed outcome (502, reason
 `provider_refusal`).** It is never mislabeled `insufficient_evidence`,
 which is a successful 200 outcome describing the corpus. Conflicting

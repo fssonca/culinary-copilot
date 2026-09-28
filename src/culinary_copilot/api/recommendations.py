@@ -25,6 +25,12 @@ HTTP mapping (documented explicitly):
   ``empty_response``, ``invalid_tool_call``, ``turn_limit_exceeded``,
   ``provider_refusal``, ``provider_content_filter``,
   ``provider_bad_request``, and ``provider_request_error``.
+- Every failure body with a ``reason`` also carries ``next_action``:
+  ``retry`` (a new model call may succeed), ``refetch_and_retry``,
+  ``change_request`` (the same request fails the same way) or
+  ``contact_operator`` (server configuration; retrying cannot help).
+  404/409/422 bodies keep their plain-string ``detail``; the 409 text
+  already says to refetch and retry.
 - Provider refusal is a controlled FAILED outcome (502, reason
   ``provider_refusal``). It is never mislabeled ``insufficient_evidence``,
   which is a successful 200 outcome describing the corpus.
@@ -56,7 +62,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.responses import StreamingResponse
 
-from culinary_copilot.domain.recommendations import RecommendationRequest
+from culinary_copilot.domain.recommendations import RecommendationRequest, next_action_for
 from culinary_copilot.recommendations.service import (
     RecommendationFailure,
     RecommendationNotFoundError,
@@ -87,7 +93,12 @@ def _http_error(exc: BaseException) -> HTTPException | None:
     if isinstance(exc, RecommendationFailure):
         return HTTPException(
             status_code=exc.http_status,
-            detail={"reason": exc.reason, "message": exc.message, **exc.detail},
+            detail={
+                "reason": exc.reason,
+                "message": exc.message,
+                "next_action": next_action_for(exc.reason, exc.detail),
+                **exc.detail,
+            },
         )
     if isinstance(exc, ValueError):
         return HTTPException(status_code=422, detail=str(exc))

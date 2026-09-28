@@ -97,6 +97,65 @@ REJECT_EVIDENCE_CHANGED = "evidence_changed"
 # input budget. Raised before that turn is sent (earlier turns' usage kept).
 REASON_BUDGET_EXCEEDED = "input_budget_exceeded"
 
+# What a client should do after a failure (P4-REV-01). Messages state the
+# failure; ``next_action`` states the remedy, so a retry is never suggested
+# where it cannot succeed.
+NEXT_RETRY = "retry"  # transient or model-dependent; costs a new model call
+NEXT_REFETCH_AND_RETRY = "refetch_and_retry"  # request changed; reload first
+NEXT_CHANGE_REQUEST = "change_request"  # the same request fails the same way
+NEXT_CONTACT_OPERATOR = "contact_operator"  # server configuration must change
+NEXT_ACTIONS = (NEXT_RETRY, NEXT_REFETCH_AND_RETRY, NEXT_CHANGE_REQUEST, NEXT_CONTACT_OPERATOR)
+
+_NEXT_ACTION_BY_REASON: dict[str, str] = {
+    # Model output problems: another attempt can succeed.
+    REASON_SCHEMA_FAILURE: NEXT_RETRY,
+    REASON_VALIDATION_REJECTED: NEXT_RETRY,  # except hard constraints, below
+    REASON_TRUNCATED: NEXT_RETRY,
+    REASON_EMPTY: NEXT_RETRY,
+    REASON_TURN_LIMIT: NEXT_RETRY,
+    REASON_INVALID_TOOL: NEXT_RETRY,
+    # Transient provider or infrastructure failures.
+    REASON_UNAVAILABLE: NEXT_RETRY,
+    REASON_RATE_LIMITED: NEXT_RETRY,
+    "provider_timeout": NEXT_RETRY,
+    "corpus_unavailable": NEXT_RETRY,
+    "stream_duration_exceeded": NEXT_RETRY,
+    # The request itself has to change.
+    REASON_PROVIDER_REFUSAL: NEXT_CHANGE_REQUEST,
+    REASON_CONTENT_FILTER: NEXT_CHANGE_REQUEST,
+    REASON_BUDGET_EXCEEDED: NEXT_CHANGE_REQUEST,
+    "unknown_group": NEXT_CHANGE_REQUEST,
+    "malformed": NEXT_CHANGE_REQUEST,
+    # State moved on while running.
+    "stale_revision": NEXT_REFETCH_AND_RETRY,
+    # Server configuration or code: retrying cannot help. Provider 4xx
+    # other than rate limits are never retried by the service either.
+    REASON_BAD_REQUEST: NEXT_CONTACT_OPERATOR,
+    REASON_REQUEST_ERROR: NEXT_CONTACT_OPERATOR,
+    REASON_INTERNAL_ERROR: NEXT_CONTACT_OPERATOR,  # local failure, not provider
+    REASON_NOT_FOUND: NEXT_CONTACT_OPERATOR,
+    "provider_auth": NEXT_CONTACT_OPERATOR,
+    "generation_disabled": NEXT_CONTACT_OPERATOR,
+    "stream_event_limit_exceeded": NEXT_CONTACT_OPERATOR,
+    "internal_error": NEXT_CONTACT_OPERATOR,
+}
+
+
+def next_action_for(reason: str, detail: dict[str, Any] | None = None) -> str:
+    """Stable client remedy for a failure ``reason`` (see ``NEXT_ACTIONS``).
+
+    A hard-constraint rejection is ``change_request``: the constraint's
+    evidence is missing from the sources, so repeating the request fails
+    again. Unmapped reasons fall back to ``contact_operator``.
+    """
+    if (
+        reason == REASON_VALIDATION_REJECTED
+        and (detail or {}).get("validation_reason") == REJECT_HARD_CONSTRAINT
+    ):
+        return NEXT_CHANGE_REQUEST
+    return _NEXT_ACTION_BY_REASON.get(reason, NEXT_CONTACT_OPERATOR)
+
+
 # Typed proposition allowlist (replaces free-text selection_reasons/needs).
 # The model proposes only a type (plus bounded ingredient refs where the
 # type needs them); the server checks each type's prerequisites against

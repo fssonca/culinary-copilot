@@ -206,7 +206,8 @@ every Phase 6 run (read-only; sample lookups confirmed). Migrations
   `cce59bb5…`).
 - Code revision 02b5eba plus the uncommitted Phase 6 worktree
   (recorded dirty in `freeze.json`); full-text is the unchanged
-  default; nothing committed.
+  default. The runs used that uncommitted tree; it was committed
+  afterwards as `48552c8` (branch `phase6-retrieval-comparison`).
 
 Reproduce: `uv run python scripts/retrieval_eval/run_phase6.py --cases
 data/phase6/blind/blind_cases_phase6_format.json --split
@@ -226,11 +227,14 @@ pool-based recall; development labels partly AI-assisted; the cutoff
 was tuned on non-food probes and is not expected to catch
 food-sounding no-match queries (not tested); embedding outage fails
 closed (recorded error, no silent fallback).
-`tests/test_embeddings_pg.py` has 5 failures on a disposable pgvector
-DB — `test_stale_renderer_rows_excluded_from_search`,
-`test_vector_pantry_boost_orders_before_distance_ties`,
-`test_embedding_dimension_check_accepts_registry_dims`,
-`test_cli_resume_embeds_zero_chunks_on_second_run`,
-`test_cli_crash_recovery_reembeds_idempotently` — reproduced on a clean
-02b5eba checkout, so pre-existing and not Phase 6, although Phase 5
-recorded the tier as passing. Deferred; not fixed in Phase 6.
+
+The pgvector test tier (`tests/test_embeddings_pg.py`) had 5 failures
+on a fresh disposable pgvector DB during Phase 6. They also reproduced
+on a clean 02b5eba checkout, so they predate Phase 6. The cause was
+the test setup, not the embedding code: the tier read recipes from a
+database that Phase 5 had seeded by hand (25 recipes), and nothing
+seeded a fresh one. Fixed after Phase 6 (2026-09-27): the tier now
+migrates and seeds its disposable database itself. The stale-row test
+also gained a current-version chunk, so it can no longer pass without
+checking anything. With the tier on, the full suite gives 663 passed,
+1 skipped.
