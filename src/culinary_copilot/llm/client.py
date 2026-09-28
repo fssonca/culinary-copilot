@@ -176,6 +176,7 @@ class ApplicationLlmProvider(Protocol):
         tools: list[dict[str, Any]] | None,
         tool_choice: dict[str, Any] | None,
         response_model: type[BaseModel] | None,
+        max_output_tokens: int | None = None,
     ) -> NativeTurnResult: ...
 
 
@@ -513,6 +514,7 @@ class FakeApplicationProvider:
         tools: list[dict[str, Any]] | None,
         tool_choice: dict[str, Any] | None,
         response_model: type[BaseModel] | None,
+        max_output_tokens: int | None = None,
     ) -> NativeTurnResult:
         """Offline fake for a native tool turn.
 
@@ -521,7 +523,8 @@ class FakeApplicationProvider:
         for a tool turn (with optional ``{"native_reasoning_items": [...]}``
         replayed before the calls, mirroring real reasoning-model output),
         ``{"native_parsed": {...}}`` for a structured turn, or a raised
-        exception mapped by the service.
+        exception mapped by the service. ``max_output_tokens`` is recorded
+        but not enforced (offline).
         """
         self.calls.append(
             {
@@ -533,6 +536,7 @@ class FakeApplicationProvider:
                 "tool_defs": copy.deepcopy(tools),
                 "tool_choice": copy.deepcopy(tool_choice),
                 "response_model": response_model,
+                "max_output_tokens": max_output_tokens,
             }
         )
         if self.script:
@@ -693,6 +697,7 @@ class OpenAIApplicationProvider:
         tools: list[dict[str, Any]] | None,
         tool_choice: dict[str, Any] | None,
         response_model: type[BaseModel] | None,
+        max_output_tokens: int | None = None,
     ) -> NativeTurnResult:
         """One native function-calling turn over the Responses API.
 
@@ -702,7 +707,10 @@ class OpenAIApplicationProvider:
         ``name``, JSON ``arguments``); structured payloads come from
         ``output_parsed`` when ``response_model`` is set. Absent output,
         refusals, and incomplete statuses map to the same controlled
-        errors as structured calls.
+        errors as structured calls. ``max_output_tokens`` overrides the
+        configured per-turn maximum when given (the agent loop passes the
+        hard output-ceiling remainder); omitted callers keep current
+        behavior.
         """
         if not self.settings.llm_recommendation_enabled:
             raise ProviderDisabledError(
@@ -716,7 +724,11 @@ class OpenAIApplicationProvider:
         # surfacing as a paid 400 unknown_parameter).
         validate_chained_input(input_items)
         model = self.settings.llm_rec_model
-        max_output = self.settings.llm_rec_max_output_tokens
+        max_output = (
+            max_output_tokens
+            if max_output_tokens is not None
+            else self.settings.llm_rec_max_output_tokens
+        )
         max_retries = max(0, self.settings.llm_rec_max_retries)
         timeout = self.settings.llm_rec_timeout_s
         effort = self.settings.llm_rec_reasoning_effort

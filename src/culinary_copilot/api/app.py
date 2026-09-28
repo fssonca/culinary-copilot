@@ -106,6 +106,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             embed_provider=query_embed_provider,
         )
     )
+    # Bounded agent loop (Milestone 3, Phase 3): answers, select, SSE
+    # stream over the typed tool registry. No agent loop runs unless a
+    # client posts to the stream endpoint.
+    from culinary_copilot.api.agent import build_router as build_agent_router
+
+    app.include_router(
+        build_agent_router(
+            settings=settings,
+            engine=engine,
+            session_store=session_store,
+            provider=llm_provider,
+            embed_provider=query_embed_provider,
+        )
+    )
     # Recommendation-stage Epicure uses cached assets only (Stage B wiring);
     # Stage A tests inject the fake adapter directly at the service layer.
     from culinary_copilot.recommendations.epicure import CachedEpicureAdapter

@@ -122,6 +122,25 @@ REASON_TOOL_PERMISSION_DENIED = "tool_permission_denied"
 REASON_SCALE_MISSING_SERVINGS = "scale_missing_servings"
 REASON_CONVERT_UNSUPPORTED_UNIT = "convert_unsupported_unit"
 
+# Stable stop reasons for the bounded agent loop (Milestone 3, Phase 3,
+# reviewed). Step, tool-call and token budgets are per session and never
+# reset, so exhausting one is ``change_request`` (start a new session);
+# the wall clock is per run, so it stays ``retry``. Finals
+# (sufficient_evidence, needs_user_input) are terminal success codes,
+# not errors: they are intentionally NOT in ``_NEXT_ACTION_BY_REASON``
+# (see the scanner's documented exclusion set), and only error
+# terminals emit ``next_action`` to clients.
+REASON_AGENT_MAX_STEPS = "agent_max_steps"
+REASON_AGENT_TOOL_BUDGET = "agent_tool_budget_exhausted"
+REASON_AGENT_TOKEN_BUDGET = "agent_token_budget_exhausted"
+REASON_AGENT_WALL_CLOCK = "agent_wall_clock_exceeded"
+REASON_AGENT_SUFFICIENT = "agent_sufficient_evidence"
+REASON_AGENT_NEEDS_INPUT = "agent_needs_user_input"
+REASON_AGENT_NO_PROGRESS = "agent_no_progress"
+REASON_AGENT_VALIDATION_FAILED = "agent_validation_failed"
+REASON_UNKNOWN_QUESTION = "unknown_question"
+REASON_UNKNOWN_OPTION = "unknown_option"
+
 # What a client should do after a failure (P4-REV-01). Messages state the
 # failure; ``next_action`` states the remedy, so a retry is never suggested
 # where it cannot succeed.
@@ -162,6 +181,14 @@ _NEXT_ACTION_BY_REASON: dict[str, str] = {
     REASON_TOOL_PERMISSION_DENIED: NEXT_CHANGE_REQUEST,
     REASON_SCALE_MISSING_SERVINGS: NEXT_CHANGE_REQUEST,
     REASON_CONVERT_UNSUPPORTED_UNIT: NEXT_CHANGE_REQUEST,
+    REASON_AGENT_MAX_STEPS: NEXT_CHANGE_REQUEST,
+    REASON_AGENT_TOOL_BUDGET: NEXT_CHANGE_REQUEST,
+    REASON_AGENT_TOKEN_BUDGET: NEXT_CHANGE_REQUEST,
+    REASON_AGENT_WALL_CLOCK: NEXT_RETRY,
+    REASON_AGENT_NO_PROGRESS: NEXT_CHANGE_REQUEST,
+    REASON_AGENT_VALIDATION_FAILED: NEXT_CHANGE_REQUEST,
+    REASON_UNKNOWN_QUESTION: NEXT_CHANGE_REQUEST,
+    REASON_UNKNOWN_OPTION: NEXT_CHANGE_REQUEST,
     "malformed": NEXT_CHANGE_REQUEST,
     # State moved on while running.
     "stale_revision": NEXT_REFETCH_AND_RETRY,

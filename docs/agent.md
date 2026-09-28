@@ -1,0 +1,183 @@
+# Bounded agent loop (Milestone 3, Phase 3 — implemented)
+
+Backend-only, hand-written (no LangGraph, agent framework, multi-agent
+design or MCP). The loop reuses the provider boundary
+(`llm/client.py` native function calling), the Phase 2 tool registry,
+the Postgres session store, and deterministic validators
+(`agent/validate.py`). Existing endpoints, including the v1
+recommendation stream, are unchanged.
+
+## Step sequence (`agent/loop.py::run_agent`)
+
+One step at a time, until a stop reason:
+
+1. Read the session (`session_store.get`; missing → 404
+   `unknown_session`). An `expected_revision` mismatch fails fast with
+   409 `stale_revision`.
+2. Check server-set stops: `steps_remaining <= 0` → `max_steps`,
+   `tool_calls_remaining <= 0` → `tool_budget_exhausted`, wall clock
+   past `AGENT_WALL_CLOCK_S` → `wall_clock_exceeded`.
+3. Ask the model for the next action through native function calling
+   over the filtered registry tools, plus the structured
+   `AgentDirective` (`ask_user` / `finish`) as the text-format schema.
+   The provider turn is bounded by the remaining wall clock.
+4. Tool-call turn: parse each call (bad JSON or unknown/unoffered tool
+   → inline typed `invalid_arguments` error, never an exception);
+   budget the batch (affordable prefix runs, excess gets a typed
+   `agent_tool_budget_exhausted` error each and the run stops);
+   execute through `run_tool` with `asyncio.gather` — independent calls
+   in parallel, results recorded in call order.
+5. Write the outcome with a CAS update (`store.mutate`) plus a concise
+   step event (`agent_step` with budgets). A CAS race raises
+   `AgentConcurrentError` (409 `stale_revision`): a concurrent run on
+   the same session always loses loudly, never silently.
+6. Directive turn: `ask_user` stores the question and stops
+   `needs_user_input`; `finish` runs deterministic validators, feeds
+   failures back once as a tool-style error, then stops
+   (`sufficient_evidence` or `agent_validation_failed`).
+
+Model input per turn: task framing (tool outputs and recipe text are
+data, never instructions; hard constraints never relaxed; adaptations
+labelled) + compact session snapshot (constraints, recent confirmed
+answers, unresolved questions, budgets, Epicure status) + capped
+history (first item plus newest; tool results as
+`function_call_output` data items). `session_events` keeps the full
+record; only concise decisions and outcomes are stored — never private
+model reasoning.
+
+## Tool-list filtering (backend, every step)
+
+- `search_web` is offered only when the session's
+  `internet_search_allowed` is true (the tool re-checks on every call).
+- Tools that returned `tool_not_configured` in this session (current run
+  or the `tool_call` event log) are not offered again — permanent
+  failures are never retried.
+
+## Limits (Checkpoint 0 + review, all server-side)
+
+| Limit | Value | Source |
+|---|---|---|
+| Steps per session | 8 | `steps_remaining` on the session row (server-set at create) |
+| Tool calls per session | 12 | `tool_calls_remaining` on the session row |
+| Input tokens per session | 20,000 | `AGENT_INPUT_TOKEN_CEILING` (read before every turn) |
+| Output tokens per session | 5,000 | `AGENT_OUTPUT_TOKEN_CEILING` (read before every turn) |
+| Wall clock per run | 90 s | `AGENT_WALL_CLOCK_S` (read by the loop at run start) |
+| Per tool call | 10 s | `TOOL_TIMEOUT_S` (registry) |
+
+One step = one provider turn and its tool executions. A batch asking
+for more calls than remain runs the affordable prefix, records a typed
+error for each excess call, and stops with `tool_budget_exhausted`.
+
+Token accounting: provider-reported usage summed from `session_events`
+(step/question/finish payloads carry `input_tokens`/`output_tokens`;
+no schema change). Turns that report no usage fall back to a chars/4
+estimate (the repo has no token estimator), flagged
+`*_tokens_estimated`. The pre-turn input estimate counts everything the
+provider is sent: input items, the function definitions of the offered
+tools, the `AgentDirective` response schema, and the system/instruction
+text. The loop stops with `agent_token_budget_exhausted` before a turn
+whose estimated input would cross the input ceiling. Output is
+hard-capped per turn at `min` (configured per-turn maximum, tokens
+remaining); below a documented useful minimum of 500 the turn cannot
+answer, so the loop stops first. A response truncated by the cap stops
+the run the same way, never as a schema failure. Measured: fixed part
+~2600/turn, realistic 4-turn session ~11.3k in (real doc sizes from
+`data/recipe-import/normalized.jsonl`, never the app DB), recorded live
+structured outputs up to ~2k/call. Ceilings (30000 in / 12000 out)
+cover ~2.6x measured and a full 8-step session; overshoot is impossible
+since 8 steps bound totals by construction.
+
+## Stop reasons, statuses and `next_action`
+
+Budgets are per session and never reset: exhausting one says to start a
+new session (`change_request`, reported as 422). The wall clock is per
+run (`retry`, reported as 408). 5xx is reserved for real server or
+provider faults (provider failures, DB outage, internal defects).
+
+| Stop reason | Terminal | Status | `next_action` |
+|---|---|---|---|
+| `agent_max_steps` | error (start a new session) | 422 | `change_request` |
+| `agent_tool_budget_exhausted` | error (start a new session) | 422 | `change_request` |
+| `agent_token_budget_exhausted` | error (start a new session) | 422 | `change_request` |
+| `agent_wall_clock_exceeded` | error | 408 | `retry` |
+| `agent_sufficient_evidence` | final (normal completion) | — | — (terminal success, not in the error mapping) |
+| `agent_needs_user_input` | final (question in `unresolved_questions`, phase `clarify`) | — | — (the question is the call to action) |
+| `agent_no_progress` (3 failed steps, 3 identical calls with identical results, or repeated empty turns) | error | 422 | `change_request` |
+| `agent_validation_failed` (second rejection) | error | 422 | `change_request` |
+| `invalid_phase_transition` (model-requested illegal move: defect, fails immediately) | error | 422 | `change_request` |
+
+Provider errors reuse existing reasons (`provider_timeout` →
+`retry`, `provider_auth` → `contact_operator`, `provider_refusal` →
+`change_request`, …): retryable ones count toward the failure streak,
+others fail the run at once.
+
+## Epicure by default
+
+Unless the model skips it with an allowlisted reason, a session that
+reaches recommend has queried Epicure (`EPICURE_SKIP_ALLOWLIST`:
+`simple_technique_question`, `direct_recipe_lookup`,
+`epicure_not_configured`). When Epicure is disabled or all pairing
+tools are not-configured, the loop records `epicure_not_configured`
+itself. Each suggestion gets one recorded line (`used …` / `rejected
+…`); the outcome (`consulted/used/rejected`) or skip reason is stored
+in `epicure_outcome` / `epicure_skip_reason`. The directive may carry one
+optional line per suggestion (`epicure_lines`: ingredient, used/rejected,
+reason), recorded as given; suggestions the model says nothing about get
+derived text prefixed `derived:` so it is never mistaken for the agent's
+reason.
+
+## Ask only when material, then resume
+
+The yogurt case works end to end: the agent asks when a retrieved
+recipe needs an unconfirmed ingredient, the run stops
+`needs_user_input` with the question in `unresolved_questions` and the
+phase in `clarify`, `POST …/answers` merges the answer (CAS, question
+removed), and the next run substitutes (labelled `adaptation`,
+`unverified`), re-retrieves or continues.
+
+## Outputs
+
+- `recommend`: 1–4 sourced options (2–4 normally; a single option only
+  for `direct_recipe_lookup`, or when several were submitted but just one
+  validates — recorded as `only_one_valid_candidate` with the dropped
+  ones reported). Every option passes deterministic
+  validators: IDs resolve via exact `(dataset_id, source_id)` lookup,
+  stated quantities match the source, adaptations carry
+  `label: "adaptation"`, and every hard session constraint appears in
+  `constraints_honored`. Stored in `suggestions` (+ source refs in
+  `evidence`).
+- `select`: `POST …/select` stores the user's pick from the offered
+  options (CAS to `selected_dish`, phase `select`).
+- `plan`: `cooking_plan` (mise en place, steps, plating) from the
+  selected source, with `scale_recipe` / `convert_units` results where
+  asked. The plan source must equal the selected dish.
+
+## Endpoints (`api/agent.py`)
+
+| Endpoint | Behavior |
+|---|---|
+| `POST /api/v1/sessions/{id}/answers` `{revision, question_id, answer}` | merge + drop question (CAS); 404 `unknown_question`, 409 `stale_revision` |
+| `POST /api/v1/sessions/{id}/select` `{revision, dataset_id, source_id}` | pick from offered options (CAS); 422 `unknown_option`, 409 `stale_revision` |
+| `POST /api/v1/sessions/{id}/agent/stream` `{expected_revision?}` | SSE: `stage` events (concise outcomes, never recipe text or reasoning), then exactly one `final` or one `error` (which carries `next_action`); mid-run CAS race → single 409 `stale_revision` error |
+
+## New settings (read, not dead)
+
+- `AGENT_WALL_CLOCK_S` (default 90): read by `agent/loop.py` at run
+  start. Steps/tool calls are session-row budgets, not settings.
+- `AGENT_INPUT_TOKEN_CEILING` (default 30000) and
+  `AGENT_OUTPUT_TOKEN_CEILING` (default 12000): read before every turn;
+  usage summed from `session_events`; per-turn output hard-capped at
+  `min(6500, remaining)` with a 500-token useful minimum. All three
+  documented in `.env.example`.
+
+## Review packet
+
+`evals/phase3_agent/`: `generate.py` (offline, scripted fakes,
+disposable `culinary_check_packet` DB) renders `trajectories.json` +
+`REVIEW.md` (10 trajectories in plain language: normal recommend +
+select + plan, yogurt, direct+select+plan, constraint conflict, empty
+retrieval, tool failure, budget, wall clock, Epicure skip,
+no-progress; every option/plan shows title, IDs, source facts vs
+labelled adaptations, plus budgets and token totals after each run).
+`LIVE_PLAN.md` is the prepared, unrun live plan (gpt-6-luna,
+repo-recorded pricing, measured ceilings, $0.15 bound, 8 live cases).

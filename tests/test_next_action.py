@@ -36,6 +36,12 @@ from culinary_copilot.domain.recommendations import (
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "culinary_copilot"
 
+# Terminal success codes: finals of the bounded agent loop, not errors.
+# They intentionally have no next_action mapping (finals never carry
+# next_action; only error terminals do). Documented here so the scanner
+# below still forces a mapping for every other reason code.
+TERMINAL_SUCCESS_REASONS = frozenset({"agent_sufficient_evidence", "agent_needs_user_input"})
+
 
 def _failure_reasons_in_source() -> set[str]:
     """Every failure reason the workflow and API can emit."""
@@ -49,11 +55,14 @@ def _failure_reasons_in_source() -> set[str]:
         SRC / "recommendations" / "service.py",
         SRC / "api" / "recommendations.py",
         SRC / "api" / "sessions.py",
+        SRC / "api" / "agent.py",
         SRC / "tools" / "search_tools.py",
         SRC / "tools" / "epicure_tools.py",
         SRC / "tools" / "measure_tools.py",
         SRC / "tools" / "stub_tools.py",
         SRC / "tools" / "registry.py",
+        SRC / "agent" / "loop.py",
+        SRC / "agent" / "validate.py",
     ):
         reasons |= set(pattern.findall(path.read_text(encoding="utf-8")))
     # Tool reason constants (REASON_TOOL_*, REASON_SCALE_*, REASON_CONVERT_*)
@@ -76,9 +85,15 @@ def _failure_reasons_in_source() -> set[str]:
 def test_every_emitted_reason_has_an_explicit_next_action() -> None:
     reasons = _failure_reasons_in_source()
     assert "validation_rejected" in reasons and "stream_duration_exceeded" in reasons
-    unmapped = sorted(reasons - set(_NEXT_ACTION_BY_REASON))
+    unmapped = sorted(reasons - set(_NEXT_ACTION_BY_REASON) - set(TERMINAL_SUCCESS_REASONS))
     assert unmapped == [], f"add a next_action mapping for: {unmapped}"
     assert set(_NEXT_ACTION_BY_REASON.values()) <= set(NEXT_ACTIONS)
+
+
+def test_finals_are_not_errors() -> None:
+    """Terminal success codes must stay out of the error mapping."""
+    for reason in TERMINAL_SUCCESS_REASONS:
+        assert reason not in _NEXT_ACTION_BY_REASON
 
 
 def test_hard_constraint_rejection_needs_a_changed_request() -> None:

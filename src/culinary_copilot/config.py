@@ -196,6 +196,12 @@ class Settings(BaseSettings):
             raise ValueError("SESSION_MAX_STEPS must be >= 1")
         if not math.isfinite(float(self.tool_timeout_s)) or float(self.tool_timeout_s) <= 0:
             raise ValueError("TOOL_TIMEOUT_S must be a finite positive number")
+        if not math.isfinite(float(self.agent_wall_clock_s)) or float(self.agent_wall_clock_s) <= 0:
+            raise ValueError("AGENT_WALL_CLOCK_S must be a finite positive number")
+        if int(self.agent_input_token_ceiling) < 1:
+            raise ValueError("AGENT_INPUT_TOKEN_CEILING must be >= 1")
+        if int(self.agent_output_token_ceiling) < 1:
+            raise ValueError("AGENT_OUTPUT_TOKEN_CEILING must be >= 1")
         for label, model_id, revision in (
             ("EPICURE_COOC", self.epicure_cooc_model_id, self.epicure_cooc_revision),
             ("EPICURE_CHEM", self.epicure_chem_model_id, self.epicure_chem_revision),
@@ -237,3 +243,22 @@ class Settings(BaseSettings):
     # Typed tool layer (Milestone 3, Phase 2, Checkpoint 0 budgets):
     # per-tool timeout 10 s. Read by tools/registry.py on every call.
     tool_timeout_s: float = 10.0
+    # Bounded agent loop (Milestone 3, Phase 3, Checkpoint 0 budgets):
+    # wall clock 90 s per agent run. Read by agent/loop.py at run start.
+    # Steps (8) and tool calls (12) are per-session budgets stored on the
+    # session row (SESSION_MAX_STEPS / SESSION_MAX_TOOL_CALLS), not settings.
+    agent_wall_clock_s: float = 90.0
+    # Per-session token budgets (Phase 3 review, round 2): provider-reported
+    # usage summed from session_events, no schema change. Full pre-turn
+    # estimate counts items + offered tool defs + directive schema
+    # (chars/4; the repo has no token estimator). Measured: fixed part
+    # ~2600/turn, realistic 4-turn session ~11.3k in (real doc sizes from
+    # data/recipe-import/normalized.jsonl), recorded live structured
+    # outputs up to ~2k/call. Input 30k covers ~2.6x measured and a full
+    # 8-step session; output 12k covers ~6 max-recorded turns; the
+    # per-turn output cap (min 6500 configured max, 500 useful minimum)
+    # keeps single turns sane. Overshoot is impossible: 8 steps bound
+    # totals by construction. See evals/phase3_agent/. Read by
+    # agent/loop.py before every turn.
+    agent_input_token_ceiling: int = 30_000
+    agent_output_token_ceiling: int = 12_000

@@ -1,0 +1,1561 @@
+[
+  {
+    "key": "normal-full-flow",
+    "title": "Normal full flow (recommend, select, plan)",
+    "request": "I want a chicken dinner for tonight, about 30 minutes.",
+    "session_seed": {},
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_sufficient_evidence",
+        "phase": "recommend",
+        "revision": 3,
+        "final": {
+          "options": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "curry-1",
+              "title": "Creamy Chicken Curry",
+              "quantities": [
+                {
+                  "ingredient": "chicken",
+                  "amount": "500",
+                  "unit": "g"
+                }
+              ],
+              "adaptations": []
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "lentil-2",
+              "title": "Red Lentil Soup",
+              "quantities": [
+                {
+                  "ingredient": "red lentils",
+                  "amount": "200",
+                  "unit": "g"
+                }
+              ],
+              "adaptations": []
+            }
+          ]
+        },
+        "turn_input_tokens": [
+          2620,
+          2871
+        ],
+        "tokens_used": {
+          "input": 5491,
+          "output": 195
+        },
+        "budgets_after": {
+          "steps_remaining": 6,
+          "tool_calls_remaining": 10,
+          "input_tokens_used": 5491,
+          "output_tokens_used": 195
+        }
+      },
+      {
+        "stop_reason": "agent_sufficient_evidence",
+        "phase": "plan",
+        "revision": 6,
+        "final": {
+          "plan": {
+            "source": {
+              "dataset_id": "odunola/foodie",
+              "source_id": "curry-1"
+            },
+            "mise_en_place": [
+              "dice chicken",
+              "measure yogurt"
+            ],
+            "steps": [
+              "brown chicken",
+              "stir in yogurt",
+              "serve"
+            ],
+            "plating": "over rice in shallow bowls",
+            "quantities": [
+              {
+                "ingredient": "chicken",
+                "amount": "500",
+                "unit": "g"
+              }
+            ],
+            "adaptations": []
+          }
+        },
+        "turn_input_tokens": [
+          2651,
+          2817
+        ],
+        "tokens_used": {
+          "input": 5468,
+          "output": 154
+        },
+        "budgets_after": {
+          "steps_remaining": 4,
+          "tool_calls_remaining": 9,
+          "input_tokens_used": 10959,
+          "output_tokens_used": 349
+        }
+      }
+    ],
+    "final_phase": "plan",
+    "suggestions": [
+      {
+        "title": "Creamy Chicken Curry",
+        "source_id": "curry-1",
+        "dataset_id": "odunola/foodie",
+        "quantities": [
+          {
+            "unit": "g",
+            "amount": "500",
+            "ingredient": "chicken"
+          }
+        ],
+        "adaptations": []
+      },
+      {
+        "title": "Red Lentil Soup",
+        "source_id": "lentil-2",
+        "dataset_id": "odunola/foodie",
+        "quantities": [
+          {
+            "unit": "g",
+            "amount": "200",
+            "ingredient": "red lentils"
+          }
+        ],
+        "adaptations": []
+      }
+    ],
+    "cooking_plan": {
+      "steps": [
+        "brown chicken",
+        "stir in yogurt",
+        "serve"
+      ],
+      "source": {
+        "source_id": "curry-1",
+        "dataset_id": "odunola/foodie"
+      },
+      "plating": "over rice in shallow bowls",
+      "quantities": [
+        {
+          "unit": "g",
+          "amount": "500",
+          "ingredient": "chicken"
+        }
+      ],
+      "adaptations": [],
+      "mise_en_place": [
+        "dice chicken",
+        "measure yogurt"
+      ]
+    },
+    "selected_dish": {
+      "title": "Creamy Chicken Curry",
+      "source_id": "curry-1",
+      "dataset_id": "odunola/foodie"
+    },
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": "consulted:2 used:0 rejected:2",
+    "epicure_skip_reason": null,
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.11,
+          "args_digest": "35889461a127b258"
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "find_balanced_pairings",
+          "reason": null,
+          "call_id": "c2",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 49.82,
+          "args_digest": "c56cf9f3752e2cd2"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 2 call(s), 2 ok",
+          "input_tokens": 2620,
+          "output_tokens": 67,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 10,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_finished",
+        "payload": {
+          "note": "packet finish",
+          "options": 2,
+          "input_tokens": 2871,
+          "epicure_lines": [
+            "derived: rejected pork: not used in the final options",
+            "derived: rejected beef: not used in the final options"
+          ],
+          "output_tokens": 128,
+          "dropped_options": [],
+          "epicure_skip_reason": null,
+          "single_option_reason": null,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_select",
+        "payload": {
+          "source_id": "curry-1",
+          "dataset_id": "odunola/foodie"
+        }
+      },
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "select",
+          "steps_remaining": 6,
+          "input_tokens_used": 5491,
+          "output_tokens_used": 195,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 10
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c4",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.1,
+          "args_digest": "d3eacc34ba37f163"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 1 call(s), 1 ok",
+          "input_tokens": 2651,
+          "output_tokens": 43,
+          "steps_remaining": 5,
+          "tool_calls_remaining": 9,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_finished",
+        "payload": {
+          "note": "packet plan",
+          "plan_source": {
+            "source_id": "curry-1",
+            "dataset_id": "odunola/foodie"
+          },
+          "input_tokens": 2817,
+          "output_tokens": 111,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "yogurt-ask-resume",
+    "title": "Yogurt ask-and-resume",
+    "request": "Something with chicken; I might have yogurt.",
+    "session_seed": {},
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_needs_user_input",
+        "phase": "clarify",
+        "revision": 3,
+        "final": {
+          "question": {
+            "question_id": "q-yogurt",
+            "question_text": "Do you have plain yogurt?",
+            "options": [
+              "yes",
+              "no"
+            ]
+          }
+        },
+        "turn_input_tokens": [
+          2620,
+          2918
+        ],
+        "tokens_used": {
+          "input": 5538,
+          "output": 119
+        },
+        "budgets_after": {
+          "steps_remaining": 6,
+          "tool_calls_remaining": 10,
+          "input_tokens_used": 5538,
+          "output_tokens_used": 119
+        }
+      },
+      {
+        "stop_reason": "agent_sufficient_evidence",
+        "phase": "recommend",
+        "revision": 6,
+        "final": {
+          "options": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "curry-1",
+              "title": "Creamy Chicken Curry",
+              "quantities": [
+                {
+                  "ingredient": "chicken",
+                  "amount": "500",
+                  "unit": "g"
+                }
+              ],
+              "adaptations": [
+                {
+                  "description": "unverified substitution: coconut milk for yogurt (Epicure candidate, no dietary claim)",
+                  "label": "adaptation"
+                }
+              ]
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "lentil-2",
+              "title": "Red Lentil Soup",
+              "quantities": [
+                {
+                  "ingredient": "red lentils",
+                  "amount": "200",
+                  "unit": "g"
+                }
+              ],
+              "adaptations": []
+            }
+          ]
+        },
+        "turn_input_tokens": [
+          2633,
+          2769
+        ],
+        "tokens_used": {
+          "input": 5402,
+          "output": 196
+        },
+        "budgets_after": {
+          "steps_remaining": 4,
+          "tool_calls_remaining": 9,
+          "input_tokens_used": 10940,
+          "output_tokens_used": 315
+        }
+      }
+    ],
+    "final_phase": "recommend",
+    "suggestions": [
+      {
+        "title": "Creamy Chicken Curry",
+        "source_id": "curry-1",
+        "dataset_id": "odunola/foodie",
+        "quantities": [
+          {
+            "unit": "g",
+            "amount": "500",
+            "ingredient": "chicken"
+          }
+        ],
+        "adaptations": [
+          {
+            "label": "adaptation",
+            "description": "unverified substitution: coconut milk for yogurt (Epicure candidate, no dietary claim)"
+          }
+        ]
+      },
+      {
+        "title": "Red Lentil Soup",
+        "source_id": "lentil-2",
+        "dataset_id": "odunola/foodie",
+        "quantities": [
+          {
+            "unit": "g",
+            "amount": "200",
+            "ingredient": "red lentils"
+          }
+        ],
+        "adaptations": []
+      }
+    ],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [
+      {
+        "answer": "no",
+        "question_id": "q-yogurt"
+      }
+    ],
+    "unresolved_questions": [],
+    "epicure_outcome": "consulted:2 used:1 rejected:1",
+    "epicure_skip_reason": null,
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.1,
+          "args_digest": "f29557e88c4f6163"
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c2",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.05,
+          "args_digest": "d3eacc34ba37f163"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 2 call(s), 2 ok",
+          "input_tokens": 2620,
+          "output_tokens": 71,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 10,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_question",
+        "payload": {
+          "note": "curry needs yogurt",
+          "question_id": "q-yogurt",
+          "input_tokens": 2918,
+          "output_tokens": 48,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_answer",
+        "payload": {
+          "question_id": "q-yogurt"
+        }
+      },
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "clarify",
+          "steps_remaining": 6,
+          "input_tokens_used": 5538,
+          "output_tokens_used": 119,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 10
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "find_substitutions",
+          "reason": null,
+          "call_id": "c3",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.09,
+          "args_digest": "97b80d8dc5b0456e"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 1 call(s), 1 ok",
+          "input_tokens": 2633,
+          "output_tokens": 36,
+          "steps_remaining": 5,
+          "tool_calls_remaining": 9,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_finished",
+        "payload": {
+          "note": "packet finish",
+          "options": 2,
+          "input_tokens": 2769,
+          "epicure_lines": [
+            "derived: used coconut milk: appears in the final options",
+            "derived: rejected sour cream: not used in the final options"
+          ],
+          "output_tokens": 160,
+          "dropped_options": [],
+          "epicure_skip_reason": null,
+          "single_option_reason": null,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "direct-recipe",
+    "title": "Direct recipe request (skips select)",
+    "request": "Give me the red lentil soup recipe.",
+    "session_seed": {},
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_sufficient_evidence",
+        "phase": "recommend",
+        "revision": 3,
+        "final": {
+          "options": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "lentil-2",
+              "title": "Red Lentil Soup",
+              "quantities": [
+                {
+                  "ingredient": "red lentils",
+                  "amount": "200",
+                  "unit": "g"
+                }
+              ],
+              "adaptations": []
+            }
+          ]
+        },
+        "turn_input_tokens": [
+          2620,
+          2770
+        ],
+        "tokens_used": {
+          "input": 5390,
+          "output": 130
+        },
+        "budgets_after": {
+          "steps_remaining": 6,
+          "tool_calls_remaining": 11,
+          "input_tokens_used": 5390,
+          "output_tokens_used": 130
+        }
+      },
+      {
+        "stop_reason": "agent_sufficient_evidence",
+        "phase": "plan",
+        "revision": 5,
+        "final": {
+          "plan": {
+            "source": {
+              "dataset_id": "odunola/foodie",
+              "source_id": "lentil-2"
+            },
+            "mise_en_place": [
+              "rinse lentils",
+              "dice onion"
+            ],
+            "steps": [
+              "simmer 25 minutes",
+              "blend half",
+              "serve"
+            ],
+            "plating": "in deep bowls with lemon",
+            "quantities": [],
+            "adaptations": []
+          }
+        },
+        "turn_input_tokens": [
+          2648
+        ],
+        "tokens_used": {
+          "input": 2648,
+          "output": 87
+        },
+        "budgets_after": {
+          "steps_remaining": 5,
+          "tool_calls_remaining": 11,
+          "input_tokens_used": 8038,
+          "output_tokens_used": 217
+        }
+      }
+    ],
+    "final_phase": "plan",
+    "suggestions": [
+      {
+        "title": "Red Lentil Soup",
+        "source_id": "lentil-2",
+        "dataset_id": "odunola/foodie",
+        "quantities": [
+          {
+            "unit": "g",
+            "amount": "200",
+            "ingredient": "red lentils"
+          }
+        ],
+        "adaptations": []
+      }
+    ],
+    "cooking_plan": {
+      "steps": [
+        "simmer 25 minutes",
+        "blend half",
+        "serve"
+      ],
+      "source": {
+        "source_id": "lentil-2",
+        "dataset_id": "odunola/foodie"
+      },
+      "plating": "in deep bowls with lemon",
+      "quantities": [],
+      "adaptations": [],
+      "mise_en_place": [
+        "rinse lentils",
+        "dice onion"
+      ]
+    },
+    "selected_dish": {
+      "title": "Red Lentil Soup",
+      "source_id": "lentil-2",
+      "dataset_id": "odunola/foodie"
+    },
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": null,
+    "epicure_skip_reason": "direct_recipe_lookup",
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.09,
+          "args_digest": "f7edfccee6b0a6e8"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 1 call(s), 1 ok",
+          "input_tokens": 2620,
+          "output_tokens": 36,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 11,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_finished",
+        "payload": {
+          "note": "packet finish",
+          "options": 1,
+          "input_tokens": 2770,
+          "epicure_lines": [],
+          "output_tokens": 94,
+          "dropped_options": [],
+          "epicure_skip_reason": "direct_recipe_lookup",
+          "single_option_reason": null,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_select",
+        "payload": {
+          "source_id": "lentil-2",
+          "dataset_id": "odunola/foodie"
+        }
+      },
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "select",
+          "steps_remaining": 6,
+          "input_tokens_used": 5390,
+          "output_tokens_used": 130,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 11
+        }
+      },
+      {
+        "type": "agent_finished",
+        "payload": {
+          "note": "packet plan",
+          "plan_source": {
+            "source_id": "lentil-2",
+            "dataset_id": "odunola/foodie"
+          },
+          "input_tokens": 2648,
+          "output_tokens": 87,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "hard-constraint-conflict",
+    "title": "Hard-constraint conflict (rejected, then honored)",
+    "request": "Vegetarian dinner, something hearty.",
+    "session_seed": {
+      "constraints": {
+        "dietary_constraints": [
+          "vegetarian"
+        ]
+      }
+    },
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_sufficient_evidence",
+        "phase": "recommend",
+        "revision": 3,
+        "final": {
+          "options": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "lentil-2",
+              "title": "Red Lentil Soup",
+              "quantities": [
+                {
+                  "ingredient": "red lentils",
+                  "amount": "200",
+                  "unit": "g"
+                }
+              ],
+              "adaptations": []
+            }
+          ]
+        },
+        "turn_input_tokens": [
+          2630,
+          2767
+        ],
+        "tokens_used": {
+          "input": 5397,
+          "output": 227
+        },
+        "budgets_after": {
+          "steps_remaining": 6,
+          "tool_calls_remaining": 12,
+          "input_tokens_used": 5397,
+          "output_tokens_used": 227
+        }
+      }
+    ],
+    "final_phase": "recommend",
+    "suggestions": [
+      {
+        "title": "Red Lentil Soup",
+        "source_id": "lentil-2",
+        "dataset_id": "odunola/foodie",
+        "quantities": [
+          {
+            "unit": "g",
+            "amount": "200",
+            "ingredient": "red lentils"
+          }
+        ],
+        "adaptations": []
+      }
+    ],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": null,
+    "epicure_skip_reason": "direct_recipe_lookup",
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "agent_validation_reject",
+        "payload": {
+          "errors": [
+            "Epicure not queried and no allowlisted skip reason (allowlist: ['direct_recipe_lookup', 'epicure_not_configured', 'simple_technique_question'])",
+            "dropped hard constraint: dietary_constraints"
+          ],
+          "input_tokens": 2630,
+          "output_tokens": 128,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_finished",
+        "payload": {
+          "note": "packet finish",
+          "options": 1,
+          "input_tokens": 2767,
+          "epicure_lines": [],
+          "output_tokens": 99,
+          "dropped_options": [],
+          "epicure_skip_reason": "direct_recipe_lookup",
+          "single_option_reason": null,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "empty-retrieval",
+    "title": "Empty retrieval (asks user to rephrase)",
+    "request": "Dragonfruit soufflé glacé.",
+    "session_seed": {},
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_needs_user_input",
+        "phase": "clarify",
+        "revision": 3,
+        "final": {
+          "question": {
+            "question_id": "q-rephrase",
+            "question_text": "I found no recipes for that. What dish should I look for?",
+            "options": []
+          }
+        },
+        "turn_input_tokens": [
+          2620,
+          2721
+        ],
+        "tokens_used": {
+          "input": 5341,
+          "output": 90
+        },
+        "budgets_after": {
+          "steps_remaining": 6,
+          "tool_calls_remaining": 11,
+          "input_tokens_used": 5341,
+          "output_tokens_used": 90
+        }
+      }
+    ],
+    "final_phase": "clarify",
+    "suggestions": [],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [],
+    "unresolved_questions": [
+      {
+        "options": [],
+        "question_id": "q-rephrase",
+        "question_text": "I found no recipes for that. What dish should I look for?"
+      }
+    ],
+    "epicure_outcome": null,
+    "epicure_skip_reason": null,
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.09,
+          "args_digest": "9fbaa0f3b5bd284d"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 1 call(s), 1 ok",
+          "input_tokens": 2620,
+          "output_tokens": 37,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 11,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_question",
+        "payload": {
+          "note": "empty retrieval",
+          "question_id": "q-rephrase",
+          "input_tokens": 2721,
+          "output_tokens": 53,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "tool-failure",
+    "title": "Tool failure (Epicure not configured, no retry)",
+    "request": "Chicken pairings for a roast.",
+    "session_seed": {},
+    "epicure_enabled": false,
+    "runs": [
+      {
+        "stop_reason": "agent_sufficient_evidence",
+        "phase": "recommend",
+        "revision": 3,
+        "final": {
+          "options": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "curry-1",
+              "title": "Creamy Chicken Curry",
+              "quantities": [
+                {
+                  "ingredient": "chicken",
+                  "amount": "500",
+                  "unit": "g"
+                }
+              ],
+              "adaptations": []
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "lentil-2",
+              "title": "Red Lentil Soup",
+              "quantities": [
+                {
+                  "ingredient": "red lentils",
+                  "amount": "200",
+                  "unit": "g"
+                }
+              ],
+              "adaptations": []
+            }
+          ]
+        },
+        "turn_input_tokens": [
+          2620,
+          2740
+        ],
+        "tokens_used": {
+          "input": 5360,
+          "output": 195
+        },
+        "budgets_after": {
+          "steps_remaining": 6,
+          "tool_calls_remaining": 10,
+          "input_tokens_used": 5360,
+          "output_tokens_used": 195
+        }
+      }
+    ],
+    "final_phase": "recommend",
+    "suggestions": [
+      {
+        "title": "Creamy Chicken Curry",
+        "source_id": "curry-1",
+        "dataset_id": "odunola/foodie",
+        "quantities": [
+          {
+            "unit": "g",
+            "amount": "500",
+            "ingredient": "chicken"
+          }
+        ],
+        "adaptations": []
+      },
+      {
+        "title": "Red Lentil Soup",
+        "source_id": "lentil-2",
+        "dataset_id": "odunola/foodie",
+        "quantities": [
+          {
+            "unit": "g",
+            "amount": "200",
+            "ingredient": "red lentils"
+          }
+        ],
+        "adaptations": []
+      }
+    ],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": null,
+    "epicure_skip_reason": "epicure_not_configured",
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "find_balanced_pairings",
+          "reason": "tool_not_configured",
+          "call_id": "c1",
+          "outcome": "error",
+          "cost_class": "free",
+          "error_type": "unavailable",
+          "latency_ms": 0.02,
+          "args_digest": "c56cf9f3752e2cd2"
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c2",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.1,
+          "args_digest": "9463a293f0a5c6db"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 2 call(s), 1 ok",
+          "input_tokens": 2620,
+          "output_tokens": 67,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 10,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_finished",
+        "payload": {
+          "note": "packet finish",
+          "options": 2,
+          "input_tokens": 2740,
+          "epicure_lines": [],
+          "output_tokens": 128,
+          "dropped_options": [],
+          "epicure_skip_reason": "epicure_not_configured",
+          "single_option_reason": null,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "budget-exhaustion",
+    "title": "Budget exhaustion (batch exceeds tool calls)",
+    "request": "Compare five chicken dishes.",
+    "session_seed": {
+      "tool_calls_remaining": 2
+    },
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_tool_budget_exhausted",
+        "error": true,
+        "http_status": 422,
+        "message": "batch exceeded the tool-call budget (1 excess not run); start a new session",
+        "next_action": "change_request",
+        "revision": 2,
+        "turn_input_tokens": [
+          2620
+        ],
+        "tokens_used": {
+          "input": 2620,
+          "output": 85
+        },
+        "budgets_after": {
+          "steps_remaining": 7,
+          "tool_calls_remaining": 0,
+          "input_tokens_used": 2620,
+          "output_tokens_used": 85
+        }
+      }
+    ],
+    "final_phase": "discover",
+    "suggestions": [],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": null,
+    "epicure_skip_reason": null,
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 2
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.1,
+          "args_digest": "0b318357fa6a166c"
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c2",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.07,
+          "args_digest": "8c6e8f5654d56d11"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 3 call(s), 2 ok",
+          "input_tokens": 2620,
+          "output_tokens": 85,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 0,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "wall-clock-stop",
+    "title": "Wall-clock stop",
+    "request": "A slow search day.",
+    "session_seed": {},
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_wall_clock_exceeded",
+        "error": true,
+        "http_status": 408,
+        "message": "wall clock exceeded; start a new run to continue",
+        "next_action": "retry",
+        "revision": 2,
+        "turn_input_tokens": [
+          2620
+        ],
+        "tokens_used": {
+          "input": 2620,
+          "output": 33
+        },
+        "budgets_after": {
+          "steps_remaining": 7,
+          "tool_calls_remaining": 11,
+          "input_tokens_used": 2620,
+          "output_tokens_used": 33
+        }
+      }
+    ],
+    "final_phase": "discover",
+    "suggestions": [],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": null,
+    "epicure_skip_reason": null,
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 608.93,
+          "args_digest": "74f3806b9424e517"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 1 call(s), 1 ok",
+          "input_tokens": 2620,
+          "output_tokens": 33,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 11,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "epicure-skip",
+    "title": "Epicure skip (simple technique question)",
+    "request": "How do I boil an egg, and what soup goes with it?",
+    "session_seed": {},
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_sufficient_evidence",
+        "phase": "recommend",
+        "revision": 2,
+        "final": {
+          "options": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "lentil-2",
+              "title": "Red Lentil Soup",
+              "quantities": [
+                {
+                  "ingredient": "red lentils",
+                  "amount": "200",
+                  "unit": "g"
+                }
+              ],
+              "adaptations": []
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "curry-1",
+              "title": "Creamy Chicken Curry",
+              "quantities": [
+                {
+                  "ingredient": "chicken",
+                  "amount": "500",
+                  "unit": "g"
+                }
+              ],
+              "adaptations": []
+            }
+          ]
+        },
+        "turn_input_tokens": [
+          2620
+        ],
+        "tokens_used": {
+          "input": 2620,
+          "output": 141
+        },
+        "budgets_after": {
+          "steps_remaining": 7,
+          "tool_calls_remaining": 12,
+          "input_tokens_used": 2620,
+          "output_tokens_used": 141
+        }
+      }
+    ],
+    "final_phase": "recommend",
+    "suggestions": [
+      {
+        "title": "Red Lentil Soup",
+        "source_id": "lentil-2",
+        "dataset_id": "odunola/foodie",
+        "quantities": [
+          {
+            "unit": "g",
+            "amount": "200",
+            "ingredient": "red lentils"
+          }
+        ],
+        "adaptations": []
+      },
+      {
+        "title": "Creamy Chicken Curry",
+        "source_id": "curry-1",
+        "dataset_id": "odunola/foodie",
+        "quantities": [
+          {
+            "unit": "g",
+            "amount": "500",
+            "ingredient": "chicken"
+          }
+        ],
+        "adaptations": []
+      }
+    ],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": null,
+    "epicure_skip_reason": "simple_technique_question",
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "agent_finished",
+        "payload": {
+          "note": "packet finish",
+          "options": 2,
+          "input_tokens": 2620,
+          "epicure_lines": [],
+          "output_tokens": 141,
+          "dropped_options": [],
+          "epicure_skip_reason": "simple_technique_question",
+          "single_option_reason": null,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "no-progress",
+    "title": "No progress (identical calls, no new information)",
+    "request": "Chicken please.",
+    "session_seed": {},
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_no_progress",
+        "error": true,
+        "http_status": 422,
+        "message": "repeated identical search_recipes calls without new information",
+        "next_action": "change_request",
+        "revision": 3,
+        "turn_input_tokens": [
+          2620,
+          2768,
+          2899
+        ],
+        "tokens_used": {
+          "input": 5388,
+          "output": 68
+        },
+        "budgets_after": {
+          "steps_remaining": 6,
+          "tool_calls_remaining": 10,
+          "input_tokens_used": 5388,
+          "output_tokens_used": 68
+        }
+      }
+    ],
+    "final_phase": "discover",
+    "suggestions": [],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": null,
+    "epicure_skip_reason": null,
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.21,
+          "args_digest": "f29557e88c4f6163"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 1 call(s), 1 ok",
+          "input_tokens": 2620,
+          "output_tokens": 34,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 11,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c2",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.13,
+          "args_digest": "f29557e88c4f6163"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 2: 1 call(s), 1 ok",
+          "input_tokens": 2768,
+          "output_tokens": 34,
+          "steps_remaining": 6,
+          "tool_calls_remaining": 10,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c3",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.16,
+          "args_digest": "f29557e88c4f6163"
+        }
+      }
+    ]
+  }
+]

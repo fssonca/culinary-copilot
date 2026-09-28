@@ -1,8 +1,11 @@
 # Milestone 3 execution plan: agentic RAG and optional internet research
 
 Status: **checkpoint 0 decided (2026-09-28); Phase 1 implemented and
-reviewed (2026-09-28, see `docs/sessions.md`); Phase 2 implemented
-(2026-09-28, see `docs/tools.md`); Phases 3–7 not started.**
+reviewed (2026-09-28, see `docs/sessions.md`); Phase 2 implemented and
+reviewed (2026-09-28, see `docs/tools.md`); Phase 3 implemented
+(2026-09-28, see `docs/agent.md`; ends at a human checkpoint — review
+`evals/phase3_agent/REVIEW.md` and approve `LIVE_PLAN.md` before any
+live run); Phases 4–7 not started.**
 Based on Milestone 3 in `../../ai-learning-plan.md` and the code at `266d89d`
 (branch `phase6-retrieval-comparison`, since merged into main).
 
