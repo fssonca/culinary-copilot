@@ -111,12 +111,25 @@ DROP TABLE IF EXISTS sessions;
 DELETE FROM recipe_schema_migrations WHERE version = '005';
 ```
 
-## Application migration package (prepared 2026-09-28; NOT executed — needs owner approval)
+## Application migration package (applied 2026-09-28 with owner approval)
 
-Target: the application database only (`localhost:5432/culinary_copilot`).
-Do not run any step below without an explicit go-ahead. All rehearsals so
-far used disposable databases (`cc_disposable_check` on stock
-`postgres:17`; `culinary_test_sessions` on the local pgvector container).
+**Applied to `localhost:5432/culinary_copilot` on 2026-09-28** after owner
+go-ahead. Recorded outcome:
+- pre-checks: ledger `001`–`004`, `16033` recipes, `443` quarantine, no
+  `sessions` table;
+- backup `data/session-migration-backup-005.sql` (511 MB, sha256
+  `7dacf828…`, not in Git), restored into `culinary_check_restore_005` with
+  `16033` / `443` and ledger `001`–`004`;
+- migrate: `applied=['005'] skipped=0`;
+- post-checks: ledger `001`–`005` with unchanged checksums, `16033` / `443`,
+  `sessions` and `session_events` present; API smoke created a session
+  (revision 1, `discover`, search off, budgets 12/8) and read it back with a
+  `created` event (one smoke-test session row remains).
+
+The steps below are kept as the record of what was run and as the template
+for re-applying after a rollback. Earlier rehearsals used disposable
+databases (`cc_disposable_check` on stock `postgres:17`;
+`culinary_test_sessions` on the local pgvector container).
 
 1. Target identity checks (read-only; abort unless all match):
    ```sh
