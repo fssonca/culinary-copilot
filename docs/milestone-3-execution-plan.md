@@ -6,8 +6,8 @@ reviewed (2026-09-28, see `docs/tools.md`); Phase 3 implemented
 (2026-09-28, see `docs/agent.md`; ends at a human checkpoint — review
 `evals/phase3_agent/REVIEW.md` and approve `LIVE_PLAN.md` before any
 live run); Phases 4–7 not started. Phase 4 part 1: source proposal
-drafted, awaiting owner approval. Phase 4 part 2 implemented; app apply
-and paid embedding pending owner go-ahead.**
+drafted, awaiting owner approval. Phase 4 complete; label spot-check
+by owner pending.**
 Based on Milestone 3 in `../../ai-learning-plan.md` and the code at `266d89d`
 (branch `phase6-retrieval-comparison`, since merged into main).
 
@@ -298,6 +298,14 @@ Run offline with fakes, then the approved live run within the ceiling. Write
 docs/agent-scoreboard.md and ADR 0002 (agent loop design, limits, tool
 boundaries, what a framework would replace). Update architecture docs.
 ```
+
+Phase 7 carry-over from Phase 4 (food-safety regression cases; the
+`TECHNIQUE_RETRIEVAL_MODE` default stays `fulltext` until this
+comparison):
+- tq-04 "chicken internal temperature": full-text misses it (chicken
+  vs poultry), vector finds it;
+- tq-15 "pink chicken inside": both modes miss it; the FDA page says
+  colour is not a reliable indicator.
 
 ### Human checkpoint C
 

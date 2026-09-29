@@ -1,0 +1,456 @@
+{
+  "generated_utc": "2026-09-29T02:19:48Z",
+  "mode": "vector",
+  "fake": false,
+  "query_tokens_reserved": 814,
+  "query_cost_usd": 1.628e-05,
+  "cutoff_note": "0.66 is recipe-calibrated and UNCALIBRATED for technique chunks; both figures are reported so the cutoff can be set from data.",
+  "cases": 16,
+  "cutoff_0_66": {
+    "hit_rate_at_5": 0.9375,
+    "mrr": 0.84375
+  },
+  "no_cutoff": {
+    "hit_rate_at_5": 0.9375,
+    "mrr": 0.84375
+  },
+  "cases_sha256": "762d966c7af62d4a4ee0f8ae9f55b94de245be7baddfa47dd5cf04b8fdfa2a57",
+  "rows": [
+    {
+      "case_id": "tq-01",
+      "paraphrase": false,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-sear-01",
+          "tech-grill-08",
+          "tech-poach-05",
+          "tech-roast-03",
+          "tech-marinate-R4"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-sear-01",
+          "tech-grill-08",
+          "tech-poach-05",
+          "tech-roast-03",
+          "tech-marinate-R4"
+        ]
+      },
+      "relevant_distances": {
+        "tech-sear-01": 0.5747204377443051
+      },
+      "relevant_docs": [
+        "tech-sear-01"
+      ]
+    },
+    {
+      "case_id": "tq-02",
+      "paraphrase": false,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-braise-04",
+          "tech-grill-08"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-braise-04",
+          "tech-grill-08"
+        ]
+      },
+      "relevant_distances": {
+        "tech-braise-04": 0.41668569566554636
+      },
+      "relevant_docs": [
+        "tech-braise-04"
+      ]
+    },
+    {
+      "case_id": "tq-03",
+      "paraphrase": false,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-egg-boil-18",
+          "tech-egg-sep-19"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-egg-boil-18",
+          "tech-egg-sep-19"
+        ]
+      },
+      "relevant_distances": {
+        "tech-egg-boil-18": 0.4253305377818276
+      },
+      "relevant_docs": [
+        "tech-egg-boil-18"
+      ]
+    },
+    {
+      "case_id": "tq-04",
+      "paraphrase": false,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-fda-safe-32",
+          "tech-poach-05",
+          "tech-roast-03"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-fda-safe-32",
+          "tech-poach-05",
+          "tech-roast-03"
+        ]
+      },
+      "relevant_distances": {
+        "tech-fda-safe-32": 0.39284625185420996
+      },
+      "relevant_docs": [
+        "tech-fda-safe-32"
+      ]
+    },
+    {
+      "case_id": "tq-05",
+      "paraphrase": false,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-freeze-R6",
+          "tech-overview-13"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-freeze-R6",
+          "tech-overview-13"
+        ]
+      },
+      "relevant_distances": {
+        "tech-freeze-R6": 0.4426267091336591
+      },
+      "relevant_docs": [
+        "tech-fda-kitchen-33",
+        "tech-freeze-R6"
+      ]
+    },
+    {
+      "case_id": "tq-06",
+      "paraphrase": false,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-roux-17"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-roux-17",
+          "tech-deglaze-31",
+          "tech-sauce-15"
+        ]
+      },
+      "relevant_distances": {
+        "tech-roux-17": 0.4219102971302521,
+        "tech-sauce-15": 0.7367022746882123
+      },
+      "relevant_docs": [
+        "tech-roux-17",
+        "tech-sauce-15"
+      ]
+    },
+    {
+      "case_id": "tq-07",
+      "paraphrase": false,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 0.5,
+        "retrieved_docs": [
+          "tech-fry-07",
+          "tech-saute-02",
+          "tech-sear-01"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 0.5,
+        "retrieved_docs": [
+          "tech-fry-07",
+          "tech-saute-02",
+          "tech-sear-01"
+        ]
+      },
+      "relevant_distances": {
+        "tech-saute-02": 0.3873305759231539
+      },
+      "relevant_docs": [
+        "tech-saute-02"
+      ]
+    },
+    {
+      "case_id": "tq-08",
+      "paraphrase": false,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-steam-06"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-steam-06"
+        ]
+      },
+      "relevant_distances": {
+        "tech-steam-06": 0.4394652504016092
+      },
+      "relevant_docs": [
+        "tech-steam-06"
+      ]
+    },
+    {
+      "case_id": "tq-09",
+      "paraphrase": false,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-grill-08"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-grill-08"
+        ]
+      },
+      "relevant_distances": {
+        "tech-grill-08": 0.39174641529985454
+      },
+      "relevant_docs": [
+        "tech-grill-08",
+        "tech-broil-09"
+      ]
+    },
+    {
+      "case_id": "tq-10",
+      "paraphrase": false,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-knife-11"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-knife-11"
+        ]
+      },
+      "relevant_distances": {
+        "tech-knife-11": 0.5174385139603134
+      },
+      "relevant_docs": [
+        "tech-knife-11"
+      ]
+    },
+    {
+      "case_id": "tq-11",
+      "paraphrase": true,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-sauce-15",
+          "tech-steam-06"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-sauce-15",
+          "tech-steam-06"
+        ]
+      },
+      "relevant_distances": {
+        "tech-sauce-15": 0.6088599148111477
+      },
+      "relevant_docs": [
+        "tech-sauce-15"
+      ]
+    },
+    {
+      "case_id": "tq-12",
+      "paraphrase": true,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-rice-boil-21",
+          "tech-rice-23"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-rice-boil-21",
+          "tech-rice-23"
+        ]
+      },
+      "relevant_distances": {
+        "tech-rice-boil-21": 0.44915861455273176,
+        "tech-rice-23": 0.4994505777063032
+      },
+      "relevant_docs": [
+        "tech-rice-boil-21",
+        "tech-rice-23"
+      ]
+    },
+    {
+      "case_id": "tq-13",
+      "paraphrase": true,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-plate-39"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 1.0,
+        "retrieved_docs": [
+          "tech-plate-39",
+          "tech-egg-fried-20",
+          "tech-garnish-40"
+        ]
+      },
+      "relevant_distances": {
+        "tech-plate-39": 0.5640865203790011
+      },
+      "relevant_docs": [
+        "tech-plate-39"
+      ]
+    },
+    {
+      "case_id": "tq-14",
+      "paraphrase": true,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 0.5,
+        "retrieved_docs": [
+          "tech-baking-26",
+          "tech-egg-sub-37",
+          "tech-egg-sep-19"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 0.5,
+        "retrieved_docs": [
+          "tech-baking-26",
+          "tech-egg-sub-37",
+          "tech-egg-sep-19"
+        ]
+      },
+      "relevant_distances": {
+        "tech-egg-sub-37": 0.5718311418290802
+      },
+      "relevant_docs": [
+        "tech-egg-sub-37"
+      ]
+    },
+    {
+      "case_id": "tq-15",
+      "paraphrase": true,
+      "cutoff_0_66": {
+        "hit_at_5": false,
+        "reciprocal_rank": 0.0,
+        "retrieved_docs": [
+          "tech-marinate-R4",
+          "tech-grill-08",
+          "tech-egg-boil-18",
+          "tech-poach-05",
+          "tech-fry-07"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": false,
+        "reciprocal_rank": 0.0,
+        "retrieved_docs": [
+          "tech-marinate-R4",
+          "tech-grill-08",
+          "tech-egg-boil-18",
+          "tech-poach-05",
+          "tech-fry-07"
+        ]
+      },
+      "relevant_distances": {},
+      "relevant_docs": [
+        "tech-fda-safe-32"
+      ]
+    },
+    {
+      "case_id": "tq-16",
+      "paraphrase": true,
+      "cutoff_0_66": {
+        "hit_at_5": true,
+        "reciprocal_rank": 0.5,
+        "retrieved_docs": [
+          "tech-sauce-15",
+          "tech-deglaze-31",
+          "tech-saute-02"
+        ]
+      },
+      "no_cutoff": {
+        "hit_at_5": true,
+        "reciprocal_rank": 0.5,
+        "retrieved_docs": [
+          "tech-sauce-15",
+          "tech-deglaze-31",
+          "tech-saute-02"
+        ]
+      },
+      "relevant_distances": {
+        "tech-deglaze-31": 0.4438939266353381,
+        "tech-saute-02": 0.5153764781942434
+      },
+      "relevant_docs": [
+        "tech-deglaze-31",
+        "tech-saute-02"
+      ]
+    }
+  ]
+}

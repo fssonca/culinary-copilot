@@ -203,9 +203,12 @@ def _run_vector(args: Any, payload: dict[str, Any], db_url: str) -> int:
         return 2
     engine = create_engine(db_url)
     rows: list[dict[str, Any]] = []
+    query_used_reported = 0
     try:
         for case in payload["cases"]:
-            vectors = _asyncio.run(provider.embed_texts([str(case["query"])])).vectors
+            result = _asyncio.run(provider.embed_texts([str(case["query"])]))
+            vectors = result.vectors
+            query_used_reported += int(getattr(result.usage, "prompt_tokens", 0) or 0)
             candidates = technique_vector_candidates(
                 engine, vectors[0], limit=args.limit, model=model, dimension=dimension
             )
@@ -252,12 +255,18 @@ def _run_vector(args: Any, payload: dict[str, Any], db_url: str) -> int:
             "mrr": sum(rrs) / len(rrs) if rrs else 0.0,
         }
 
+    # Query cost is computed from provider-REPORTED usage; the
+    # reservation (estimate) is kept as its own field. Runs before this
+    # fix recorded the estimate as usage; those files are not rewritten.
+    query_used_cost = estimate_cost_usd(query_used_reported, model) or 0.0
     summary = {
         "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "mode": "vector",
         "fake": bool(args.fake),
         "query_tokens_reserved": query_tokens,
         "query_cost_usd": query_cost,
+        "query_tokens_used": query_used_reported,
+        "query_used_cost_usd": query_used_cost,
         "cutoff_note": "0.66 is recipe-calibrated and UNCALIBRATED for technique "
         "chunks; both figures are reported so the cutoff can be set from data.",
         "cases": len(rows),
@@ -271,7 +280,9 @@ def _run_vector(args: Any, payload: dict[str, Any], db_url: str) -> int:
         f"{summary['cutoff_0_66']['hit_rate_at_5']:.3f} "
         f"MRR: {summary['cutoff_0_66']['mrr']:.3f}; no-cutoff HitRate@5: "
         f"{summary['no_cutoff']['hit_rate_at_5']:.3f} "
-        f"MRR: {summary['no_cutoff']['mrr']:.3f}"
+        f"MRR: {summary['no_cutoff']['mrr']:.3f}; query tokens used "
+        f"(provider-reported): {query_used_reported} "
+        f"(~${query_used_cost:.5f}), reserved: {query_tokens}"
     )
     if args.out:
         Path(args.out).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")

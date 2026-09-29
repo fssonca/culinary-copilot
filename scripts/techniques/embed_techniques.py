@@ -84,9 +84,16 @@ def _load_ledger(run_dir: Path) -> dict[str, Any]:
         ledger.setdefault("chunks", {})
         ledger.setdefault("reserved_tokens", 0)
         ledger.setdefault("used_tokens_total", 0)
+        ledger.setdefault("estimated_tokens_total", 0)
         ledger.setdefault("status", "running")
         return ledger
-    return {"chunks": {}, "reserved_tokens": 0, "used_tokens_total": 0, "status": "running"}
+    return {
+        "chunks": {},
+        "reserved_tokens": 0,
+        "used_tokens_total": 0,
+        "estimated_tokens_total": 0,
+        "status": "running",
+    }
 
 
 def _save_ledger(run_dir: Path, ledger: dict[str, Any]) -> None:
@@ -324,21 +331,29 @@ def main(argv: list[str] | None = None) -> int:
     else:
         provider = FakeEmbeddingProvider(model=model, dimension=dimension)
 
-    async def _embed_all() -> list[list[float]]:
+    async def _embed_all() -> tuple[list[list[float]], int]:
+        """Embed all batches; returns (vectors, provider-reported tokens)."""
         vectors: list[list[float]] = []
+        reported = 0
         for batch in batches:
             result = await provider.embed_texts([str(job["text"]) for job in batch])
             if len(result.vectors) != len(batch):
                 raise ValueError("provider index mapping mismatch")
             validate_vectors(result.vectors, expected_dimension=dimension, model=model)
             vectors.extend(result.vectors)
-        return vectors
+            reported += int(getattr(result.usage, "prompt_tokens", 0) or 0)
+        return vectors, reported
 
-    vectors = asyncio.run(_embed_all())
+    vectors, used_reported = asyncio.run(_embed_all())
     if len(vectors) != len(jobs):
         print("error: vector/job count mismatch", file=sys.stderr)
         return 1
     run_id = f"tech-{run_dir.name}"
+    # used_tokens is provider-REPORTED usage (billed). The pre-run byte
+    # estimate lives on as reserved_tokens (estimate incl. retries).
+    # Runs before this fix recorded the estimate as usage; see
+    # docs/techniques.md for the technique run's figures.
+    used_cost = estimate_cost_usd(used_reported, model)
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -356,7 +371,7 @@ def main(argv: list[str] | None = None) -> int:
                 "renderer": TECHNIQUE_RENDER_VERSION,
                 "chunking": TECHNIQUE_CHUNK_VERSION,
                 "reserved": reserved,
-                "used": total_tokens,
+                "used": used_reported,
             },
         )
         for job, vector in zip(jobs, vectors, strict=True):
@@ -388,10 +403,15 @@ def main(argv: list[str] | None = None) -> int:
             text("UPDATE embedding_runs SET status='done', updated_at=now() WHERE run_id=:run_id"),
             {"run_id": run_id},
         )
-    ledger["used_tokens_total"] = int(ledger.get("used_tokens_total", 0)) + total_tokens
+    ledger["used_tokens_total"] = int(ledger.get("used_tokens_total", 0)) + used_reported
+    ledger["estimated_tokens_total"] = int(ledger.get("estimated_tokens_total", 0)) + total_tokens
     ledger["status"] = "done"
     _save_ledger(run_dir, ledger)
-    print(f"embedded chunks: {len(jobs)}; used tokens: {total_tokens}; ledger: {run_dir}")
+    print(
+        f"embedded chunks: {len(jobs)}; used tokens (provider-reported): "
+        f"{used_reported} (~${used_cost if used_cost is not None else 'n/a'}); "
+        f"estimated: {total_tokens}; ledger: {run_dir}"
+    )
     return 0
 
 

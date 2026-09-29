@@ -63,14 +63,14 @@ def engine():
             pass
 
 
-def _mini_corpus(tmp: Path) -> tuple[Path, Path]:
+def _mini_corpus(tmp: Path, prefix: str = "tech-test") -> tuple[Path, Path]:
     docs = {
-        "tech-test-sear": (
+        f"{prefix}-sear": (
             "Test Searing",
             "# Test Searing\n\n## Searing\n\nSear chicken in a hot pan for "
             "a brown crust. Rest before slicing.\n",
         ),
-        "tech-test-chill": (
+        f"{prefix}-chill": (
             "Test Chilling",
             "# Test Chilling\n\n## Chill\n\nChill leftovers within two hours "
             "in shallow containers.\n",
@@ -296,3 +296,91 @@ def test_vector_eval_reports_both_cutoffs_with_fake(engine, tmp_path: Path) -> N
         assert "hit_rate_at_5" in report[key]
         assert "mrr" in report[key]
     assert report["rows"] and "relevant_distances" in report["rows"][0]
+
+
+def test_embed_cli_records_reported_usage_not_estimate(
+    engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json as _json
+
+    import culinary_copilot.embeddings.provider as _provider_module
+    from culinary_copilot.embeddings.provider import EmbeddingUsage, FakeEmbeddingProvider
+
+    class _SevenTokenFake(FakeEmbeddingProvider):
+        async def embed_texts(self, texts: list[str]):  # type: ignore[no-untyped-def]
+            result = await super().embed_texts(texts)
+            result.usage = EmbeddingUsage(prompt_tokens=7, total_tokens=7)
+            return result
+
+    monkeypatch.setattr(_provider_module, "FakeEmbeddingProvider", _SevenTokenFake)
+    _, test_url = _urls()
+    corpus_dir, manifest = _mini_corpus(tmp_path, prefix="tech-test-usage")
+    assert _load(corpus_dir, manifest, test_url) == 0
+    run_dir = tmp_path / "embed-usage"
+    assert (
+        embed_techniques.main(["--fake", "--database-url", test_url, "--run-dir", str(run_dir)])
+        == 0
+    )
+    ledger = _json.loads((run_dir / "ledger.json").read_text(encoding="utf-8"))
+    # Mini corpus embeds in a single request: reported usage is 7 tokens,
+    # far below the byte estimate. used_tokens_total must carry the
+    # reported figure; the estimate lives on as estimated_tokens_total.
+    assert ledger["used_tokens_total"] == 7
+    assert ledger["estimated_tokens_total"] > 7
+    assert ledger["reserved_tokens"] == ledger["estimated_tokens_total"] * 2
+    from sqlalchemy import text as _text
+
+    with engine.connect() as conn:
+        used = conn.execute(
+            _text("SELECT used_tokens FROM embedding_runs WHERE run_id=:r"),
+            {"r": "tech-embed-usage"},
+        ).scalar_one()
+    assert used == 7
+
+
+def test_vector_eval_live_records_reported_query_usage(
+    engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json as _json
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "techniques"))
+    import eval_baseline
+
+    import culinary_copilot.embeddings.provider as _provider_module
+    from culinary_copilot.embeddings.provider import EmbeddingUsage, FakeEmbeddingProvider
+
+    class _FiveTokenFake(FakeEmbeddingProvider):
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            super().__init__()
+
+        async def embed_texts(self, texts: list[str]):  # type: ignore[no-untyped-def]
+            result = await super().embed_texts(texts)
+            result.usage = EmbeddingUsage(prompt_tokens=5, total_tokens=5)
+            return result
+
+    monkeypatch.setattr(_provider_module, "OpenAIEmbeddingProvider", _FiveTokenFake)
+    monkeypatch.setenv("EMBEDDINGS_ENABLED", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("EMBED_BUDGET_USD", "0.01")
+    _, test_url = _urls()
+    out = tmp_path / "live-eval.json"
+    rc = eval_baseline.main(
+        [
+            "--mode",
+            "vector",
+            "--live",
+            "--yes",
+            "--ceiling-usd",
+            "0.01",
+            "--database-url",
+            test_url,
+            "--out",
+            str(out),
+        ]
+    )
+    assert rc == 0
+    report = _json.loads(out.read_text(encoding="utf-8"))
+    assert report["query_tokens_used"] == 16 * 5
+    assert report["query_tokens_reserved"] > report["query_tokens_used"]
+    assert report["query_used_cost_usd"] >= 0.0

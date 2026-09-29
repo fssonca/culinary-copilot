@@ -144,9 +144,16 @@ version 1); vector search is an exact scan (no HNSW index).
   (Milestone 3, Phase 4; plain Postgres, applies on both images).
 - **007:** technique chunk embeddings, `requires-extension: vector`
   (Phase 4; skipped with a reason on stock `postgres:17`, where 006
-  works on its own). Both rehearsed on disposable databases only;
-  not applied to the application database. See
+  works on its own). Both applied to the application database
+  2026-09-28 with the paid embedding run. See
   [techniques](../techniques.md).
+
+Usage accounting note: `embedding_runs.used_tokens` is
+provider-reported billed usage going forward, and `reserved_tokens`
+keeps the pre-run byte estimate. Runs before the close-out fix
+recorded the estimate as usage; those ledgers and rows are not
+rewritten (see [techniques](../techniques.md) for the technique
+run's figures: estimate 210,554 per attempt, real usage unknown).
 
 Applied migration checksums are preserved; changes require new SQL migrations.
 Startup does not run migrations. Explicit ingestion/load commands can apply them.

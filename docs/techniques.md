@@ -82,6 +82,27 @@ images; the vector path is implemented and rehearsed with fakes only.
 tokens, hard max 800 (chars/4; join separators charged). Real
 corpus: 253 chunks, max 785 tokens.
 
+## Usage reporting (estimates vs provider-reported usage)
+
+Embedding CLIs (`scripts/techniques/embed_techniques.py`,
+`scripts/embeddings/embed.py`, `scripts/techniques/eval_baseline.py
+--live`) work in two numbers:
+
+- `reserved` / `estimated`: the pre-run byte estimate (UTF-8 bytes +
+  8 per input, × retries+1). Used for ceiling checks before any call.
+- `used`: provider-REPORTED `usage.prompt_tokens`, summed per
+  request. This is the billed figure, stored in `embedding_runs` and
+  the run ledger (`used_tokens_total`, cumulative) and printed with
+  its cost. The estimate lives on separately (`reserved_tokens`,
+  `estimated_tokens_total`).
+
+Runs before this fix recorded the estimate as usage; their ledgers
+and `embedding_runs` rows are NOT rewritten. That includes the
+technique app run below: its recorded estimate is 421,108 tokens
+(210,554 per attempt, retry ×2). Real billed usage is unknown —
+roughly ~52k tokens expected from the chars/4 chunk estimate
+(51,868) — and the owner can confirm it from the OpenAI usage page.
+
 ## Tool
 
 `search_techniques(query, mode?, limit?)` (Phase 2 schema + optional
@@ -171,7 +192,25 @@ rejected. Options carrying technique keys are rejected
   relevant document's cosine distance. 0.66 is recipe-calibrated and
   UNCALIBRATED for technique chunks.
 
-## Application apply package (pending owner go-ahead — DO NOT RUN yet)
+## Application apply package (applied 2026-09-28 with owner approval)
+
+**Applied to `localhost:5432/culinary_copilot` on 2026-09-28** by the owner.
+Recorded outcome:
+- backup `data/technique-migration-backup-006.sql` (511 MB, sha256
+  `c35cec6211f2f1d2…`, not in Git). The owner ran the restore check into
+  `culinary_check_restore_006`; its output was not pasted into this record;
+- migrate, then load;
+- post-checks: ledger `001`–`007`, recipes `16033`, quarantine `443`,
+  sessions `1` / session_events `1` (the 005 smoke-test row, unchanged),
+  technique_documents `34`, technique_chunks `253`, null search vectors `0`;
+- the tool-registry probe (`sear chicken crust`, limit 1) returned
+  `fulltext` / `all`, top hit `tech-roast-03` chunk 1, with attribution
+  and licence link present. Searing ranks within the top 5 for this
+  query (frozen case `tq-01` is a hit).
+
+No embeddings exist yet; `technique_embeddings` is empty until the
+paid-embedding package runs. The steps below are kept as the record
+of what was run and as the template for re-applying after a rollback.
 
 Modelled on `docs/sessions.md` (the 005 record). Target: the
 application database (`culinary_copilot` on `localhost:5432`, compose
@@ -286,7 +325,13 @@ below uses `DATABASE_URL` from `.env`; no command contains a password.
    restore from step 2 is the last resort only: a restore would also
    lose any sessions created after the backup.
 
-## Paid-embedding package (pending owner go-ahead — DO NOT RUN yet)
+## Paid-embedding run (executed 2026-09-28 with owner go-ahead)
+
+Outcome: 253 chunks in 4 requests on the app DB (ledger
+`data/embeddings-technique/app-run-1`, git-ignored). Recorded usage
+figures are pre-fix estimates (see "Usage reporting" above), not
+provider-reported: reservation 421,108 tokens (210,554 per attempt).
+The package below is the record of what was run.
 
 - Corpus reservation from the real renormalized corpus (dry-run on
   the rehearsal DB): **421,108 tokens (retry ×2), $0.00842** at
@@ -316,13 +361,61 @@ below uses `DATABASE_URL` from `.env`; no command contains a password.
   `technique_vector_candidates` probe; then run the vector eval
   command above (its 16 query embeddings are the $0.00002 call).
 
+## Phase 4 results (recorded; owner ran the paid steps 2026-09-28)
+
+- Paid embedding run on the app DB, 2026-09-28: 253 chunks in 4
+  requests (technique run ledger `data/embeddings-technique/app-run-1`,
+  git-ignored). Recorded figures are pre-fix estimates-as-usage (see
+  above): reservation 421,108 tokens; real billed usage unknown
+  (~52k expected).
+- Vector eval (`evals/technique_retrieval/vector_run.json`,
+  2026-09-28, same 16 frozen cases): **0.938 / 0.844 with the 0.66
+  cutoff and 0.938 / 0.844 without it**, against full-text 0.812 /
+  0.781. The cutoff did not bind: first-relevant distances span
+  0.39–0.61, all below 0.66 (only tq-06's second label reaches
+  0.737, still inside its top-5).
+- Per-case vector vs full-text (hit / RR; vector RR identical with
+  and without cutoff):
+  - tq-01: 1/0.50 → 1/1.00 (sear top, d=0.575). Rank fixed.
+  - tq-02: MISS → 1/1.00 (braise, 0.417). Fixed.
+  - tq-03: 1/1.00 → 1/1.00. Same.
+  - tq-04: MISS → 1/1.00 (fda-safe-32, 0.393). Fixed (Phase 7 case).
+  - tq-05: hit → 1/1.00. Same.
+  - tq-06: hit → 1/1.00. Same.
+  - tq-07: 1/1.00 → 1/0.50 (fry-07 first). Rank drop.
+  - tq-08, tq-09, tq-10: 1/1.00 → 1/1.00. Same.
+  - tq-11: hit → 1/1.00 (sauce-15, 0.609). Same.
+  - tq-12, tq-13: 1/1.00 → 1/1.00. Same.
+  - tq-14: 1/1.00 → 1/0.50 (baking-26 first). Rank drop.
+  - tq-15: MISS → MISS. Both miss (Phase 7 case).
+  - tq-16: 1/1.00 → 1/0.50 (sauce-15 first). Rank drop.
+- Caveats: 16 AI-drafted cases with document-level labels; queries
+  were shortened after an exploratory pre-freeze run (honesty record
+  in `cases.json`); the 0.66 cutoff is recipe-calibrated and did not
+  bind here, so it stays uncalibrated for technique chunks.
+- `TECHNIQUE_RETRIEVAL_MODE` default unchanged (`fulltext`). The
+  mode decision is deferred to the Phase 7 agent-choice comparison
+  (Checkpoint 0 decision 2 pattern: the agent picks per query).
+
 ## Planned vs implemented
 
-- Implemented + rehearsed on disposable DBs: fetch/normalize (34/40),
-  006/007, loader, chunking, embedding CLI (dry-run + fake), full-text
-  `search_techniques`, validation/evidence, attribution, frozen eval +
-  full-text baseline.
-- Planned, not implemented: applying 006/007 to the application DB
-  (package above), the paid embedding run (package above), the vector
-  eval comparison, any redistribution of corpus text (owner decides;
-  share-alike would then apply to redistributed adaptations).
+- Implemented, applied, and measured: fetch/normalize v2 (34/40),
+  006/007 (applied to the app DB 2026-09-28), loader, chunking
+  (renderer v2), embedding CLI (usage reporting fixed after the paid
+  run; historical rows keep estimates), full-text `search_techniques`
+  with all/any match, validation/evidence, attribution, frozen eval +
+  full-text baseline (0.812/0.781) + paid vector eval (0.938/0.844
+  both cutoffs).
+- Planned, not implemented: the Phase 7 agent-choice mode comparison
+  (carries the tq-04/tq-15 food-safety regression cases below), any
+  redistribution of corpus text (owner decides; share-alike would
+  then apply to redistributed adaptations).
+
+## Phase 7 carry-over: food-safety regression cases
+
+- tq-04 "chicken internal temperature": full-text misses it (the FDA
+  page says "poultry", never "chicken"); vector finds
+  `tech-fda-safe-32` top-1 (d=0.393).
+- tq-15 "pink chicken inside": both modes miss it; the FDA page says
+  colour is not a reliable doneness indicator, so the correct agent
+  behavior is a thermometer answer, not a document hit.

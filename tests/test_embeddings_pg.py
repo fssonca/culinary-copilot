@@ -665,3 +665,42 @@ def test_migrate_cli_vector_behavior_matches_server() -> None:
         with maint.connect() as conn:
             conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
         maint.dispose()
+
+
+def test_cli_records_reported_usage_not_estimate(
+    engine: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    sys.path.insert(0, "scripts/embeddings")
+    from embed import main as embed_main
+
+    import culinary_copilot.embeddings.provider as provider_module
+    from culinary_copilot.embeddings.provider import EmbeddingUsage, FakeEmbeddingProvider
+
+    class _SevenTokenFake(FakeEmbeddingProvider):
+        async def embed_texts(self, texts: list[str]):  # type: ignore[no-untyped-def]
+            result = await super().embed_texts(texts)
+            result.usage = EmbeddingUsage(prompt_tokens=7, total_tokens=7)
+            return result
+
+    monkeypatch.setattr(provider_module, "FakeEmbeddingProvider", _SevenTokenFake)
+    _, test_url = _urls()
+    run_dir = tmp_path / "cli-usage"
+    assert embed_main(["--run-dir", str(run_dir), "--database-url", test_url, "--fake"]) == 0
+    ledger = json.loads((run_dir / "ledger.json").read_text(encoding="utf-8"))
+    # One request against one seeded recipe: reported usage is 7 tokens,
+    # far below the byte estimate. used_tokens_total must carry the
+    # reported figure; the estimate lives on as estimated_tokens_total.
+    assert ledger["used_tokens_total"] == 7
+    assert ledger["estimated_tokens_total"] > 7
+    eng = create_engine(test_url)
+    try:
+        with eng.connect() as conn:
+            used = conn.execute(
+                text("SELECT used_tokens FROM embedding_runs WHERE run_id=:r"),
+                {"r": "cli-usage"},
+            ).scalar_one()
+            assert used == 7
+    finally:
+        eng.dispose()
