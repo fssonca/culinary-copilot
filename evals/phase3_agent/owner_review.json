@@ -1,0 +1,66 @@
+{
+  "version": "phase3-checkpoint-a-v1",
+  "date": "2026-09-29",
+  "owner": "Fernando Sousa",
+  "checkpoint": "Milestone 3 human checkpoint A: read the offline Phase 3 trajectories; approve or correct the live-evaluation budget",
+  "method": "Owner read the scripted offline review packet (fake provider, fake tools, disposable database; no model calls). The packet shows how the loop handles scripted model behaviour, not how a real model behaves.",
+  "attribution": "Answers are the suggested answers in docs/owner-decision-recommendations.md §1 (drafted by an AI assistant). The owner explicitly agreed to them, including their reservations: 'Checkpoint A: I agree with the suggested answers in the recommendations doc, including their reservations.' Recorded by Claude. Not a live-model evaluation.",
+  "reviewed_inputs_sha256": {
+    "evals/phase3_agent/REVIEW.md": "01218d26ea9c74e241427e55a0d6aef1030b574d8ec1ed4ef230e8c974e5dbc2",
+    "evals/phase3_agent/trajectories.json": "a87e287a7f9e76177ce7a0cd4264a6cbd6129a9fc85db0537289077adfef215c",
+    "evals/phase3_agent/generate.py": "ba14935a678ba2ec24c0b7626aff3819eebd70fc4691dec5f0b63232a5e99854",
+    "docs/owner-decision-recommendations.md": "fc9cd5c9d7e1c4a4c9b8943e84d8fe5701d28690495560c635e19706f3fc2b71"
+  },
+  "answers": {
+    "q1_sensible_questions": {
+      "answer": "mostly",
+      "note": "Asking about yogurt is useful when availability affects a candidate recipe. The empty-retrieval question is too generic: prefer a concrete choice (e.g. accepting a similar dessert) without pretending a suitable alternative has already been found."
+    },
+    "q2_stops_appropriately": {
+      "answer": "partly",
+      "note": "The demonstrated limit stops are reasonable. Some sufficient-evidence stops are premature because grounding and skip checks are incomplete (findings P3-A-01, P3-A-02). Recovery messages must stay clear about retrying the current session versus starting another."
+    },
+    "q3_preserves_answers": {
+      "answer": "yes",
+      "note": "For the demonstrated yogurt answer and vegetarian-constraint cases. Verify with the real provider and resumed sessions; constraint persistence alone does not prove every proposed recipe satisfies it."
+    },
+    "q4_adaptation_presented_as_source": {
+      "answer": "no",
+      "note": "Not in the displayed adaptation wording, but the broader source-grounding check is incomplete (P3-A-01). Keep the unverified-substitution label; a label does not validate substitution feasibility."
+    },
+    "additional_observation": "The packet offers lentil soup for a chicken request without explaining why it is an alternative. Successful loop termination does not establish that the request was fulfilled; flag relevance in the live review."
+  },
+  "findings": [
+    {
+      "id": "P3-A-01",
+      "summary": "Options can cite recipes that were never retrieved in the session.",
+      "evidence": "hard-constraint-conflict and epicure-skip make no tool calls, yet final options cite lentil-2 / curry-1; validate_options checks database existence and quantity match only.",
+      "status": "open",
+      "resolution_plan": "Require each option's (dataset_id, source_id) to come from a successful search_recipes/get_recipe result in the same session (resumed turns included), with evidence sufficient for the quantities claimed."
+    },
+    {
+      "id": "P3-A-02",
+      "summary": "Epicure skip policy contradicts the product policy and skip reasons are not checked for fit.",
+      "evidence": "ai-learning-plan.md line 42: 'Query and evaluate Epicure by default, including for specific dish requests.' The loop allows a direct_recipe_lookup skip and couples single-option answers to it (agent/validate.py:133, agent/loop.py:1476). 'Vegetarian dinner, something hearty' was accepted as direct_recipe_lookup; 'boil an egg, and what soup goes with it?' as simple_technique_question.",
+      "status": "open",
+      "resolution_plan": "Remove the direct_recipe_lookup exemption, decouple single-option answers from skipping (keep only_one_valid_candidate), add a narrow pairing-cue guard for simple_technique_question, treat epicure_not_configured as a checked degraded mode, and measure skip quality in Phase 7."
+    }
+  ],
+  "decision": "loop_mechanics_accepted_with_reservations_and_open_findings",
+  "live_evaluation": {
+    "budget_cap_usd": 0.15,
+    "budget_condition": "Enforced with pre-call spending reservations covering model turns, query embeddings and retries in one run-level ledger; stop before a call that cannot fit.",
+    "database": "Option A (application database) only with verified trial isolation; otherwise option B (explicitly identified disposable database).",
+    "timing": "After the P3-A-01/P3-A-02 fixes, before Phase 5.",
+    "run_authorized": false,
+    "note": "The paid run waits for the owner's explicit 'run it'."
+  },
+  "not_covered": [
+    "real-model behaviour (live evaluation not run)",
+    "relevance of options to the request (flag in live review)"
+  ],
+  "authorizations": {
+    "paid_calls": false,
+    "application_writes": false
+  }
+}
