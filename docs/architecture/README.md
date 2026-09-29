@@ -89,12 +89,13 @@ All paths below are relative to `src/culinary_copilot/`.
 | Recipe access | Parameterized SQL search, exact vector search, RRF fusion and document lookup | `recipes/repository.py`, `search.py`, `vector_search.py` |
 | Ingestion | Source normalization, extraction, validation and loading | `recipes/import_data.py`, `adapters/`, `llm_batch.py`, `llm_sched.py`, supporting modules |
 | Epicure | Load pinned vocabulary/vectors and calculate neighbors (core/cooc/chem) | `tools/epicure.py` |
-| Agent tools (M3 Phase 2) | Typed registry, recipe search, Epicure pairings/substitutions, scaling/conversion, stubs | `tools/registry.py`, `search_tools.py`, `epicure_tools.py`, `measure_tools.py`, `stub_tools.py` (see `docs/tools.md`) |
+| Agent tools (M3 Phase 2 + Phase 4) | Typed registry, recipe search, Epicure pairings/substitutions, scaling/conversion, technique search, web stub | `tools/registry.py`, `search_tools.py`, `epicure_tools.py`, `measure_tools.py`, `technique_tools.py`, `stub_tools.py` (see `docs/tools.md`, `docs/techniques.md`) |
 | Infrastructure | Settings, database engine, planning events | `config.py`, `db.py`, `obs/clarification.py` |
 
 Development-only tools are under `scripts/`:
 - dataset tools in `scripts/datasets/`;
 - the embedding backfill CLI in `scripts/embeddings/embed.py`;
+- the technique corpus CLI in `scripts/techniques/` (fetch, load, embed, eval baseline);
 - the retrieval evaluation harness in `scripts/retrieval_eval/`.
 
 Production code does not import them. Tests live under `tests/`. `evals/`
@@ -190,7 +191,8 @@ planning call” does not necessarily mean exactly one network attempt.
 | Durable clarification conversations | Not implemented (in-memory store stays; sessions link by ID; migration path in [sessions](../sessions.md)) |
 | Recipe embeddings / pgvector | Implemented (Phase 5): migration 004 adds pgvector and `recipe_embeddings`. There is one `text-embedding-3-small` 1536-dimension vector per recipe, and search is an exact cosine scan with no HNSW index. `search_vector` is still the separate PostgreSQL full-text column |
 | Vector / hybrid retrieval | Retrieval endpoint wired (M3 Phase 2, ADR 0001 steps 1–2/5): `RETRIEVAL_MODE` and friends reach `retrieve_for_group`; provider starts only when `EMBEDDINGS_ENABLED`. Code default stays `fulltext` (zero embedding calls); recommendations keep full-text (step 4 open). Vector/hybrid measured in Phase 6; flipping the default still needs owner approval |
-| Typed tool layer (M3 Phase 2) | Implemented: 10 typed tools (search/get, 3 Epicure variants + substitutions, scale/convert, 2 stubs) with server-set 10 s timeout, typed errors + `next_action`, and `session_events` logging; see `docs/tools.md` |
+| Typed tool layer (M3 Phase 2 + Phase 4) | Implemented: 10 typed tools (search/get, 3 Epicure variants + substitutions, scale/convert, technique search, web stub) with server-set 10 s timeout, typed errors + `next_action`, and `session_events` logging; see `docs/tools.md`, `docs/techniques.md` |
+| Technique corpus (M3 Phase 4) | Implemented on disposable DBs, not yet on the app DB: 34/40 approved docs ingested (006 full-text on both images; 007 vector on pgvector only), `search_techniques` full-text/vector with attribution, plan/cook `technique_refs` validation + evidence, frozen 16-case eval (full-text HitRate@5 0.625, MRR 0.594). App apply + paid embedding ($0.01 cap) pending owner go-ahead; see `docs/techniques.md` |
 | Bounded agent loop (M3 Phase 3) | Implemented: hand-written loop over the registry (native function calling, parallel calls in call order, CAS + events per step); server-set 8 steps / 12 calls / 90 s; stable stops with `next_action`; Epicure-by-default; answers/select/SSE endpoints; see `docs/agent.md`. Review packet in `evals/phase3_agent/`; live plan unrun |
 | Recipe rewriting, scaling, web search, agent loops | Recommendations select and render stored sources; scaling/conversion exist as deterministic tools (unknown stays unknown). Session budgets (`SESSION_MAX_TOOL_CALLS`, `SESSION_MAX_STEPS`) are stored, not yet enforced; web-search permission is backend-enforced in the `search_web` stub (off → denied, on → unavailable until Phase 5) |
 | Streaming | Implemented (Phase 4): `POST /api/v1/recommendations/stream` shares the recommendation service via a stage hook; versioned stage/final/error events, bounded duration/events, disconnect cancellation |

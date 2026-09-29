@@ -60,7 +60,7 @@ bump); standalone calls go to the logger.
 | `find_substitutions` | `ingredient`, `k?` | `free` | `TOOL_TIMEOUT_S` | `invalid_arguments`, `tool_not_configured`, `timeout`; every candidate `verification: "unverified"`, no dietary claim |
 | `scale_recipe` | `dataset_id`, `source_id`, `target_servings` (>0) | `free` | `TOOL_TIMEOUT_S` | `scale_missing_servings` (source servings unknown), `invalid_arguments`, transient `unavailable`, `timeout`; unknown quantities listed, never scaled; qualitative units `approximate: true` |
 | `convert_units` | `amount` (>0), `from_unit`, `to_unit` | `free` | `TOOL_TIMEOUT_S` | `convert_unsupported_unit` (unknown, cross-group, or any `count` conversion), `invalid_arguments`, `timeout`; every success states `unit_system` (`metric`/`us_customary`/`count`) |
-| `search_techniques` | `query`, `limit?` | `free` | `TOOL_TIMEOUT_S` | always `tool_not_configured` (stub until Phase 4) |
+| `search_techniques` | `query` (1–500, send 2–5 keywords), `mode?` (`fulltext`\|`vector`), `limit?` (1–10, default 5) | **mode that ran**: fulltext `free`, vector `paid` (one query embedding; full-text is zero-call) | `TOOL_TIMEOUT_S` | `invalid_arguments`, `tool_not_configured` (006 tables missing; vector without embeddings/007 rows; never falls back), transient `unavailable`, `timeout`; full-text matches every term per chunk first, then any term (`match: all\|any` in result + event); every hit carries `attribution_text` + `licence_url` |
 | `search_web` | `session_id`, `query` | `network` | `TOOL_TIMEOUT_S` | `permission_denied` (permission off), `tool_not_configured` (on, stub until Phase 5); never a network call |
 
 ## Retrieval wiring (ADR 0001 steps 1–2 and 5: done)
@@ -92,6 +92,17 @@ bump); standalone calls go to the logger.
 `RETRIEVAL_VECTOR_CUTOFF` when set, else pinned `0.66` (Checkpoint 0
 decision 2 / Phase 6 winner `vector_c`). The response carries
 `mode_ran`, also logged.
+
+`search_techniques` mode rules (Phase 4, implemented): `mode` arg
+wins; when omitted, `TECHNIQUE_RETRIEVAL_MODE` applies (code default
+`fulltext`; `fulltext`/`vector` only). Vector uses pinned cutoff
+`0.66` (mirrors `search_recipes`). Hits are chunk excerpts with
+`doc_id`, `chunk_id`, `section`, `title`, `url`, `licence`,
+`licence_url`, `attribution_text`, and a bounded excerpt; the response
+carries `mode_ran`, also logged. Technique references are a separate
+evidence type from recipe identities: they may support a technique
+claim in a plan/cook step but are never options, recipe sources, or
+quantity evidence (see `docs/techniques.md` and `docs/agent.md`).
 
 ## Epicure verification (2026-09-28)
 
@@ -159,8 +170,6 @@ Epicure tools.
 
 ## Stubs (explicit, not silent)
 
-- `search_techniques`: always `tool_not_configured` — the 30–60-document
-  licensed corpus is Phase 4 work (sources still owner-open).
 - `search_web(session_id, query)`: re-reads
   `internet_search_allowed` from `PostgresSessionStore` on every call.
   Off → `permission_denied`; on → `tool_not_configured` (Phase 5 wires the
@@ -172,6 +181,7 @@ Epicure tools.
 | Setting | Default | Read by |
 |---|---|---|
 | `TOOL_TIMEOUT_S` | `10` | `tools/registry.py::_timeout_for` on every call |
+| `TECHNIQUE_RETRIEVAL_MODE` | `fulltext` | `tools/technique_tools.py::resolve_technique_mode` on every call |
 | `EPICURE_COOC_MODEL_ID` / `EPICURE_COOC_REVISION` | `Kaikaku/epicure-cooc` / `03edd31…` | `tools/epicure_tools.py::build_epicure_variants` |
 | `EPICURE_CHEM_MODEL_ID` / `EPICURE_CHEM_REVISION` | `Kaikaku/epicure-chem` / `2461ef3…` | same as above |
 

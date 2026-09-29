@@ -14,6 +14,7 @@ from culinary_copilot.tools import (
     measure_tools,
     search_tools,
     stub_tools,
+    technique_tools,
 )
 from culinary_copilot.tools.registry import ToolContext, ToolDefinition, run_tool
 
@@ -26,6 +27,7 @@ def all_tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
         *search_tools.tool_definitions(timeout_s),
         *epicure_tools.tool_definitions(timeout_s),
         *measure_tools.tool_definitions(timeout_s),
+        *technique_tools.tool_definitions(timeout_s),
         *stub_tools.tool_definitions(timeout_s),
     ]
 
@@ -41,7 +43,7 @@ def all_tool_impls() -> dict[str, ToolImpl]:
         "find_substitutions": epicure_tools.find_substitutions_impl,
         "scale_recipe": measure_tools.scale_recipe_impl,
         "convert_units": measure_tools.convert_units_impl,
-        "search_techniques": stub_tools.search_techniques_impl,
+        "search_techniques": technique_tools.search_techniques_impl,
         "search_web": stub_tools.search_web_impl,
     }
 

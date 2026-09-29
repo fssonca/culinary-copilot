@@ -122,6 +122,12 @@ class Settings(BaseSettings):
     retrieval_mode: str = "fulltext"
     retrieval_vector_candidates: int = 20
     retrieval_rrf_k: int = 60
+    # Technique corpus retrieval (Milestone 3, Phase 4): fulltext
+    # (default) | vector. search_techniques with an explicit mode wins;
+    # omitted mode follows this setting. Vector needs EMBEDDINGS_ENABLED
+    # plus a pgvector database with migration 007 rows, otherwise the
+    # tool fails closed (no silent full-text fallback).
+    technique_retrieval_mode: str = "fulltext"
     # Phase 6 tunable filter (None = no cutoff, current behaviour). Vector
     # mode keeps only vector results with cosine distance <= cutoff;
     # hybrid applies it to vector results before fusion, keeping full-text
@@ -186,6 +192,8 @@ class Settings(BaseSettings):
             )
         if self.retrieval_mode not in {"fulltext", "vector", "hybrid"}:
             raise ValueError("RETRIEVAL_MODE must be one of fulltext, vector, hybrid")
+        if self.technique_retrieval_mode not in {"fulltext", "vector"}:
+            raise ValueError("TECHNIQUE_RETRIEVAL_MODE must be one of fulltext, vector")
         if self.retrieval_vector_cutoff is not None:
             cutoff = float(self.retrieval_vector_cutoff)
             if not math.isfinite(cutoff) or not 0 <= cutoff <= 2:

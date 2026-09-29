@@ -150,7 +150,20 @@ removed), and the next run substitutes (labelled `adaptation`,
   options (CAS to `selected_dish`, phase `select`).
 - `plan`: `cooking_plan` (mise en place, steps, plating) from the
   selected source, with `scale_recipe` / `convert_units` results where
-  asked. The plan source must equal the selected dish.
+  asked. The plan source must equal the selected dish. Plan/cook steps
+  may cite `technique_refs` (`doc_id` + `chunk_id`, max 10): each must
+  resolve in the technique corpus **and** have been returned by a
+  `search_techniques` call in the same session
+  (`agent/validate.py::validate_technique_refs`; options carrying
+  technique keys are rejected). Validated refs are stored in session
+  `evidence` as `technique_refs` with `url`, `licence`,
+  `licence_url`, and `attribution_text`. Technique refs are a separate
+  evidence type: they support a technique claim only, never dish
+  identity, quantities, or options. The `AgentDirective` schema (which
+  the pre-turn input estimate measures via `model_json_schema()`)
+  covers the grown `technique_refs` field inside the unchanged 30k/12k
+  ceilings; technique excerpts travel in bounded tool summaries
+  (300 chars/hit in history, 4000 chars/turn).
 
 ## Endpoints (`api/agent.py`)
 

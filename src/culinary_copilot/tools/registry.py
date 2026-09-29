@@ -152,6 +152,7 @@ def _record_event(
     latency_ms: float,
     cost_class: CostClass,
     mode_ran: str | None = None,
+    match: str | None = None,
 ) -> None:
     payload: dict[str, Any] = {
         "call_id": call_id,
@@ -165,6 +166,8 @@ def _record_event(
     }
     if mode_ran is not None:
         payload["mode_ran"] = mode_ran
+    if match is not None:
+        payload["match"] = match
     if session_id and getattr(context, "session_store", None) is not None:
         try:
             context.session_store.append_event(session_id, TOOL_CALL_EVENT_TYPE, payload)
@@ -261,6 +264,7 @@ async def run_tool(
             latency_ms=latency_ms,
             cost_class=_event_cost(tool, result),
             mode_ran=_as_opt_str(result.get("mode_ran")),
+            match=_as_opt_str(result.get("match")),
         )
         return result
     except (asyncio.TimeoutError, TimeoutError):

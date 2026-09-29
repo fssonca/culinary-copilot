@@ -140,6 +140,13 @@ version 1); vector search is an exact scan (no HNSW index).
   Phase 1; plain Postgres, no extension). Rehearsed on disposable
   databases only; not yet applied to the application database in this
   change. See [sessions](../sessions.md).
+- **006:** technique documents + section chunks with tsvector full-text
+  (Milestone 3, Phase 4; plain Postgres, applies on both images).
+- **007:** technique chunk embeddings, `requires-extension: vector`
+  (Phase 4; skipped with a reason on stock `postgres:17`, where 006
+  works on its own). Both rehearsed on disposable databases only;
+  not applied to the application database. See
+  [techniques](../techniques.md).
 
 Applied migration checksums are preserved; changes require new SQL migrations.
 Startup does not run migrations. Explicit ingestion/load commands can apply them.

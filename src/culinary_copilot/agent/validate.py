@@ -27,6 +27,10 @@ from culinary_copilot.domain.clarification import HARD_CONSTRAINT_TARGETS
 
 RecipeResolver = Callable[[str, str], dict[str, Any] | None]
 
+#: Resolves one technique chunk: (doc_id, chunk_id) -> row with url,
+#: licence, licence_url and attribution_text, or None when unresolvable.
+TechniqueResolver = Callable[[str, int], dict[str, Any] | None]
+
 
 def hard_constraint_keys(constraints: dict[str, Any]) -> set[str]:
     """Hard-constraint targets with non-empty session values."""
@@ -88,6 +92,12 @@ def validate_one_option(index: int, opt: Any, *, resolve: RecipeResolver) -> lis
     errors: list[str] = []
     if not isinstance(opt, dict):
         return [f"option {index}: not a mapping"]
+    smuggled = TECHNIQUE_OPTION_KEYS & set(opt)
+    if smuggled:
+        return [
+            f"option {index}: technique references are not options "
+            f"({sorted(smuggled)}); cite them in plan/cook steps only"
+        ]
     dataset_id = opt.get("dataset_id")
     source_id = opt.get("source_id")
     if not dataset_id or not source_id:
@@ -175,11 +185,74 @@ def validate_plan(
     return errors
 
 
+#: Option keys that would smuggle a technique reference into a dish
+#: option. Technique refs are a separate evidence type: they may support
+#: a technique claim in a plan/cook step but may never be an option, a
+#: recipe source, or quantity evidence.
+TECHNIQUE_OPTION_KEYS = frozenset({"doc_id", "chunk_id", "technique_refs", "technique"})
+
+
+def validate_technique_refs(
+    refs: Any,
+    *,
+    resolve_technique: TechniqueResolver,
+    returned: set[tuple[str, int]] | None = None,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """Validate plan/cook technique refs; returns (errors, resolved rows).
+
+    Each ref needs ``doc_id`` + ``chunk_id`` resolving in the technique
+    corpus, and — when ``returned`` is given — the pair must have been
+    returned by a ``search_techniques`` call in this session. Refs
+    carrying ``dataset_id``/``source_id`` are rejected: technique refs
+    are never recipe sources or quantity evidence.
+    """
+    errors: list[str] = []
+    resolved: list[dict[str, Any]] = []
+    if refs is None:
+        return errors, resolved
+    if not isinstance(refs, list):
+        return ["technique_refs must be a list"], resolved
+    for index, ref in enumerate(refs):
+        if not isinstance(ref, dict):
+            errors.append(f"technique ref {index}: not a mapping")
+            continue
+        if "dataset_id" in ref or "source_id" in ref:
+            errors.append(f"technique ref {index}: technique refs are never recipe sources")
+            continue
+        doc_id = ref.get("doc_id")
+        chunk_id = ref.get("chunk_id")
+        if not isinstance(doc_id, str) or not doc_id.strip():
+            errors.append(f"technique ref {index}: missing doc_id")
+            continue
+        if isinstance(chunk_id, bool) or not isinstance(chunk_id, int) or chunk_id < 0:
+            errors.append(f"technique ref {index}: chunk_id must be an integer >= 0")
+            continue
+        key = (doc_id, chunk_id)
+        if returned is not None and key not in returned:
+            errors.append(
+                f"technique ref {index}: ({doc_id}, {chunk_id}) was not returned in this session"
+            )
+            continue
+        try:
+            row = resolve_technique(doc_id, chunk_id)
+        except Exception as exc:
+            errors.append(f"technique ref {index}: lookup failed ({type(exc).__name__})")
+            continue
+        if row is None:
+            errors.append(f"technique ref {index}: ({doc_id}, {chunk_id}) does not resolve")
+            continue
+        resolved.append(dict(row))
+    return errors, resolved
+
+
 __all__ = [
     "RecipeResolver",
+    "TECHNIQUE_OPTION_KEYS",
+    "TechniqueResolver",
     "hard_constraint_keys",
     "quantity_in_source",
     "validate_one_option",
     "validate_options",
     "validate_plan",
+    "validate_technique_refs",
 ]

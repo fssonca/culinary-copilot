@@ -34,9 +34,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from culinary_copilot.agent.validate import (
     RecipeResolver,
+    TechniqueResolver,
     hard_constraint_keys,
     validate_one_option,
     validate_plan,
+    validate_technique_refs,
 )
 from culinary_copilot.domain.recommendations import (
     REASON_AGENT_MAX_STEPS,
@@ -213,6 +215,15 @@ class FinishOption(BaseModel):
     adaptations: list[Adaptation] = Field(default_factory=list, max_length=10)
 
 
+class TechniqueRef(BaseModel):
+    """One technique citation: a chunk actually returned in this session."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    doc_id: str = Field(min_length=1, max_length=200)
+    chunk_id: int = Field(ge=0)
+
+
 class PlanPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -222,6 +233,7 @@ class PlanPayload(BaseModel):
     plating: str = Field(default="", max_length=2000)
     quantities: list[QuantityClaim] = Field(default_factory=list, max_length=20)
     adaptations: list[Adaptation] = Field(default_factory=list, max_length=10)
+    technique_refs: list[TechniqueRef] = Field(default_factory=list, max_length=10)
 
 
 class FinishResult(BaseModel):
@@ -268,6 +280,7 @@ class AgentDeps:
     provider: Any
     tool_context: ToolContext
     recipe_resolver: RecipeResolver | None = None
+    technique_resolver: TechniqueResolver | None = None
     on_stage: Callable[[str, dict[str, Any]], Any] | None = None
 
 
@@ -465,6 +478,23 @@ def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
         ):
             if result.get(key) is not None:
                 summary[key] = result.get(key)
+    elif name == "search_techniques" and result.get("ok"):
+        summary["mode_ran"] = result.get("mode_ran")
+        summary["match"] = result.get("match")
+        summary["results"] = [
+            {
+                "doc_id": r.get("doc_id"),
+                "chunk_id": r.get("chunk_id"),
+                "section": r.get("section"),
+                "title": r.get("title"),
+                "url": r.get("url"),
+                "licence": r.get("licence"),
+                "licence_url": r.get("licence_url"),
+                "attribution_text": r.get("attribution_text"),
+                "excerpt": str(r.get("excerpt") or "")[:300],
+            }
+            for r in (result.get("results") or [])[:10]
+        ]
     return summary
 
 
@@ -704,6 +734,7 @@ async def run_agent(
     validation_retries = 0
     run_epicure_ok = False
     pairing_lines: list[str] = []
+    returned_technique_chunks: set[tuple[str, int]] = set()
     last_outcome: str | None = None
     step = 0
 
@@ -972,6 +1003,17 @@ async def run_agent(
                                 f"candidate {item.get('ingredient')} "
                                 f"({item.get('score')}) via {call['name']}"
                             )
+                if result.get("ok") and call["name"] == "search_techniques":
+                    for item in (result.get("results") or [])[:10]:
+                        if (
+                            isinstance(item, dict)
+                            and isinstance(item.get("doc_id"), str)
+                            and isinstance(item.get("chunk_id"), int)
+                            and not isinstance(item.get("chunk_id"), bool)
+                        ):
+                            returned_technique_chunks.add(
+                                (str(item["doc_id"]), int(item["chunk_id"]))
+                            )
             # Identical-call stall detection: the same call 3 times with
             # byte-identical result summaries means no new information.
             for call, result in zip(runnable, ran_results):
@@ -1124,6 +1166,7 @@ async def run_agent(
             pairing_lines=pairing_lines,
             validation_retries=validation_retries,
             turn_usage=turn_usage,
+            returned_technique_chunks=returned_technique_chunks,
         )
         if isinstance(finish_outcome, tuple):
             # (state, revision, validation_retries, last_outcome, history_note)
@@ -1310,6 +1353,20 @@ async def _handle_ask(
     )
 
 
+def _engine_technique_resolver(deps: AgentDeps) -> TechniqueResolver:
+    """Default technique resolver over the tool engine (None when unresolvable)."""
+
+    def _resolve(doc_id: str, chunk_id: int) -> dict[str, Any] | None:
+        engine = getattr(getattr(deps, "tool_context", None), "engine", None)
+        if engine is None:
+            return None
+        from culinary_copilot.recipes.technique_repository import resolve_technique_chunk
+
+        return resolve_technique_chunk(engine, doc_id, chunk_id)
+
+    return _resolve
+
+
 async def _handle_finish(
     deps: AgentDeps,
     store: PostgresSessionStore,
@@ -1323,6 +1380,7 @@ async def _handle_finish(
     pairing_lines: list[str],
     validation_retries: int,
     turn_usage: dict[str, Any] | None = None,
+    returned_technique_chunks: set[tuple[str, int]] | None = None,
 ) -> Any:
     """Finish turn: validate + commit, or feedback tuple for one retry."""
     result = directive.result
@@ -1375,6 +1433,7 @@ async def _handle_finish(
     options_dump: list[dict[str, Any]] | None = None
     single_option_reason: str | None = None
     dropped_options: list[dict[str, Any]] = []
+    technique_evidence: list[dict[str, Any]] = []
     if wants_options:
         submitted = [o.model_dump() for o in (result.options or [])]
         auto_skip = skip_reason is None and (
@@ -1441,6 +1500,13 @@ async def _handle_finish(
     else:
         plan_dump = result.plan.model_dump() if result.plan else {}
         errors.extend(validate_plan(plan_dump, selected_dish=state.selected_dish, resolve=resolve))
+        technique_resolver = deps.technique_resolver or _engine_technique_resolver(deps)
+        ref_errors, technique_evidence = validate_technique_refs(
+            plan_dump.get("technique_refs"),
+            resolve_technique=technique_resolver,
+            returned=returned_technique_chunks if returned_technique_chunks is not None else set(),
+        )
+        errors.extend(ref_errors)
         state_epicure_skip = None
         effective_skip = None
 
@@ -1501,6 +1567,23 @@ async def _handle_finish(
 
         def _apply(snapshot: Any) -> Any:
             snapshot.cooking_plan = dict(plan_dump)
+            if technique_evidence:
+                snapshot.evidence = list(snapshot.evidence) + [
+                    {
+                        "type": "technique_refs",
+                        "sources": [
+                            {
+                                "doc_id": row.get("doc_id"),
+                                "chunk_id": row.get("chunk_id"),
+                                "url": row.get("url"),
+                                "licence": row.get("licence"),
+                                "licence_url": row.get("licence_url"),
+                                "attribution_text": row.get("attribution_text"),
+                            }
+                            for row in technique_evidence
+                        ],
+                    }
+                ]
             snapshot.current_phase = target
             snapshot.steps_remaining = max(0, snapshot.steps_remaining - 1)
             return snapshot

@@ -158,3 +158,67 @@ def test_plan_validation() -> None:
     )
     empty = dict(plan, steps=[])
     assert any("steps" in e for e in validate_plan(empty, selected_dish=dish, resolve=_resolve))
+
+
+def _resolve_technique(doc_id: str, chunk_id: int) -> dict[str, object] | None:
+    if (doc_id, chunk_id) == ("tech-sear-01", 0):
+        return {
+            "doc_id": doc_id,
+            "chunk_id": chunk_id,
+            "url": "https://en.wikipedia.org/wiki/Searing",
+            "licence": "CC-BY-SA-4.0",
+            "licence_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+            "attribution_text": '"Searing" — test attribution',
+        }
+    return None
+
+
+def test_technique_refs_valid_when_returned_and_resolving() -> None:
+    from culinary_copilot.agent.validate import validate_technique_refs
+
+    errors, resolved = validate_technique_refs(
+        [{"doc_id": "tech-sear-01", "chunk_id": 0}],
+        resolve_technique=_resolve_technique,
+        returned={("tech-sear-01", 0)},
+    )
+    assert errors == []
+    assert len(resolved) == 1
+    assert resolved[0]["attribution_text"]
+
+
+def test_technique_refs_reject_unreturned_unresolved_and_recipe_keys() -> None:
+    from culinary_copilot.agent.validate import validate_technique_refs
+
+    errors, _ = validate_technique_refs(
+        [{"doc_id": "tech-sear-01", "chunk_id": 9}],
+        resolve_technique=_resolve_technique,
+        returned={("tech-sear-01", 0)},
+    )
+    assert any("not returned in this session" in e for e in errors)
+    errors, _ = validate_technique_refs(
+        [{"doc_id": "tech-nope-01", "chunk_id": 0}],
+        resolve_technique=_resolve_technique,
+        returned={("tech-nope-01", 0)},
+    )
+    assert any("does not resolve" in e for e in errors)
+    errors, _ = validate_technique_refs(
+        [{"doc_id": "tech-sear-01", "chunk_id": 0, "dataset_id": "x", "source_id": "y"}],
+        resolve_technique=_resolve_technique,
+        returned={("tech-sear-01", 0)},
+    )
+    assert any("never recipe sources" in e for e in errors)
+    errors, _ = validate_technique_refs(
+        "not-a-list", resolve_technique=_resolve_technique, returned=set()
+    )
+    assert errors != []
+
+
+def test_options_reject_technique_keys() -> None:
+    errors = validate_options(
+        [_option(doc_id="tech-sear-01", chunk_id=0)],
+        resolve=_resolve,
+        hard_keys=set(),
+        honored=[],
+        allow_single=True,
+    )
+    assert any("never be an option" in e or "not options" in e for e in errors)

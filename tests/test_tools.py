@@ -580,12 +580,44 @@ def test_convert_units_count_never_converts() -> None:
 # --- stubs ----------------------------------------------------------------------
 
 
-def test_search_techniques_stub_not_configured() -> None:
+def test_search_techniques_without_engine_not_configured() -> None:
     result = _call("search_techniques", {"query": "braise"}, _ctx())
     assert result["ok"] is False
     assert result["error_type"] == "unavailable"
     assert result["reason"] == REASON_TOOL_NOT_CONFIGURED
     assert next_action_for(result["reason"]) == "contact_operator"
+
+
+def test_search_techniques_mode_schema() -> None:
+    from culinary_copilot.tools.technique_tools import (
+        SearchTechniquesArgs,
+        resolve_technique_mode,
+    )
+
+    assert SearchTechniquesArgs(query="braise").mode is None
+    assert SearchTechniquesArgs(query="braise", mode="vector").mode == "vector"
+    ctx = _ctx()
+    assert resolve_technique_mode(None, ctx) == "fulltext"
+    assert resolve_technique_mode("vector", ctx) == "vector"
+    vec = _ctx(settings=_settings(technique_retrieval_mode="vector"))
+    assert resolve_technique_mode(None, vec) == "vector"
+
+
+def test_search_techniques_vector_without_provider_not_configured() -> None:
+    result = _call("search_techniques", {"query": "braise", "mode": "vector"}, _ctx())
+    assert result["ok"] is False
+    assert result["reason"] == REASON_TOOL_NOT_CONFIGURED
+    assert result["next_action"] == "contact_operator"
+
+
+def test_search_techniques_fulltext_missing_tables_not_configured() -> None:
+    from sqlalchemy import create_engine
+
+    engine = create_engine("sqlite://")
+    result = _call("search_techniques", {"query": "braise"}, _ctx(engine=engine))
+    assert result["ok"] is False
+    assert result["reason"] == REASON_TOOL_NOT_CONFIGURED
+    assert result["next_action"] == "contact_operator"
 
 
 class _FakeSessionState:
@@ -858,3 +890,28 @@ def test_create_app_embed_provider_paths(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(st, "build_embed_provider", _boom)
     with pytest.raises(RuntimeError, match="query embedding provider"):
         create_app(_settings(embeddings_enabled=True))
+
+
+def test_technique_summaries_and_hits_always_carry_attribution() -> None:
+    from culinary_copilot.agent.loop import _summarize_result
+
+    result = {
+        "ok": True,
+        "mode_ran": "fulltext",
+        "results": [
+            {
+                "doc_id": "tech-sear-01",
+                "chunk_id": 0,
+                "section": "Searing",
+                "title": "Searing",
+                "url": "https://en.wikipedia.org/wiki/Searing",
+                "licence": "CC-BY-SA-4.0",
+                "licence_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+                "attribution_text": '"Searing" — test attribution',
+                "excerpt": "Sear chicken in a hot pan.",
+            }
+        ],
+    }
+    summary = _summarize_result("search_techniques", result)
+    assert summary["results"][0]["attribution_text"]
+    assert summary["results"][0]["licence_url"]

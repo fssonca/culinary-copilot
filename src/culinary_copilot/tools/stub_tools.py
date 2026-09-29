@@ -1,12 +1,12 @@
-"""Stub tools (Milestone 3, Phase 2, reviewed).
+"""Stub tools (Milestone 3, Phase 2, reviewed): search_web only.
 
-``search_techniques`` returns ``tool_not_configured`` (permanent, until
-Phase 4 ingests the licensed technique corpus). ``search_web`` is
-permission-gated in the backend: the session's
+``search_techniques`` lived here as a not-configured stub until Phase 4;
+it is now a real implementation in tools/technique_tools.py.
+``search_web`` is permission-gated in the backend: the session's
 ``internet_search_allowed`` is re-read from ``PostgresSessionStore`` on
 every call. Permission off returns ``permission_denied``; permission on
 returns ``tool_not_configured`` (permanent, until Phase 5 wires the
-provider). Neither stub makes a network call.
+provider). The stub makes no network call.
 """
 
 from __future__ import annotations
@@ -25,15 +25,6 @@ from culinary_copilot.domain.recommendations import (
 from culinary_copilot.tools.registry import ToolContext, ToolDefinition
 
 
-class SearchTechniquesArgs(BaseModel):
-    """Arguments for ``search_techniques`` (stub until Phase 4)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    query: str = Field(min_length=1, max_length=500)
-    limit: int = Field(default=5, ge=1, le=10)
-
-
 class SearchWebArgs(BaseModel):
     """Arguments for ``search_web`` (stub; permission-checked)."""
 
@@ -41,20 +32,6 @@ class SearchWebArgs(BaseModel):
 
     session_id: str = Field(min_length=1, max_length=100)
     query: str = Field(min_length=1, max_length=500)
-
-
-async def search_techniques_impl(
-    args: SearchTechniquesArgs, context: ToolContext
-) -> dict[str, Any]:
-    """Stub: technique corpus lands in Phase 4; always not-configured."""
-    _ = (args, context)
-    return {
-        "ok": False,
-        "error_type": "unavailable",
-        "reason": REASON_TOOL_NOT_CONFIGURED,
-        "message": "search_techniques not configured: technique corpus not ingested (Phase 4)",
-        "next_action": next_action_for(REASON_TOOL_NOT_CONFIGURED),
-    }
 
 
 async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str, Any]:
@@ -109,14 +86,6 @@ def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
     """Stub-tool definitions (timeout server-set, never caller-set)."""
     return [
         ToolDefinition(
-            name="search_techniques",
-            description="Stub until Phase 4: always unavailable.",
-            args_model=SearchTechniquesArgs,
-            timeout_s=float(timeout_s),
-            idempotent=True,
-            cost_class="free",
-        ),
-        ToolDefinition(
             name="search_web",
             description="Stub: permission-checked; allowed-but-unavailable until Phase 5.",
             args_model=SearchWebArgs,
@@ -128,9 +97,7 @@ def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
 
 
 __all__ = [
-    "SearchTechniquesArgs",
     "SearchWebArgs",
-    "search_techniques_impl",
     "search_web_impl",
     "tool_definitions",
 ]

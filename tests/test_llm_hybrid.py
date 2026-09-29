@@ -975,11 +975,12 @@ def test_load_apply_schema_upgrades_and_is_idempotent(tmp_path):
                     text("SELECT version FROM recipe_schema_migrations ORDER BY 1")
                 ).all()
             ]
-            # Stock server skips 004; pgvector-capable server applies it.
-            # 005 (sessions) is plain Postgres and always applies.
+            # Stock server skips 004/007; pgvector-capable server applies them.
+            # 005 (sessions) and 006 (technique corpus) are plain Postgres
+            # and always apply.
             assert versions in (
-                ["001", "002", "003", "005"],
-                ["001", "002", "003", "004", "005"],
+                ["001", "002", "003", "005", "006"],
+                ["001", "002", "003", "004", "005", "006", "007"],
             )
             if "004" in versions:
                 assert (

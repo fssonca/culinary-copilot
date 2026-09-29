@@ -90,6 +90,8 @@ def engine():
             "003_quarantine_status.sql",
             "004_recipe_embeddings.sql",
             "005_sessions.sql",
+            "006_technique_corpus.sql",
+            "007_technique_embeddings.sql",
         ]
         with eng.begin() as conn:
             import_data.apply_migrations(conn)

@@ -1,0 +1,157 @@
+{
+  "label": "AI-drafted",
+  "note": "Document-level relevance labels written from the manifest and document text only. Queries are short keyword queries (the documented search_techniques usage); paraphrase cases avoid the target documents' own key terms. HONESTY RECORD (added 2026-09-29, after the fact): an exploratory full-text retrieval run was made with the v1 queries BEFORE any freeze, contrary to the freeze-before-any-run instruction. v1 queries were over-long natural-language sentences; the then AND-only matcher returned mostly empty results (HitRate@5 0.125, MRR 0.219, and the runner's hit rule wrongly required all relevant docs instead of any). v1 -> v2 changed QUERIES ONLY (long sentences shortened to 2-4 keyword queries); the relevance labels are identical (the revision touched only the query fields). The hit rule was corrected to any-relevant before the official run. This note sits inside the frozen fields, so the freeze hash was recomputed for this note addition; queries and labels are untouched by it.",
+  "cases": [
+    {
+      "case_id": "tq-01",
+      "query": "sear chicken crust",
+      "relevant_docs": [
+        "tech-sear-01"
+      ],
+      "paraphrase": false,
+      "topic": "heat: sear"
+    },
+    {
+      "case_id": "tq-02",
+      "query": "braise moist heat",
+      "relevant_docs": [
+        "tech-braise-04"
+      ],
+      "paraphrase": false,
+      "topic": "heat: braise"
+    },
+    {
+      "case_id": "tq-03",
+      "query": "boil egg yolk",
+      "relevant_docs": [
+        "tech-egg-boil-18"
+      ],
+      "paraphrase": false,
+      "topic": "eggs"
+    },
+    {
+      "case_id": "tq-04",
+      "query": "chicken internal temperature",
+      "relevant_docs": [
+        "tech-fda-safe-32"
+      ],
+      "paraphrase": false,
+      "topic": "food safety"
+    },
+    {
+      "case_id": "tq-05",
+      "query": "chill freeze storage",
+      "relevant_docs": [
+        "tech-fda-kitchen-33",
+        "tech-freeze-R6"
+      ],
+      "paraphrase": false,
+      "topic": "food safety"
+    },
+    {
+      "case_id": "tq-06",
+      "query": "roux thicken",
+      "relevant_docs": [
+        "tech-roux-17",
+        "tech-sauce-15"
+      ],
+      "paraphrase": false,
+      "topic": "stocks/sauces"
+    },
+    {
+      "case_id": "tq-07",
+      "query": "saut\u00e9 high heat",
+      "relevant_docs": [
+        "tech-saute-02"
+      ],
+      "paraphrase": false,
+      "topic": "heat: saute"
+    },
+    {
+      "case_id": "tq-08",
+      "query": "steam fish",
+      "relevant_docs": [
+        "tech-steam-06"
+      ],
+      "paraphrase": false,
+      "topic": "heat: steam"
+    },
+    {
+      "case_id": "tq-09",
+      "query": "grill direct heat",
+      "relevant_docs": [
+        "tech-grill-08",
+        "tech-broil-09"
+      ],
+      "paraphrase": false,
+      "topic": "heat: grill/broil"
+    },
+    {
+      "case_id": "tq-10",
+      "query": "dice onion knife",
+      "relevant_docs": [
+        "tech-knife-11"
+      ],
+      "paraphrase": false,
+      "topic": "knife/prep"
+    },
+    {
+      "case_id": "tq-11",
+      "query": "fix split curdled yogurt sauce",
+      "relevant_docs": [
+        "tech-sauce-15"
+      ],
+      "paraphrase": true,
+      "topic": "stocks/sauces"
+    },
+    {
+      "case_id": "tq-12",
+      "query": "fluffy rice",
+      "relevant_docs": [
+        "tech-rice-boil-21",
+        "tech-rice-23"
+      ],
+      "paraphrase": true,
+      "topic": "rice/grains"
+    },
+    {
+      "case_id": "tq-13",
+      "query": "bowls color plate",
+      "relevant_docs": [
+        "tech-plate-39"
+      ],
+      "paraphrase": true,
+      "topic": "plating"
+    },
+    {
+      "case_id": "tq-14",
+      "query": "egg allergy baking",
+      "relevant_docs": [
+        "tech-egg-sub-37"
+      ],
+      "paraphrase": true,
+      "topic": "substitutions"
+    },
+    {
+      "case_id": "tq-15",
+      "query": "pink chicken inside",
+      "relevant_docs": [
+        "tech-fda-safe-32"
+      ],
+      "paraphrase": true,
+      "topic": "food safety"
+    },
+    {
+      "case_id": "tq-16",
+      "query": "browned pan sauce",
+      "relevant_docs": [
+        "tech-deglaze-31",
+        "tech-saute-02"
+      ],
+      "paraphrase": true,
+      "topic": "seasoning/balance"
+    }
+  ],
+  "freeze_sha256": "762d966c7af62d4a4ee0f8ae9f55b94de245be7baddfa47dd5cf04b8fdfa2a57",
+  "freeze_rule": "sha256 over canonical JSON (sorted keys, compact separators) of all fields except freeze_sha256."
+}

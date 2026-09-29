@@ -60,7 +60,9 @@ def _failure_reasons_in_source() -> set[str]:
         SRC / "tools" / "epicure_tools.py",
         SRC / "tools" / "measure_tools.py",
         SRC / "tools" / "stub_tools.py",
+        SRC / "tools" / "technique_tools.py",
         SRC / "tools" / "registry.py",
+        SRC / "recipes" / "technique_repository.py",
         SRC / "agent" / "loop.py",
         SRC / "agent" / "validate.py",
     ):
