@@ -167,6 +167,10 @@ def test_eval_cases_frozen_before_any_run() -> None:
     assert digest == payload["freeze_sha256"]
     manifest_docs = _json.loads(MANIFEST.read_text())["docs"]
     for case in payload["cases"]:
+        if case.get("expected") == "coverage_gap":
+            assert case["relevant_docs"] == [], case["case_id"]
+            assert case.get("coverage_gap_reason"), case["case_id"]
+            continue
         assert case["relevant_docs"], case["case_id"]
         for doc_id in case["relevant_docs"]:
             assert manifest_docs.get(doc_id, {}).get("status") == "ingested", (

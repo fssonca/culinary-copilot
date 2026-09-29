@@ -1,0 +1,211 @@
+{
+  "kind": "rescore",
+  "generated_utc": "2026-09-29T22:21:20Z",
+  "mode": "fulltext",
+  "rankings": "evals/technique_retrieval/baseline_fulltext.json",
+  "cases": 15,
+  "hit_rate_at_5": 0.8,
+  "mrr": 0.7666666666666667,
+  "cases_sha256": "da613eb7bdb8affe765d6578d56f2b00ec5a7ecd23530f8a223127f6afcad6b9",
+  "coverage_gap_cases": [
+    {
+      "case_id": "tq-11",
+      "expected": "coverage_gap",
+      "reason": "No ingested document covers curdling repair: Emulsion was struck from the approved corpus list, and tech-sauce-15 does not provide the requested repair guidance.",
+      "retrieved_docs": [
+        "tech-sauce-15"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "case_id": "tq-01",
+      "hit_at_5": true,
+      "reciprocal_rank": 0.5,
+      "retrieved_docs": [
+        "tech-roast-03",
+        "tech-sear-01"
+      ],
+      "relevant_docs": [
+        "tech-sear-01"
+      ]
+    },
+    {
+      "case_id": "tq-02",
+      "hit_at_5": false,
+      "reciprocal_rank": 0.0,
+      "retrieved_docs": [
+        "tech-roast-03",
+        "tech-overview-13"
+      ],
+      "relevant_docs": [
+        "tech-braise-04"
+      ]
+    },
+    {
+      "case_id": "tq-03",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-egg-boil-18"
+      ],
+      "relevant_docs": [
+        "tech-egg-boil-18"
+      ]
+    },
+    {
+      "case_id": "tq-04",
+      "hit_at_5": false,
+      "reciprocal_rank": 0.0,
+      "retrieved_docs": [
+        "tech-poach-05",
+        "tech-sear-01"
+      ],
+      "relevant_docs": [
+        "tech-fda-safe-32"
+      ]
+    },
+    {
+      "case_id": "tq-05",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-freeze-R6",
+        "tech-blanch-R3",
+        "tech-fda-kitchen-33",
+        "tech-fda-safe-32"
+      ],
+      "relevant_docs": [
+        "tech-fda-safe-32",
+        "tech-freeze-R6"
+      ]
+    },
+    {
+      "case_id": "tq-06",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-sauce-15",
+        "tech-roux-17"
+      ],
+      "relevant_docs": [
+        "tech-roux-17",
+        "tech-sauce-15"
+      ]
+    },
+    {
+      "case_id": "tq-07",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-saute-02",
+        "tech-fry-07",
+        "tech-deglaze-31",
+        "tech-grill-08"
+      ],
+      "relevant_docs": [
+        "tech-saute-02"
+      ]
+    },
+    {
+      "case_id": "tq-08",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-steam-06",
+        "tech-egg-fried-20"
+      ],
+      "relevant_docs": [
+        "tech-steam-06"
+      ]
+    },
+    {
+      "case_id": "tq-09",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-grill-08"
+      ],
+      "relevant_docs": [
+        "tech-grill-08",
+        "tech-broil-09"
+      ]
+    },
+    {
+      "case_id": "tq-10",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-knife-11",
+        "tech-garnish-40",
+        "tech-egg-fried-20"
+      ],
+      "relevant_docs": [
+        "tech-knife-11"
+      ]
+    },
+    {
+      "case_id": "tq-12",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-rice-boil-21"
+      ],
+      "relevant_docs": [
+        "tech-rice-boil-21",
+        "tech-rice-23"
+      ]
+    },
+    {
+      "case_id": "tq-13",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-plate-39"
+      ],
+      "relevant_docs": [
+        "tech-plate-39"
+      ]
+    },
+    {
+      "case_id": "tq-14",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-egg-sub-37"
+      ],
+      "relevant_docs": [
+        "tech-egg-sub-37"
+      ]
+    },
+    {
+      "case_id": "tq-15",
+      "hit_at_5": false,
+      "reciprocal_rank": 0.0,
+      "retrieved_docs": [
+        "tech-roast-03",
+        "tech-grill-08",
+        "tech-baking-26",
+        "tech-poach-05"
+      ],
+      "relevant_docs": [
+        "tech-fda-safe-32"
+      ]
+    },
+    {
+      "case_id": "tq-16",
+      "hit_at_5": true,
+      "reciprocal_rank": 1.0,
+      "retrieved_docs": [
+        "tech-deglaze-31",
+        "tech-saute-02",
+        "tech-sear-01",
+        "tech-braise-04"
+      ],
+      "relevant_docs": [
+        "tech-deglaze-31",
+        "tech-saute-02"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "label": "AI-drafted",
-  "note": "Document-level relevance labels written from the manifest and document text only. Queries are short keyword queries (the documented search_techniques usage); paraphrase cases avoid the target documents' own key terms. HONESTY RECORD (added 2026-09-29, after the fact): an exploratory full-text retrieval run was made with the v1 queries BEFORE any freeze, contrary to the freeze-before-any-run instruction. v1 queries were over-long natural-language sentences; the then AND-only matcher returned mostly empty results (HitRate@5 0.125, MRR 0.219, and the runner's hit rule wrongly required all relevant docs instead of any). v1 -> v2 changed QUERIES ONLY (long sentences shortened to 2-4 keyword queries); the relevance labels are identical (the revision touched only the query fields). The hit rule was corrected to any-relevant before the official run. This note sits inside the frozen fields, so the freeze hash was recomputed for this note addition; queries and labels are untouched by it.",
+  "note": "Document-level relevance labels written from the manifest and document text only. Queries are short keyword queries (the documented search_techniques usage); paraphrase cases avoid the target documents' own key terms. HONESTY RECORD (added 2026-09-29, after the fact): an exploratory full-text retrieval run was made with the v1 queries BEFORE any freeze, contrary to the freeze-before-any-run instruction. v1 queries were over-long natural-language sentences; the then AND-only matcher returned mostly empty results (HitRate@5 0.125, MRR 0.219, and the runner's hit rule wrongly required all relevant docs instead of any). v1 -> v2 changed QUERIES ONLY (long sentences shortened to 2-4 keyword queries); the relevance labels are identical (the revision touched only the query fields). The hit rule was corrected to any-relevant before the official run. This note sits inside the frozen fields, so the freeze hash was recomputed for this note addition; queries and labels are untouched by it. Previous freeze hash 762d966c7af62d4a4ee0f8ae9f55b94de245be7baddfa47dd5cf04b8fdfa2a57 (v1 queries + AI-drafted labels) is superseded by the recomputed hash below after the owner label changes; queries are unchanged by this revision.",
   "cases": [
     {
       "case_id": "tq-01",
@@ -42,7 +42,7 @@
       "case_id": "tq-05",
       "query": "chill freeze storage",
       "relevant_docs": [
-        "tech-fda-kitchen-33",
+        "tech-fda-safe-32",
         "tech-freeze-R6"
       ],
       "paraphrase": false,
@@ -98,11 +98,11 @@
     {
       "case_id": "tq-11",
       "query": "fix split curdled yogurt sauce",
-      "relevant_docs": [
-        "tech-sauce-15"
-      ],
+      "relevant_docs": [],
       "paraphrase": true,
-      "topic": "stocks/sauces"
+      "topic": "stocks/sauces",
+      "expected": "coverage_gap",
+      "coverage_gap_reason": "No ingested document covers curdling repair: Emulsion was struck from the approved corpus list, and tech-sauce-15 does not provide the requested repair guidance."
     },
     {
       "case_id": "tq-12",
@@ -152,6 +152,8 @@
       "topic": "seasoning/balance"
     }
   ],
-  "freeze_sha256": "762d966c7af62d4a4ee0f8ae9f55b94de245be7baddfa47dd5cf04b8fdfa2a57",
-  "freeze_rule": "sha256 over canonical JSON (sorted keys, compact separators) of all fields except freeze_sha256."
+  "freeze_sha256": "da613eb7bdb8affe765d6578d56f2b00ec5a7ecd23530f8a223127f6afcad6b9",
+  "freeze_rule": "sha256 over canonical JSON (sorted keys, compact separators) of all fields except freeze_sha256.",
+  "version": "v2-owner-labels-2026-09-29",
+  "label_provenance": "Owner decisions dated 2026-09-29 (evals/phase3_agent/owner_review.json, findings P3-A-01/P3-A-02 review record): tq-05 label change and tq-11 coverage-gap designation. Not AI acceptance."
 }

@@ -7,7 +7,8 @@ reviewed (2026-09-28, see `docs/tools.md`); Phase 3 implemented
 `evals/phase3_agent/REVIEW.md` and approve `LIVE_PLAN.md` before any
 live run); Phases 4–7 not started. Phase 4 part 1: source proposal
 drafted, awaiting owner approval. Phase 4 complete; label spot-check
-by owner pending.**
+by owner pending. Checkpoint A recorded (2026-09-29); P3-A-01/02
+fixed; live runner built, live run pending owner 'run it'.**
 Based on Milestone 3 in `../../ai-learning-plan.md` and the code at `266d89d`
 (branch `phase6-retrieval-comparison`, since merged into main).
 

@@ -41,18 +41,18 @@
           ]
         },
         "turn_input_tokens": [
-          2620,
-          2871
+          2873,
+          3423
         ],
         "tokens_used": {
-          "input": 5491,
-          "output": 195
+          "input": 6296,
+          "output": 269
         },
         "budgets_after": {
           "steps_remaining": 6,
-          "tool_calls_remaining": 10,
-          "input_tokens_used": 5491,
-          "output_tokens_used": 195
+          "tool_calls_remaining": 8,
+          "input_tokens_used": 6296,
+          "output_tokens_used": 269
         }
       },
       {
@@ -82,22 +82,23 @@
                 "unit": "g"
               }
             ],
-            "adaptations": []
+            "adaptations": [],
+            "technique_refs": []
           }
         },
         "turn_input_tokens": [
-          2651,
-          2817
+          2903,
+          3070
         ],
         "tokens_used": {
-          "input": 5468,
+          "input": 5973,
           "output": 154
         },
         "budgets_after": {
           "steps_remaining": 4,
-          "tool_calls_remaining": 9,
-          "input_tokens_used": 10959,
-          "output_tokens_used": 349
+          "tool_calls_remaining": 7,
+          "input_tokens_used": 12269,
+          "output_tokens_used": 423
         }
       }
     ],
@@ -152,7 +153,8 @@
       "mise_en_place": [
         "dice chicken",
         "measure yogurt"
-      ]
+      ],
+      "technique_refs": []
     },
     "selected_dish": {
       "title": "Creamy Chicken Curry",
@@ -186,8 +188,60 @@
           "mode_ran": "fulltext",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.11,
-          "args_digest": "35889461a127b258"
+          "latency_ms": 0.14,
+          "args_digest": "35889461a127b258",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c3",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.09,
+          "args_digest": "d3eacc34ba37f163",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c4",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.12,
+          "args_digest": "76d9ed4a27e4484f",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
@@ -199,18 +253,18 @@
           "outcome": "ok",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 49.82,
+          "latency_ms": 58.45,
           "args_digest": "c56cf9f3752e2cd2"
         }
       },
       {
         "type": "agent_step",
         "payload": {
-          "note": "step 1: 2 call(s), 2 ok",
-          "input_tokens": 2620,
-          "output_tokens": 67,
+          "note": "step 1: 4 call(s), 4 ok",
+          "input_tokens": 2873,
+          "output_tokens": 141,
           "steps_remaining": 7,
-          "tool_calls_remaining": 10,
+          "tool_calls_remaining": 8,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
         }
@@ -220,13 +274,14 @@
         "payload": {
           "note": "packet finish",
           "options": 2,
-          "input_tokens": 2871,
+          "input_tokens": 3423,
           "epicure_lines": [
             "derived: rejected pork: not used in the final options",
             "derived: rejected beef: not used in the final options"
           ],
           "output_tokens": 128,
           "dropped_options": [],
+          "epicure_degraded": false,
           "epicure_skip_reason": null,
           "single_option_reason": null,
           "input_tokens_estimated": true,
@@ -245,11 +300,11 @@
         "payload": {
           "phase": "select",
           "steps_remaining": 6,
-          "input_tokens_used": 5491,
-          "output_tokens_used": 195,
+          "input_tokens_used": 6296,
+          "output_tokens_used": 269,
           "input_token_ceiling": 30000,
           "output_token_ceiling": 12000,
-          "tool_calls_remaining": 10
+          "tool_calls_remaining": 8
         }
       },
       {
@@ -261,18 +316,25 @@
           "outcome": "ok",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.1,
-          "args_digest": "d3eacc34ba37f163"
+          "latency_ms": 0.11,
+          "args_digest": "d3eacc34ba37f163",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
         "type": "agent_step",
         "payload": {
           "note": "step 1: 1 call(s), 1 ok",
-          "input_tokens": 2651,
+          "input_tokens": 2903,
           "output_tokens": 43,
           "steps_remaining": 5,
-          "tool_calls_remaining": 9,
+          "tool_calls_remaining": 7,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
         }
@@ -285,7 +347,7 @@
             "source_id": "curry-1",
             "dataset_id": "odunola/foodie"
           },
-          "input_tokens": 2817,
+          "input_tokens": 3070,
           "output_tokens": 111,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
@@ -315,17 +377,17 @@
           }
         },
         "turn_input_tokens": [
-          2620,
-          2918
+          2873,
+          3170
         ],
         "tokens_used": {
-          "input": 5538,
+          "input": 6043,
           "output": 119
         },
         "budgets_after": {
           "steps_remaining": 6,
           "tool_calls_remaining": 10,
-          "input_tokens_used": 5538,
+          "input_tokens_used": 6043,
           "output_tokens_used": 119
         }
       },
@@ -369,18 +431,18 @@
           ]
         },
         "turn_input_tokens": [
-          2633,
-          2769
+          2885,
+          3172
         ],
         "tokens_used": {
-          "input": 5402,
-          "output": 196
+          "input": 6057,
+          "output": 233
         },
         "budgets_after": {
           "steps_remaining": 4,
-          "tool_calls_remaining": 9,
-          "input_tokens_used": 10940,
-          "output_tokens_used": 315
+          "tool_calls_remaining": 8,
+          "input_tokens_used": 12100,
+          "output_tokens_used": 352
         }
       }
     ],
@@ -452,8 +514,20 @@
           "mode_ran": "fulltext",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.1,
-          "args_digest": "f29557e88c4f6163"
+          "latency_ms": 0.09,
+          "args_digest": "f29557e88c4f6163",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
@@ -465,15 +539,22 @@
           "outcome": "ok",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.05,
-          "args_digest": "d3eacc34ba37f163"
+          "latency_ms": 0.07,
+          "args_digest": "d3eacc34ba37f163",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
         "type": "agent_step",
         "payload": {
           "note": "step 1: 2 call(s), 2 ok",
-          "input_tokens": 2620,
+          "input_tokens": 2873,
           "output_tokens": 71,
           "steps_remaining": 7,
           "tool_calls_remaining": 10,
@@ -486,7 +567,7 @@
         "payload": {
           "note": "curry needs yogurt",
           "question_id": "q-yogurt",
-          "input_tokens": 2918,
+          "input_tokens": 3170,
           "output_tokens": 48,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
@@ -503,7 +584,7 @@
         "payload": {
           "phase": "clarify",
           "steps_remaining": 6,
-          "input_tokens_used": 5538,
+          "input_tokens_used": 6043,
           "output_tokens_used": 119,
           "input_token_ceiling": 30000,
           "output_token_ceiling": 12000,
@@ -524,13 +605,33 @@
         }
       },
       {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c4",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.07,
+          "args_digest": "76d9ed4a27e4484f",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
         "type": "agent_step",
         "payload": {
-          "note": "step 1: 1 call(s), 1 ok",
-          "input_tokens": 2633,
-          "output_tokens": 36,
+          "note": "step 1: 2 call(s), 2 ok",
+          "input_tokens": 2885,
+          "output_tokens": 73,
           "steps_remaining": 5,
-          "tool_calls_remaining": 9,
+          "tool_calls_remaining": 8,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
         }
@@ -540,13 +641,14 @@
         "payload": {
           "note": "packet finish",
           "options": 2,
-          "input_tokens": 2769,
+          "input_tokens": 3172,
           "epicure_lines": [
             "derived: used coconut milk: appears in the final options",
             "derived: rejected sour cream: not used in the final options"
           ],
           "output_tokens": 160,
           "dropped_options": [],
+          "epicure_degraded": false,
           "epicure_skip_reason": null,
           "single_option_reason": null,
           "input_tokens_estimated": true,
@@ -557,7 +659,7 @@
   },
   {
     "key": "direct-recipe",
-    "title": "Direct recipe request (skips select)",
+    "title": "Direct recipe request (Epicure consulted, one option)",
     "request": "Give me the red lentil soup recipe.",
     "session_seed": {},
     "epicure_enabled": true,
@@ -581,21 +683,22 @@
               ],
               "adaptations": []
             }
-          ]
+          ],
+          "single_option_reason": "direct_dish_request"
         },
         "turn_input_tokens": [
-          2620,
-          2770
+          2873,
+          3277
         ],
         "tokens_used": {
-          "input": 5390,
-          "output": 130
+          "input": 6150,
+          "output": 186
         },
         "budgets_after": {
           "steps_remaining": 6,
-          "tool_calls_remaining": 11,
-          "input_tokens_used": 5390,
-          "output_tokens_used": 130
+          "tool_calls_remaining": 9,
+          "input_tokens_used": 6150,
+          "output_tokens_used": 186
         }
       },
       {
@@ -619,21 +722,22 @@
             ],
             "plating": "in deep bowls with lemon",
             "quantities": [],
-            "adaptations": []
+            "adaptations": [],
+            "technique_refs": []
           }
         },
         "turn_input_tokens": [
-          2648
+          2902
         ],
         "tokens_used": {
-          "input": 2648,
+          "input": 2902,
           "output": 87
         },
         "budgets_after": {
           "steps_remaining": 5,
-          "tool_calls_remaining": 11,
-          "input_tokens_used": 8038,
-          "output_tokens_used": 217
+          "tool_calls_remaining": 9,
+          "input_tokens_used": 9052,
+          "output_tokens_used": 273
         }
       }
     ],
@@ -669,7 +773,8 @@
       "mise_en_place": [
         "rinse lentils",
         "dice onion"
-      ]
+      ],
+      "technique_refs": []
     },
     "selected_dish": {
       "title": "Red Lentil Soup",
@@ -678,8 +783,8 @@
     },
     "confirmed_answers": [],
     "unresolved_questions": [],
-    "epicure_outcome": null,
-    "epicure_skip_reason": "direct_recipe_lookup",
+    "epicure_outcome": "consulted:2 used:0 rejected:2",
+    "epicure_skip_reason": null,
     "events": [
       {
         "type": "agent_run_started",
@@ -703,18 +808,63 @@
           "mode_ran": "fulltext",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.09,
-          "args_digest": "f7edfccee6b0a6e8"
+          "latency_ms": 0.1,
+          "args_digest": "f7edfccee6b0a6e8",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "find_balanced_pairings",
+          "reason": null,
+          "call_id": "c3",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.07,
+          "args_digest": "fd5901030c9074cd"
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c2",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 1.24,
+          "args_digest": "76d9ed4a27e4484f",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
         "type": "agent_step",
         "payload": {
-          "note": "step 1: 1 call(s), 1 ok",
-          "input_tokens": 2620,
-          "output_tokens": 36,
+          "note": "step 1: 3 call(s), 3 ok",
+          "input_tokens": 2873,
+          "output_tokens": 104,
           "steps_remaining": 7,
-          "tool_calls_remaining": 11,
+          "tool_calls_remaining": 9,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
         }
@@ -724,12 +874,16 @@
         "payload": {
           "note": "packet finish",
           "options": 1,
-          "input_tokens": 2770,
-          "epicure_lines": [],
-          "output_tokens": 94,
+          "input_tokens": 3277,
+          "epicure_lines": [
+            "derived: rejected coconut milk: not used in the final options",
+            "derived: rejected sour cream: not used in the final options"
+          ],
+          "output_tokens": 82,
           "dropped_options": [],
-          "epicure_skip_reason": "direct_recipe_lookup",
-          "single_option_reason": null,
+          "epicure_degraded": false,
+          "epicure_skip_reason": null,
+          "single_option_reason": "direct_dish_request",
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
         }
@@ -746,11 +900,11 @@
         "payload": {
           "phase": "select",
           "steps_remaining": 6,
-          "input_tokens_used": 5390,
-          "output_tokens_used": 130,
+          "input_tokens_used": 6150,
+          "output_tokens_used": 186,
           "input_token_ceiling": 30000,
           "output_token_ceiling": 12000,
-          "tool_calls_remaining": 11
+          "tool_calls_remaining": 9
         }
       },
       {
@@ -761,7 +915,7 @@
             "source_id": "lentil-2",
             "dataset_id": "odunola/foodie"
           },
-          "input_tokens": 2648,
+          "input_tokens": 2902,
           "output_tokens": 87,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
@@ -785,7 +939,7 @@
       {
         "stop_reason": "agent_sufficient_evidence",
         "phase": "recommend",
-        "revision": 3,
+        "revision": 4,
         "final": {
           "options": [
             {
@@ -801,21 +955,23 @@
               ],
               "adaptations": []
             }
-          ]
+          ],
+          "single_option_reason": "direct_dish_request"
         },
         "turn_input_tokens": [
-          2630,
-          2767
+          2883,
+          3438,
+          3485
         ],
         "tokens_used": {
-          "input": 5397,
-          "output": 227
+          "input": 9806,
+          "output": 357
         },
         "budgets_after": {
-          "steps_remaining": 6,
-          "tool_calls_remaining": 12,
-          "input_tokens_used": 5397,
-          "output_tokens_used": 227
+          "steps_remaining": 5,
+          "tool_calls_remaining": 8,
+          "input_tokens_used": 9806,
+          "output_tokens_used": 357
         }
       }
     ],
@@ -839,8 +995,8 @@
     "selected_dish": null,
     "confirmed_answers": [],
     "unresolved_questions": [],
-    "epicure_outcome": null,
-    "epicure_skip_reason": "direct_recipe_lookup",
+    "epicure_outcome": "consulted:2 used:0 rejected:2",
+    "epicure_skip_reason": null,
     "events": [
       {
         "type": "agent_run_started",
@@ -855,13 +1011,103 @@
         }
       },
       {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.1,
+          "args_digest": "d40728bebd1dc52d",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c3",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.08,
+          "args_digest": "76d9ed4a27e4484f",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c2",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 1.7,
+          "args_digest": "d3eacc34ba37f163",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "find_balanced_pairings",
+          "reason": null,
+          "call_id": "c4",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 1.3,
+          "args_digest": "fd5901030c9074cd"
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 4 call(s), 4 ok",
+          "input_tokens": 2883,
+          "output_tokens": 141,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 8,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
         "type": "agent_validation_reject",
         "payload": {
           "errors": [
-            "Epicure not queried and no allowlisted skip reason (allowlist: ['direct_recipe_lookup', 'epicure_not_configured', 'simple_technique_question'])",
             "dropped hard constraint: dietary_constraints"
           ],
-          "input_tokens": 2630,
+          "input_tokens": 3438,
           "output_tokens": 128,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
@@ -872,12 +1118,16 @@
         "payload": {
           "note": "packet finish",
           "options": 1,
-          "input_tokens": 2767,
-          "epicure_lines": [],
-          "output_tokens": 99,
+          "input_tokens": 3485,
+          "epicure_lines": [
+            "derived: rejected coconut milk: not used in the final options",
+            "derived: rejected sour cream: not used in the final options"
+          ],
+          "output_tokens": 88,
           "dropped_options": [],
-          "epicure_skip_reason": "direct_recipe_lookup",
-          "single_option_reason": null,
+          "epicure_degraded": false,
+          "epicure_skip_reason": null,
+          "single_option_reason": "direct_dish_request",
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
         }
@@ -898,23 +1148,26 @@
         "final": {
           "question": {
             "question_id": "q-rephrase",
-            "question_text": "I found no recipes for that. What dish should I look for?",
-            "options": []
+            "question_text": "I found no recipes for dragonfruit soufflé glacé. Want me to look for a lemon dessert instead?",
+            "options": [
+              "yes, look for lemon dessert",
+              "no, I will rephrase"
+            ]
           }
         },
         "turn_input_tokens": [
-          2620,
-          2721
+          2873,
+          2974
         ],
         "tokens_used": {
-          "input": 5341,
-          "output": 90
+          "input": 5847,
+          "output": 114
         },
         "budgets_after": {
           "steps_remaining": 6,
           "tool_calls_remaining": 11,
-          "input_tokens_used": 5341,
-          "output_tokens_used": 90
+          "input_tokens_used": 5847,
+          "output_tokens_used": 114
         }
       }
     ],
@@ -925,9 +1178,12 @@
     "confirmed_answers": [],
     "unresolved_questions": [
       {
-        "options": [],
+        "options": [
+          "yes, look for lemon dessert",
+          "no, I will rephrase"
+        ],
         "question_id": "q-rephrase",
-        "question_text": "I found no recipes for that. What dish should I look for?"
+        "question_text": "I found no recipes for dragonfruit soufflé glacé. Want me to look for a lemon dessert instead?"
       }
     ],
     "epicure_outcome": null,
@@ -955,7 +1211,7 @@
           "mode_ran": "fulltext",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.09,
+          "latency_ms": 0.08,
           "args_digest": "9fbaa0f3b5bd284d"
         }
       },
@@ -963,7 +1219,7 @@
         "type": "agent_step",
         "payload": {
           "note": "step 1: 1 call(s), 1 ok",
-          "input_tokens": 2620,
+          "input_tokens": 2873,
           "output_tokens": 37,
           "steps_remaining": 7,
           "tool_calls_remaining": 11,
@@ -976,8 +1232,8 @@
         "payload": {
           "note": "empty retrieval",
           "question_id": "q-rephrase",
-          "input_tokens": 2721,
-          "output_tokens": 53,
+          "input_tokens": 2974,
+          "output_tokens": 77,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
         }
@@ -1023,21 +1279,22 @@
               ],
               "adaptations": []
             }
-          ]
+          ],
+          "epicure_degraded": true
         },
         "turn_input_tokens": [
-          2620,
-          2740
+          2873,
+          3292
         ],
         "tokens_used": {
-          "input": 5360,
-          "output": 195
+          "input": 6165,
+          "output": 268
         },
         "budgets_after": {
           "steps_remaining": 6,
-          "tool_calls_remaining": 10,
-          "input_tokens_used": 5360,
-          "output_tokens_used": 195
+          "tool_calls_remaining": 8,
+          "input_tokens_used": 6165,
+          "output_tokens_used": 268
         }
       }
     ],
@@ -1112,18 +1369,70 @@
           "mode_ran": "fulltext",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.1,
-          "args_digest": "9463a293f0a5c6db"
+          "latency_ms": 0.09,
+          "args_digest": "9463a293f0a5c6db",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c4",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.07,
+          "args_digest": "76d9ed4a27e4484f",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c3",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 1.23,
+          "args_digest": "d3eacc34ba37f163",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
         "type": "agent_step",
         "payload": {
-          "note": "step 1: 2 call(s), 1 ok",
-          "input_tokens": 2620,
-          "output_tokens": 67,
+          "note": "step 1: 4 call(s), 3 ok",
+          "input_tokens": 2873,
+          "output_tokens": 140,
           "steps_remaining": 7,
-          "tool_calls_remaining": 10,
+          "tool_calls_remaining": 8,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
         }
@@ -1133,10 +1442,11 @@
         "payload": {
           "note": "packet finish",
           "options": 2,
-          "input_tokens": 2740,
+          "input_tokens": 3292,
           "epicure_lines": [],
           "output_tokens": 128,
           "dropped_options": [],
+          "epicure_degraded": true,
           "epicure_skip_reason": "epicure_not_configured",
           "single_option_reason": null,
           "input_tokens_estimated": true,
@@ -1162,16 +1472,16 @@
         "next_action": "change_request",
         "revision": 2,
         "turn_input_tokens": [
-          2620
+          2873
         ],
         "tokens_used": {
-          "input": 2620,
+          "input": 2873,
           "output": 85
         },
         "budgets_after": {
           "steps_remaining": 7,
           "tool_calls_remaining": 0,
-          "input_tokens_used": 2620,
+          "input_tokens_used": 2873,
           "output_tokens_used": 85
         }
       }
@@ -1207,8 +1517,20 @@
           "mode_ran": "fulltext",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.1,
-          "args_digest": "0b318357fa6a166c"
+          "latency_ms": 0.09,
+          "args_digest": "0b318357fa6a166c",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
@@ -1222,14 +1544,26 @@
           "cost_class": "free",
           "error_type": null,
           "latency_ms": 0.07,
-          "args_digest": "8c6e8f5654d56d11"
+          "args_digest": "8c6e8f5654d56d11",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
         "type": "agent_step",
         "payload": {
           "note": "step 1: 3 call(s), 2 ok",
-          "input_tokens": 2620,
+          "input_tokens": 2873,
           "output_tokens": 85,
           "steps_remaining": 7,
           "tool_calls_remaining": 0,
@@ -1254,16 +1588,16 @@
         "next_action": "retry",
         "revision": 2,
         "turn_input_tokens": [
-          2620
+          2873
         ],
         "tokens_used": {
-          "input": 2620,
+          "input": 2873,
           "output": 33
         },
         "budgets_after": {
           "steps_remaining": 7,
           "tool_calls_remaining": 11,
-          "input_tokens_used": 2620,
+          "input_tokens_used": 2873,
           "output_tokens_used": 33
         }
       }
@@ -1299,15 +1633,27 @@
           "mode_ran": "fulltext",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 608.93,
-          "args_digest": "74f3806b9424e517"
+          "latency_ms": 604.89,
+          "args_digest": "74f3806b9424e517",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
         "type": "agent_step",
         "payload": {
           "note": "step 1: 1 call(s), 1 ok",
-          "input_tokens": 2620,
+          "input_tokens": 2873,
           "output_tokens": 33,
           "steps_remaining": 7,
           "tool_calls_remaining": 11,
@@ -1320,56 +1666,45 @@
   {
     "key": "epicure-skip",
     "title": "Epicure skip (simple technique question)",
-    "request": "How do I boil an egg, and what soup goes with it?",
+    "request": "How do I boil an egg?",
     "session_seed": {},
     "epicure_enabled": true,
     "runs": [
       {
         "stop_reason": "agent_sufficient_evidence",
         "phase": "recommend",
-        "revision": 2,
+        "revision": 3,
         "final": {
           "options": [
             {
               "dataset_id": "odunola/foodie",
               "source_id": "lentil-2",
               "title": "Red Lentil Soup",
-              "quantities": [
-                {
-                  "ingredient": "red lentils",
-                  "amount": "200",
-                  "unit": "g"
-                }
-              ],
+              "quantities": [],
               "adaptations": []
             },
             {
               "dataset_id": "odunola/foodie",
               "source_id": "curry-1",
               "title": "Creamy Chicken Curry",
-              "quantities": [
-                {
-                  "ingredient": "chicken",
-                  "amount": "500",
-                  "unit": "g"
-                }
-              ],
+              "quantities": [],
               "adaptations": []
             }
           ]
         },
         "turn_input_tokens": [
-          2620
+          2873,
+          3020
         ],
         "tokens_used": {
-          "input": 2620,
-          "output": 141
+          "input": 5893,
+          "output": 146
         },
         "budgets_after": {
-          "steps_remaining": 7,
-          "tool_calls_remaining": 12,
-          "input_tokens_used": 2620,
-          "output_tokens_used": 141
+          "steps_remaining": 6,
+          "tool_calls_remaining": 11,
+          "input_tokens_used": 5893,
+          "output_tokens_used": 146
         }
       }
     ],
@@ -1379,26 +1714,14 @@
         "title": "Red Lentil Soup",
         "source_id": "lentil-2",
         "dataset_id": "odunola/foodie",
-        "quantities": [
-          {
-            "unit": "g",
-            "amount": "200",
-            "ingredient": "red lentils"
-          }
-        ],
+        "quantities": [],
         "adaptations": []
       },
       {
         "title": "Creamy Chicken Curry",
         "source_id": "curry-1",
         "dataset_id": "odunola/foodie",
-        "quantities": [
-          {
-            "unit": "g",
-            "amount": "500",
-            "ingredient": "chicken"
-          }
-        ],
+        "quantities": [],
         "adaptations": []
       }
     ],
@@ -1422,16 +1745,394 @@
         }
       },
       {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.14,
+          "args_digest": "065371c7c2265ded",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 1 call(s), 1 ok",
+          "input_tokens": 2873,
+          "output_tokens": 33,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 11,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
         "type": "agent_finished",
         "payload": {
           "note": "packet finish",
           "options": 2,
-          "input_tokens": 2620,
+          "input_tokens": 3020,
           "epicure_lines": [],
-          "output_tokens": 141,
+          "output_tokens": 113,
           "dropped_options": [],
+          "epicure_degraded": false,
           "epicure_skip_reason": "simple_technique_question",
           "single_option_reason": null,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "skip-rejected-direct-lookup",
+    "title": "Skip rejected (direct_recipe_lookup removed)",
+    "request": "Vegetarian dinner, something hearty.",
+    "session_seed": {
+      "constraints": {
+        "dietary_constraints": [
+          "vegetarian"
+        ]
+      }
+    },
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_validation_failed",
+        "error": true,
+        "http_status": 422,
+        "message": "validation rejected: epicure skip reason 'direct_recipe_lookup' not allowlisted (allowlist: ['epicure_not_configured', 'simple_technique_question']); single option needs Epicure consulted in this session (submit 2+ options otherwise)",
+        "next_action": "change_request",
+        "revision": 4,
+        "turn_input_tokens": [
+          2883,
+          3184,
+          3315
+        ],
+        "tokens_used": {
+          "input": 9382,
+          "output": 272
+        },
+        "budgets_after": {
+          "steps_remaining": 5,
+          "tool_calls_remaining": 10,
+          "input_tokens_used": 9382,
+          "output_tokens_used": 272
+        }
+      }
+    ],
+    "final_phase": "discover",
+    "suggestions": [],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": null,
+    "epicure_skip_reason": null,
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.14,
+          "args_digest": "d40728bebd1dc52d",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "get_recipe",
+          "reason": null,
+          "call_id": "c2",
+          "outcome": "ok",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.07,
+          "args_digest": "76d9ed4a27e4484f",
+          "returned_identities": [
+            {
+              "via": "full",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 2 call(s), 2 ok",
+          "input_tokens": 2883,
+          "output_tokens": 74,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 10,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_validation_reject",
+        "payload": {
+          "errors": [
+            "epicure skip reason 'direct_recipe_lookup' not allowlisted (allowlist: ['epicure_not_configured', 'simple_technique_question'])",
+            "single option needs Epicure consulted in this session (submit 2+ options otherwise)"
+          ],
+          "input_tokens": 3184,
+          "output_tokens": 99,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_validation_reject",
+        "payload": {
+          "errors": [
+            "epicure skip reason 'direct_recipe_lookup' not allowlisted (allowlist: ['epicure_not_configured', 'simple_technique_question'])",
+            "single option needs Epicure consulted in this session (submit 2+ options otherwise)"
+          ],
+          "input_tokens": 3315,
+          "output_tokens": 99,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "skip-rejected-pairing-cue",
+    "title": "Skip rejected (pairing cue in technique question)",
+    "request": "How do I boil an egg, and what soup goes with it?",
+    "session_seed": {},
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_validation_failed",
+        "error": true,
+        "http_status": 422,
+        "message": "validation rejected: simple_technique_question refused: the request asks for a pairing ('goes with'); query Epicure instead",
+        "next_action": "change_request",
+        "revision": 4,
+        "turn_input_tokens": [
+          2873,
+          3021,
+          3097
+        ],
+        "tokens_used": {
+          "input": 8991,
+          "output": 260
+        },
+        "budgets_after": {
+          "steps_remaining": 5,
+          "tool_calls_remaining": 11,
+          "input_tokens_used": 8991,
+          "output_tokens_used": 260
+        }
+      }
+    ],
+    "final_phase": "discover",
+    "suggestions": [],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": null,
+    "epicure_skip_reason": null,
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "tool_call",
+        "payload": {
+          "tool": "search_recipes",
+          "reason": null,
+          "call_id": "c1",
+          "outcome": "ok",
+          "mode_ran": "fulltext",
+          "cost_class": "free",
+          "error_type": null,
+          "latency_ms": 0.12,
+          "args_digest": "93b7d28ca5ce5c13",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
+        }
+      },
+      {
+        "type": "agent_step",
+        "payload": {
+          "note": "step 1: 1 call(s), 1 ok",
+          "input_tokens": 2873,
+          "output_tokens": 34,
+          "steps_remaining": 7,
+          "tool_calls_remaining": 11,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_validation_reject",
+        "payload": {
+          "errors": [
+            "simple_technique_question refused: the request asks for a pairing ('goes with'); query Epicure instead"
+          ],
+          "input_tokens": 3021,
+          "output_tokens": 113,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_validation_reject",
+        "payload": {
+          "errors": [
+            "simple_technique_question refused: the request asks for a pairing ('goes with'); query Epicure instead"
+          ],
+          "input_tokens": 3097,
+          "output_tokens": 113,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      }
+    ]
+  },
+  {
+    "key": "evidence-rejected-unretrieved",
+    "title": "Options rejected (valid ID never retrieved)",
+    "request": "I want a chicken dinner for tonight, about 30 minutes.",
+    "session_seed": {},
+    "epicure_enabled": true,
+    "runs": [
+      {
+        "stop_reason": "agent_validation_failed",
+        "error": true,
+        "http_status": 422,
+        "message": "validation rejected: Epicure not queried and no allowlisted skip reason (allowlist: ['epicure_not_configured', 'simple_technique_question']); option 0: option 0: (odunola/foodie, curry-1) was not retrieved in this session",
+        "next_action": "change_request",
+        "revision": 3,
+        "turn_input_tokens": [
+          2873,
+          3015
+        ],
+        "tokens_used": {
+          "input": 5888,
+          "output": 164
+        },
+        "budgets_after": {
+          "steps_remaining": 6,
+          "tool_calls_remaining": 12,
+          "input_tokens_used": 5888,
+          "output_tokens_used": 164
+        }
+      }
+    ],
+    "final_phase": "discover",
+    "suggestions": [],
+    "cooking_plan": {},
+    "selected_dish": null,
+    "confirmed_answers": [],
+    "unresolved_questions": [],
+    "epicure_outcome": null,
+    "epicure_skip_reason": null,
+    "events": [
+      {
+        "type": "agent_run_started",
+        "payload": {
+          "phase": "discover",
+          "steps_remaining": 8,
+          "input_tokens_used": 0,
+          "output_tokens_used": 0,
+          "input_token_ceiling": 30000,
+          "output_token_ceiling": 12000,
+          "tool_calls_remaining": 12
+        }
+      },
+      {
+        "type": "agent_validation_reject",
+        "payload": {
+          "errors": [
+            "Epicure not queried and no allowlisted skip reason (allowlist: ['epicure_not_configured', 'simple_technique_question'])",
+            "option 0: option 0: (odunola/foodie, curry-1) was not retrieved in this session"
+          ],
+          "input_tokens": 2873,
+          "output_tokens": 82,
+          "input_tokens_estimated": true,
+          "output_tokens_estimated": true
+        }
+      },
+      {
+        "type": "agent_validation_reject",
+        "payload": {
+          "errors": [
+            "Epicure not queried and no allowlisted skip reason (allowlist: ['epicure_not_configured', 'simple_technique_question'])",
+            "option 0: option 0: (odunola/foodie, curry-1) was not retrieved in this session"
+          ],
+          "input_tokens": 3015,
+          "output_tokens": 82,
           "input_tokens_estimated": true,
           "output_tokens_estimated": true
         }
@@ -1453,18 +2154,18 @@
         "next_action": "change_request",
         "revision": 3,
         "turn_input_tokens": [
-          2620,
-          2768,
-          2899
+          2873,
+          3021,
+          3152
         ],
         "tokens_used": {
-          "input": 5388,
+          "input": 5894,
           "output": 68
         },
         "budgets_after": {
           "steps_remaining": 6,
           "tool_calls_remaining": 10,
-          "input_tokens_used": 5388,
+          "input_tokens_used": 5894,
           "output_tokens_used": 68
         }
       }
@@ -1500,15 +2201,27 @@
           "mode_ran": "fulltext",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.21,
-          "args_digest": "f29557e88c4f6163"
+          "latency_ms": 0.11,
+          "args_digest": "f29557e88c4f6163",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
         "type": "agent_step",
         "payload": {
           "note": "step 1: 1 call(s), 1 ok",
-          "input_tokens": 2620,
+          "input_tokens": 2873,
           "output_tokens": 34,
           "steps_remaining": 7,
           "tool_calls_remaining": 11,
@@ -1526,15 +2239,27 @@
           "mode_ran": "fulltext",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.13,
-          "args_digest": "f29557e88c4f6163"
+          "latency_ms": 0.09,
+          "args_digest": "f29557e88c4f6163",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       },
       {
         "type": "agent_step",
         "payload": {
           "note": "step 2: 1 call(s), 1 ok",
-          "input_tokens": 2768,
+          "input_tokens": 3021,
           "output_tokens": 34,
           "steps_remaining": 6,
           "tool_calls_remaining": 10,
@@ -1552,8 +2277,20 @@
           "mode_ran": "fulltext",
           "cost_class": "free",
           "error_type": null,
-          "latency_ms": 0.16,
-          "args_digest": "f29557e88c4f6163"
+          "latency_ms": 0.06,
+          "args_digest": "f29557e88c4f6163",
+          "returned_identities": [
+            {
+              "via": "search",
+              "source_id": "curry-1",
+              "dataset_id": "odunola/foodie"
+            },
+            {
+              "via": "search",
+              "source_id": "lentil-2",
+              "dataset_id": "odunola/foodie"
+            }
+          ]
         }
       }
     ]

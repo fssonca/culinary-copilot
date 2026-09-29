@@ -145,6 +145,17 @@ def test_restart_mid_session_survives(test_url) -> None:
     provider2 = ScriptedProvider(
         [
             (
+                "tools",
+                [
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_substitutions", {"ingredient": "yogurt"}),
+                ],
+            ),
+            (
                 "parsed",
                 _finish_options(
                     [
@@ -175,7 +186,7 @@ def test_restart_mid_session_survives(test_url) -> None:
                         },
                     ]
                 ),
-            )
+            ),
         ]
     )
     deps2 = AgentDeps(

@@ -145,9 +145,15 @@ rejected. Options carrying technique keys are rejected
 
 ## Evaluation (`evals/technique_retrieval/`)
 
-- `cases.json`: 16 AI-drafted cases (6 paraphrase ≥ 1/3), doc-level
-  labels from manifest + document text, frozen with in-file
-  `freeze_sha256` (`762d966c…dfa2a5`; a test verifies the hash).
+- `cases.json` v2-owner-labels-2026-09-29: 16 cases (6 paraphrase
+  ≥ 1/3), doc-level labels, frozen with in-file `freeze_sha256`
+  (`da613eb7…`; a test verifies the hash; the superseded hash is kept
+  in the file note). Owner decisions dated 2026-09-29 (citing
+  `evals/phase3_agent/owner_review.json`, not AI acceptance):
+  `tq-05` relevant docs are now [`tech-fda-safe-32`,
+  `tech-freeze-R6`]; `tq-11` is a coverage-gap case (`expected:
+  coverage_gap`, empty labels — no ingested document covers curdling
+  repair since Emulsion was struck).
 - Honesty record: an exploratory full-text run was made with the v1
   queries BEFORE any freeze, contrary to the freeze-before-any-run
   instruction. v1 queries were over-long natural-language sentences;
@@ -173,6 +179,15 @@ rejected. Options carrying technique keys are rejected
     not a table loss (`165 poultry` now hits `tech-fda-safe-32`
     chunk 6 top-1 with `match=all`, verified by probe). `tq-04`
     joins `tq-15` as a vector-run probe.
+- Rescore over the 15 answerable cases
+  (`scripts/techniques/rescore.py`; saved rankings only, no
+  retrieval, originals unchanged;
+  `baseline_fulltext_rescore.json`, `vector_run_rescore.json`):
+  full-text **0.800 / 0.767**, vector **0.933 / 0.833** with and
+  without the cutoff. `tq-11` reported separately (full-text
+  retrieved [`tech-sauce-15`]; vector retrieved [`tech-sauce-15`,
+  `tech-steam-06`] — per-retrieved-doc distances were never stored,
+  noted in the rescore file).
 - Owner spot-checks: food-safety cases (`tq-04`, `tq-05`, `tq-15`);
   sear/sauté/braise distinctions (`tq-01`, `tq-02` — top hit is
   roast-03, `tq-07`); short-Wikibooks top hits (`tq-12`
@@ -396,6 +411,15 @@ The package below is the record of what was run.
 - `TECHNIQUE_RETRIEVAL_MODE` default unchanged (`fulltext`). The
   mode decision is deferred to the Phase 7 agent-choice comparison
   (Checkpoint 0 decision 2 pattern: the agent picks per query).
+
+## Known corpus issue (recorded, not fixed)
+
+The FDA pages' normalized text still contains site navigation:
+"Skip to main content", "Menu", "Español (Spanish)" / "Descargar En
+español" chrome survives in `tech-fda-safe-32.txt` and
+`tech-fda-kitchen-33.txt`. Fixing it needs a normalizer change plus a
+corpus reload and a paid re-embed, so it waits for the next corpus
+change instead of being patched here.
 
 ## Planned vs implemented
 

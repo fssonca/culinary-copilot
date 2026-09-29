@@ -139,6 +139,40 @@ def _event_cost(tool: ToolDefinition, result: dict[str, Any]) -> CostClass:
     return tool.cost_class
 
 
+def _returned_identities(
+    tool_name: str, parsed: Any, result: dict[str, Any]
+) -> list[dict[str, str]] | None:
+    """Recipe identities a successful retrieval establishes (P3-A-01).
+
+    Read from one place (the registry) so every implementation — real,
+    fake, or override — records the same evidence. ``search_recipes``
+    rows establish dataset-qualified identity only (``via: search``);
+    ``get_recipe`` establishes the full document (``via: full``).
+    Failed lookups (``ok`` False) establish nothing. Bounded to 20.
+    """
+    if not result.get("ok"):
+        return None
+    if tool_name == "search_recipes":
+        rows = result.get("results")
+        if not isinstance(rows, list):
+            return None
+        out: list[dict[str, str]] = []
+        for row in rows[:20]:
+            if not isinstance(row, dict):
+                continue
+            dataset_id, source_id = row.get("dataset_id"), row.get("source_id")
+            if isinstance(dataset_id, str) and isinstance(source_id, str):
+                out.append({"dataset_id": dataset_id, "source_id": source_id, "via": "search"})
+        return out or None
+    if tool_name == "get_recipe":
+        dataset_id = getattr(parsed, "dataset_id", None)
+        source_id = getattr(parsed, "source_id", None)
+        if isinstance(dataset_id, str) and isinstance(source_id, str):
+            return [{"dataset_id": dataset_id, "source_id": source_id, "via": "full"}]
+        return None
+    return None
+
+
 def _record_event(
     *,
     context: ToolContext,
@@ -153,6 +187,7 @@ def _record_event(
     cost_class: CostClass,
     mode_ran: str | None = None,
     match: str | None = None,
+    returned_identities: list[dict[str, str]] | None = None,
 ) -> None:
     payload: dict[str, Any] = {
         "call_id": call_id,
@@ -168,6 +203,8 @@ def _record_event(
         payload["mode_ran"] = mode_ran
     if match is not None:
         payload["match"] = match
+    if returned_identities is not None:
+        payload["returned_identities"] = returned_identities
     if session_id and getattr(context, "session_store", None) is not None:
         try:
             context.session_store.append_event(session_id, TOOL_CALL_EVENT_TYPE, payload)
@@ -265,6 +302,7 @@ async def run_tool(
             cost_class=_event_cost(tool, result),
             mode_ran=_as_opt_str(result.get("mode_ran")),
             match=_as_opt_str(result.get("match")),
+            returned_identities=_returned_identities(tool.name, parsed, result),
         )
         return result
     except (asyncio.TimeoutError, TimeoutError):

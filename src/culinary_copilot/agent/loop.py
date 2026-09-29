@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
@@ -70,9 +71,43 @@ from culinary_copilot.tools.registry import ToolContext, ToolDefinition, args_di
 
 # Epicure skip allowlist (server-set, never caller-set): the only recorded
 # reasons a session may reach recommend without an Epicure query.
-EPICURE_SKIP_ALLOWLIST = frozenset(
-    {"simple_technique_question", "direct_recipe_lookup", "epicure_not_configured"}
+# ``direct_recipe_lookup`` was removed (P3-A-02): the product policy
+# queries Epicure by default including for specific dish requests, so a
+# direct request consults Epicure and may still return one recipe.
+EPICURE_SKIP_ALLOWLIST = frozenset({"simple_technique_question", "epicure_not_configured"})
+
+# Narrow pairing-cue guard for simple_technique_question (P3-A-02): a
+# request containing one of these phrases asks for a pairing, which is
+# Epicure's job. Word-boundary matching only ("pair" matches "pairs"
+# and "pairing" but not "repair") — a narrow guard against clear
+# misses, not semantic validation (documented limitation).
+PAIRING_CUES = frozenset(
+    {
+        "goes with",
+        "go with",
+        "pair",
+        "serve with",
+        "served with",
+        "side for",
+        "side dish",
+        "accompaniment",
+        "match for",
+        "goes well",
+    }
 )
+_PAIRING_CUE_RE = re.compile(
+    r"\b(?:goes with|go with|pair|serve with|served with|side for|"
+    r"side dish|accompaniment|match for|goes well)"
+)
+
+
+def pairing_cue_in(request_text: str | None) -> str | None:
+    """First pairing cue in the request, or None (narrow guard)."""
+    if not request_text:
+        return None
+    found = _PAIRING_CUE_RE.search(request_text.lower())
+    return found.group(0) if found else None
+
 
 _PAIRING_TOOLS = frozenset(
     {
@@ -282,6 +317,10 @@ class AgentDeps:
     recipe_resolver: RecipeResolver | None = None
     technique_resolver: TechniqueResolver | None = None
     on_stage: Callable[[str, dict[str, Any]], Any] | None = None
+    # The user's request text for narrow deterministic guards (P3-A-02
+    # pairing cues). Set by the caller (API layer, packet generator,
+    # live runner); None skips the guard (documented limitation).
+    request_text: str | None = None
 
 
 @dataclass
@@ -365,6 +404,44 @@ def seed_excluded_from_events(store: PostgresSessionStore, session_id: str) -> s
             if isinstance(tool, str) and tool:
                 excluded.add(tool)
     return excluded
+
+
+def recipe_session_evidence(
+    *, store: PostgresSessionStore, session_id: str
+) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
+    """Recipe identities this session retrieved: (retrieved, full).
+
+    ``retrieved`` holds dataset-qualified pairs from successful
+    ``search_recipes`` or ``get_recipe`` calls; ``full`` holds pairs
+    from ``get_recipe`` only (complete documents, sufficient for
+    quantities and plans). Failed lookups establish nothing, and only
+    this session's events count — resumed runs of the same session
+    reuse its earlier evidence, other sessions never do. Fail-closed:
+    store errors yield empty sets.
+    """
+    retrieved: set[tuple[str, str]] = set()
+    full: set[tuple[str, str]] = set()
+    try:
+        events = store.list_events(session_id)
+    except Exception:
+        return retrieved, full
+    for event in events:
+        payload = getattr(event, "payload", None) or {}
+        if getattr(event, "event_type", "") != "tool_call" or payload.get("outcome") != "ok":
+            continue
+        identities = payload.get("returned_identities")
+        if not isinstance(identities, list):
+            continue
+        for item in identities:
+            if not isinstance(item, dict):
+                continue
+            dataset_id, source_id = item.get("dataset_id"), item.get("source_id")
+            if not (isinstance(dataset_id, str) and isinstance(source_id, str)):
+                continue
+            retrieved.add((dataset_id, source_id))
+            if item.get("via") == "full":
+                full.add((dataset_id, source_id))
+    return retrieved, full
 
 
 def epicure_evidence(
@@ -1434,6 +1511,7 @@ async def _handle_finish(
     single_option_reason: str | None = None
     dropped_options: list[dict[str, Any]] = []
     technique_evidence: list[dict[str, Any]] = []
+    retrieved_pairs, full_pairs = recipe_session_evidence(store=store, session_id=session_id)
     if wants_options:
         submitted = [o.model_dump() for o in (result.options or [])]
         auto_skip = skip_reason is None and (
@@ -1450,17 +1528,39 @@ async def _handle_finish(
                 f"epicure skip reason {effective_skip!r} not allowlisted "
                 f"(allowlist: {sorted(EPICURE_SKIP_ALLOWLIST)})"
             )
+        elif effective_skip == "simple_technique_question":
+            cue = pairing_cue_in(getattr(deps, "request_text", None))
+            if cue is not None:
+                errors.append(
+                    "simple_technique_question refused: the request asks for a "
+                    f"pairing ({cue!r}); query Epicure instead"
+                )
+        elif effective_skip == "epicure_not_configured":
+            excluded = seed_excluded_from_events(store, session_id)
+            confirmed = (not epicure_enabled) or any(tool in excluded for tool in _PAIRING_TOOLS)
+            if not confirmed:
+                errors.append(
+                    "epicure_not_configured refused: Epicure is enabled and no "
+                    "tool outcome in this session confirms it is unavailable"
+                )
         hard_keys = hard_constraint_keys(state.constraints)
         honored_set = {str(h) for h in directive.constraints_honored}
         for key in sorted(hard_keys):
             if key not in honored_set:
                 errors.append(f"dropped hard constraint: {key}")
-        # Per-option validation, then the single-answer rule: one submitted
-        # option is allowed only for direct_recipe_lookup; of several
-        # submitted, a lone survivor is accepted with only_one_valid_candidate
-        # recorded (dropped ones are reported, never silently truncated).
+        # Per-option validation, then the single-answer rule (P3-A-02):
+        # one submitted option is accepted only with Epicure consulted
+        # in this session (direct dish request, Epicure still queried);
+        # of several submitted, a lone survivor is accepted with
+        # only_one_valid_candidate recorded (dropped ones are reported,
+        # never silently truncated).
         per_option = [
-            (option, validate_one_option(index, option, resolve=resolve))
+            (
+                option,
+                validate_one_option(
+                    index, option, resolve=resolve, retrieved=retrieved_pairs, full=full_pairs
+                ),
+            )
             for index, option in enumerate(submitted)
         ]
         valid = [option for option, errs in per_option if not errs]
@@ -1473,13 +1573,14 @@ async def _handle_finish(
         elif len(submitted) == 1:
             if not valid:
                 errors.extend(f"option 0: {e}" for e in per_option[0][1])
-            elif effective_skip != "direct_recipe_lookup":
+            elif has_evidence and effective_skip is None:
+                selections = valid
+                single_option_reason = "direct_dish_request"
+            else:
                 errors.append(
-                    "single option needs the direct_recipe_lookup epicure skip "
+                    "single option needs Epicure consulted in this session "
                     "(submit 2+ options otherwise)"
                 )
-            else:
-                selections = valid
         elif len(valid) >= 2 and not dropped_options:
             selections = valid
         elif len(valid) == 1 and not errors:
@@ -1497,9 +1598,14 @@ async def _handle_finish(
         else:
             state_epicure_skip = None
             options_dump = None
+        epicure_degraded = effective_skip == "epicure_not_configured" and not errors
     else:
         plan_dump = result.plan.model_dump() if result.plan else {}
-        errors.extend(validate_plan(plan_dump, selected_dish=state.selected_dish, resolve=resolve))
+        errors.extend(
+            validate_plan(
+                plan_dump, selected_dish=state.selected_dish, resolve=resolve, full=full_pairs
+            )
+        )
         technique_resolver = deps.technique_resolver or _engine_technique_resolver(deps)
         ref_errors, technique_evidence = validate_technique_refs(
             plan_dump.get("technique_refs"),
@@ -1557,6 +1663,7 @@ async def _handle_finish(
             "options": len(selections),
             "epicure_lines": lines,
             "epicure_skip_reason": state_epicure_skip,
+            "epicure_degraded": epicure_degraded,
             "single_option_reason": single_option_reason,
             "dropped_options": dropped_options,
             **(turn_usage or {}),
@@ -1624,6 +1731,11 @@ async def _handle_finish(
         final = {"options": options_dump}
         if single_option_reason is not None:
             final["single_option_reason"] = single_option_reason
+        if epicure_degraded:
+            final["epicure_degraded"] = True
+        if state_epicure_skip is not None:
+            final["epicure_skip_reason"] = state_epicure_skip
+        final["constraints_honored"] = list(directive.constraints_honored or [])
     else:
         final = {"plan": plan_payload.model_dump() if plan_payload else {}}
     return AgentRunResult(
@@ -1736,6 +1848,7 @@ async def _validation_feedback(
 
 __all__ = [
     "EPICURE_SKIP_ALLOWLIST",
+    "PAIRING_CUES",
     "Adaptation",
     "AgentConcurrentError",
     "AgentDeps",
@@ -1753,6 +1866,8 @@ __all__ = [
     "estimate_turn_input",
     "function_defs_for",
     "offered_tools",
+    "pairing_cue_in",
+    "recipe_session_evidence",
     "record_answer",
     "record_select",
     "run_agent",

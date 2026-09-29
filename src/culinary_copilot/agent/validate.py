@@ -5,6 +5,10 @@ The model proposes; these functions dispose, without a model call:
 - sourced IDs: every option resolves through an exact
   ``(dataset_id, source_id)`` lookup (injected ``resolve``; production
   uses the recipe repository, tests use fakes);
+- session retrieval (P3-A-01): every option's pair must have been
+  returned by a successful ``search_recipes``/``get_recipe`` call in
+  this session (resumed runs included); quantities and plans need a
+  ``get_recipe`` full document, not a search row;
 - no invented quantities: stated quantities match the source document;
 - adaptations separated: each adaptation carries ``label ==
   "adaptation"`` and never appears among source facts;
@@ -87,8 +91,22 @@ def quantity_in_source(claim: dict[str, Any], doc: dict[str, Any]) -> bool:
     return False
 
 
-def validate_one_option(index: int, opt: Any, *, resolve: RecipeResolver) -> list[str]:
-    """Validate a single option (sourced IDs, quantities, labels)."""
+def validate_one_option(
+    index: int,
+    opt: Any,
+    *,
+    resolve: RecipeResolver,
+    retrieved: set[tuple[str, str]] | None = None,
+    full: set[tuple[str, str]] | None = None,
+) -> list[str]:
+    """Validate a single option (sourced IDs, quantities, labels).
+
+    When ``retrieved`` is given, the pair must come from a successful
+    ``search_recipes``/``get_recipe`` call in this session (dataset-
+    qualified; other sessions and failed lookups do not count). When
+    ``full`` is given, stated quantities additionally need a
+    ``get_recipe`` full document for the pair.
+    """
     errors: list[str] = []
     if not isinstance(opt, dict):
         return [f"option {index}: not a mapping"]
@@ -102,13 +120,22 @@ def validate_one_option(index: int, opt: Any, *, resolve: RecipeResolver) -> lis
     source_id = opt.get("source_id")
     if not dataset_id or not source_id:
         return [f"option {index}: missing (dataset_id, source_id)"]
+    key = (str(dataset_id), str(source_id))
     try:
         doc = resolve(str(dataset_id), str(source_id))
     except Exception as exc:
         return [f"option {index}: source lookup failed ({type(exc).__name__})"]
     if doc is None:
         return [f"option {index}: ({dataset_id}, {source_id}) not in corpus (unsourced ID)"]
-    for claim in opt.get("quantities") or []:
+    if retrieved is not None and key not in retrieved:
+        return [f"option {index}: ({dataset_id}, {source_id}) was not retrieved in this session"]
+    claims = opt.get("quantities") or []
+    if claims and full is not None and key not in full:
+        errors.append(
+            f"option {index}: quantities need a get_recipe result in this session "
+            "(search rows are not enough)"
+        )
+    for claim in claims:
         if not isinstance(claim, dict) or not quantity_in_source(claim, doc):
             errors.append(f"option {index}: quantity {claim!r} not in source (invented)")
     for adaptation in opt.get("adaptations") or []:
@@ -124,19 +151,23 @@ def validate_options(
     hard_keys: set[str],
     honored: list[str] | None,
     allow_single: bool,
+    retrieved: set[tuple[str, str]] | None = None,
+    full: set[tuple[str, str]] | None = None,
 ) -> list[str]:
     """Validate a recommend finish. Returns error strings (empty = valid)."""
     errors: list[str] = []
     if not isinstance(options, list) or not 1 <= len(options) <= 4:
         return ["options must be a list of 1-4 sourced recipes"]
     if len(options) == 1 and not allow_single:
-        errors.append("single option needs the direct_recipe_lookup epicure skip")
+        errors.append("single option needs Epicure consulted in this session")
     honored_set = {str(h) for h in honored or []}
     for key in sorted(hard_keys):
         if key not in honored_set:
             errors.append(f"dropped hard constraint: {key}")
     for index, opt in enumerate(options):
-        errors.extend(validate_one_option(index, opt, resolve=resolve))
+        errors.extend(
+            validate_one_option(index, opt, resolve=resolve, retrieved=retrieved, full=full)
+        )
     return errors
 
 
@@ -145,8 +176,14 @@ def validate_plan(
     *,
     selected_dish: dict[str, Any] | None,
     resolve: RecipeResolver,
+    full: set[tuple[str, str]] | None = None,
 ) -> list[str]:
-    """Validate a plan finish. Returns error strings (empty = valid)."""
+    """Validate a plan finish. Returns error strings (empty = valid).
+
+    When ``full`` is given, the plan source must come from a
+    ``get_recipe`` full document in this session (a search row is not
+    enough for a cooking plan).
+    """
     errors: list[str] = []
     if not isinstance(plan, dict):
         return ["plan must be a mapping"]
@@ -165,6 +202,13 @@ def validate_plan(
         return [f"plan source lookup failed ({type(exc).__name__})"]
     if doc is None:
         return ["plan source not in corpus (unsourced ID)"]
+    if (
+        full is not None
+        and (str(source.get("dataset_id")), str(source.get("source_id"))) not in full
+    ):
+        return [
+            "plan source needs a get_recipe result in this session (search rows are not enough)"
+        ]
     for field in ("mise_en_place", "steps"):
         items = plan.get(field)
         if (

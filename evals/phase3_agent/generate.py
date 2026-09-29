@@ -260,6 +260,16 @@ SCENARIOS: list[dict[str, Any]] = [
                 [
                     ("c1", "search_recipes", {"query": "chicken dinner"}),
                     ("c2", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c4",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
                 ],
             ),
             (
@@ -336,7 +346,17 @@ SCENARIOS: list[dict[str, Any]] = [
         ],
         "answer": {"question_id": "q-yogurt", "answer": "no"},
         "resume_turns": lambda: [
-            ("tools", [("c3", "find_substitutions", {"ingredient": "yogurt"})]),
+            (
+                "tools",
+                [
+                    ("c3", "find_substitutions", {"ingredient": "yogurt"}),
+                    (
+                        "c4",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
             (
                 "parsed",
                 finish(
@@ -362,17 +382,25 @@ SCENARIOS: list[dict[str, Any]] = [
     },
     {
         "key": "direct-recipe",
-        "title": "Direct recipe request (skips select)",
+        "title": "Direct recipe request (Epicure consulted, one option)",
         "request": "Give me the red lentil soup recipe.",
         "session": {},
         "turns": lambda: [
-            ("tools", [("c1", "search_recipes", {"query": "red lentil soup"})]),
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "red lentil soup"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c3", "find_balanced_pairings", {"ingredient": "lentils"}),
+                ],
+            ),
             (
                 "parsed",
-                finish(
-                    [opt("lentil-2", LENTIL_Q, "Red Lentil Soup")],
-                    epicure_skip_reason="direct_recipe_lookup",
-                ),
+                finish([opt("lentil-2", LENTIL_Q, "Red Lentil Soup")]),
             ),
         ],
         "select": {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
@@ -403,6 +431,23 @@ SCENARIOS: list[dict[str, Any]] = [
         "session": {"constraints": {"dietary_constraints": ["vegetarian"]}},
         "turns": lambda: [
             (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "hearty vegetarian"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "lentils"}),
+                ],
+            ),
+            (
                 "parsed",
                 finish(
                     [
@@ -416,7 +461,6 @@ SCENARIOS: list[dict[str, Any]] = [
                 finish(
                     [opt("lentil-2", LENTIL_Q, "Red Lentil Soup")],
                     constraints_honored=["dietary_constraints"],
-                    epicure_skip_reason="direct_recipe_lookup",
                 ),
             ),
         ],
@@ -435,9 +479,10 @@ SCENARIOS: list[dict[str, Any]] = [
                     "decision": "ask_user",
                     "question": {
                         "question_id": "q-rephrase",
-                        "question_text": "I found no recipes for that. "
-                        "What dish should I look for?",
-                        "options": [],
+                        "question_text": "I found no recipes for dragonfruit "
+                        "soufflé glacé. Want me to look for a lemon dessert "
+                        "instead?",
+                        "options": ["yes, look for lemon dessert", "no, I will rephrase"],
                     },
                     "note": "empty retrieval",
                 },
@@ -456,6 +501,16 @@ SCENARIOS: list[dict[str, Any]] = [
                 [
                     ("c1", "find_balanced_pairings", {"ingredient": "chicken"}),
                     ("c2", "search_recipes", {"query": "roast chicken"}),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c4",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
                 ],
             ),
             (
@@ -499,18 +554,135 @@ SCENARIOS: list[dict[str, Any]] = [
     {
         "key": "epicure-skip",
         "title": "Epicure skip (simple technique question)",
-        "request": "How do I boil an egg, and what soup goes with it?",
+        "request": "How do I boil an egg?",
         "session": {},
         "turns": lambda: [
+            ("tools", [("c1", "search_recipes", {"query": "egg"})]),
             (
                 "parsed",
                 finish(
                     [
-                        opt("lentil-2", LENTIL_Q, "Red Lentil Soup"),
-                        opt("curry-1", CHICKEN_Q, "Creamy Chicken Curry"),
+                        {
+                            "dataset_id": "odunola/foodie",
+                            "source_id": "lentil-2",
+                            "title": "Red Lentil Soup",
+                            "quantities": [],
+                            "adaptations": [],
+                        },
+                        {
+                            "dataset_id": "odunola/foodie",
+                            "source_id": "curry-1",
+                            "title": "Creamy Chicken Curry",
+                            "quantities": [],
+                            "adaptations": [],
+                        },
                     ],
                     epicure_skip_reason="simple_technique_question",
                 ),
+            ),
+        ],
+    },
+    {
+        "key": "skip-rejected-direct-lookup",
+        "title": "Skip rejected (direct_recipe_lookup removed)",
+        "request": "Vegetarian dinner, something hearty.",
+        "session": {"constraints": {"dietary_constraints": ["vegetarian"]}},
+        "turns": lambda: [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "hearty vegetarian"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            (
+                "parsed",
+                finish(
+                    [opt("lentil-2", LENTIL_Q, "Red Lentil Soup")],
+                    constraints_honored=["dietary_constraints"],
+                    epicure_skip_reason="direct_recipe_lookup",
+                ),
+            ),
+            (
+                "parsed",
+                finish(
+                    [opt("lentil-2", LENTIL_Q, "Red Lentil Soup")],
+                    constraints_honored=["dietary_constraints"],
+                    epicure_skip_reason="direct_recipe_lookup",
+                ),
+            ),
+        ],
+    },
+    {
+        "key": "skip-rejected-pairing-cue",
+        "title": "Skip rejected (pairing cue in technique question)",
+        "request": "How do I boil an egg, and what soup goes with it?",
+        "session": {},
+        "turns": lambda: [
+            ("tools", [("c1", "search_recipes", {"query": "egg soup"})]),
+            (
+                "parsed",
+                finish(
+                    [
+                        {
+                            "dataset_id": "odunola/foodie",
+                            "source_id": "lentil-2",
+                            "title": "Red Lentil Soup",
+                            "quantities": [],
+                            "adaptations": [],
+                        },
+                        {
+                            "dataset_id": "odunola/foodie",
+                            "source_id": "curry-1",
+                            "title": "Creamy Chicken Curry",
+                            "quantities": [],
+                            "adaptations": [],
+                        },
+                    ],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+            (
+                "parsed",
+                finish(
+                    [
+                        {
+                            "dataset_id": "odunola/foodie",
+                            "source_id": "lentil-2",
+                            "title": "Red Lentil Soup",
+                            "quantities": [],
+                            "adaptations": [],
+                        },
+                        {
+                            "dataset_id": "odunola/foodie",
+                            "source_id": "curry-1",
+                            "title": "Creamy Chicken Curry",
+                            "quantities": [],
+                            "adaptations": [],
+                        },
+                    ],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+        ],
+    },
+    {
+        "key": "evidence-rejected-unretrieved",
+        "title": "Options rejected (valid ID never retrieved)",
+        "request": "I want a chicken dinner for tonight, about 30 minutes.",
+        "session": {},
+        "turns": lambda: [
+            (
+                "parsed",
+                finish([opt("curry-1", CHICKEN_Q, "Creamy Chicken Curry")]),
+            ),
+            (
+                "parsed",
+                finish([opt("curry-1", CHICKEN_Q, "Creamy Chicken Curry")]),
             ),
         ],
     },
@@ -565,6 +737,7 @@ def run_scenario(engine: Any, spec: dict[str, Any]) -> dict[str, Any]:
                 epicure_enabled=spec.get("epicure_enabled", True),
             ),
             recipe_resolver=lambda ds, s: DOCS.get((ds, s)),
+            request_text=spec.get("request"),
         )
 
     runs: list[dict[str, Any]] = []
@@ -715,13 +888,21 @@ def _describe_plan(plan: dict[str, Any]) -> str:
 def render_review(trajectories: list[dict[str, Any]]) -> str:
     generated = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     parts = [
-        "# Phase 3 review packet: 10 offline trajectories",
+        "# Phase 3 review packet: 13 offline trajectories",
         "",
         f"Generated {generated} by `evals/phase3_agent/generate.py` from actual "
         "loop outputs (scripted fake provider + fake tools, disposable "
         "`culinary_check_packet` database). No model calls, no network, no "
         "paid calls. Live evaluation is a separate, unrun plan "
         "(`LIVE_PLAN.md`).",
+        "",
+        "Regenerated 2026-09-29 under P3-A-01 (options need same-session "
+        "retrieval evidence; quantities and plans need get_recipe) and "
+        "P3-A-02 (Epicure queried by default including direct requests; "
+        "`direct_recipe_lookup` removed; pairing-cue guard; degraded "
+        "mode). Three scenarios show the new rejections; the empty-"
+        "retrieval question now offers a concrete choice without claiming "
+        "an alternative was found (owner Q1 note).",
         "",
         "Conventions: `stop_reason` is the stable loop reason; tool outcomes "
         "are `ok`/`error_type`/`reason`; Epicure lines record each "
@@ -788,6 +969,8 @@ def render_review(trajectories: list[dict[str, Any]]) -> str:
                 parts.append(f"Epicure: {line}.")
             if event["payload"].get("epicure_skip_reason"):
                 parts.append(f"Epicure skipped: {event['payload']['epicure_skip_reason']}.")
+            if event["payload"].get("epicure_degraded"):
+                parts.append("Epicure degraded mode recorded.")
         if traj["epicure_outcome"]:
             parts.append(f"Epicure outcome: {traj['epicure_outcome']}.")
         if traj["epicure_skip_reason"]:

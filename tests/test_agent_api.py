@@ -288,7 +288,22 @@ def test_stream_success_shape(engine) -> None:
     state = _session(store)
     provider = ScriptedProvider(
         [
-            ("tools", [("c1", "search_recipes", {"query": "curry"})]),
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
             ("parsed", _finish_two()),
         ]
     )

@@ -35,6 +35,7 @@ from culinary_copilot.domain.recommendations import (
 )
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "culinary_copilot"
+EVALS = Path(__file__).resolve().parents[1] / "evals"
 
 # Terminal success codes: finals of the bounded agent loop, not errors.
 # They intentionally have no next_action mapping (finals never carry
@@ -50,7 +51,7 @@ def _failure_reasons_in_source() -> set[str]:
         for name, value in vars(domain).items()
         if name.startswith("REASON_") and isinstance(value, str)
     }
-    pattern = re.compile(r'reason="([a-z_]+)"')
+    pattern = re.compile(r'(?<!skip_)reason="([a-z_]+)"')
     for path in (
         SRC / "recommendations" / "service.py",
         SRC / "api" / "recommendations.py",
@@ -65,8 +66,12 @@ def _failure_reasons_in_source() -> set[str]:
         SRC / "recipes" / "technique_repository.py",
         SRC / "agent" / "loop.py",
         SRC / "agent" / "validate.py",
+        EVALS / "phase3_agent" / "generate.py",
+        EVALS / "phase3_agent" / "live_run.py",
     ):
         reasons |= set(pattern.findall(path.read_text(encoding="utf-8")))
+    # The (?<!skip_) guard excludes epicure_skip_reason="..." labels:
+    # skip reasons are recorded data, not next_action reasons.
     # Tool reason constants (REASON_TOOL_*, REASON_SCALE_*, REASON_CONVERT_*)
     # live in domain/recommendations.py (already covered via vars(domain))
     # and are re-used across tools/*.py; string literals above catch any

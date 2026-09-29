@@ -113,18 +113,32 @@ others fail the run at once.
 
 ## Epicure by default
 
-Unless the model skips it with an allowlisted reason, a session that
-reaches recommend has queried Epicure (`EPICURE_SKIP_ALLOWLIST`:
-`simple_technique_question`, `direct_recipe_lookup`,
-`epicure_not_configured`). When Epicure is disabled or all pairing
-tools are not-configured, the loop records `epicure_not_configured`
-itself. Each suggestion gets one recorded line (`used …` / `rejected
-…`); the outcome (`consulted/used/rejected`) or skip reason is stored
-in `epicure_outcome` / `epicure_skip_reason`. The directive may carry one
+Epicure is queried by default, including for specific dish requests
+(owner decision 2026-09-29). Unless the model skips it with an
+allowlisted reason, a session that reaches recommend has queried
+Epicure (`EPICURE_SKIP_ALLOWLIST`: `simple_technique_question`,
+`epicure_not_configured` — `direct_recipe_lookup` was removed). A
+direct dish request may still return one recipe with Epicure
+consulted, recorded with `single_option_reason: direct_dish_request`
+(decoupled from skipping; `only_one_valid_candidate` is kept for a
+lone survivor among several submitted). `simple_technique_question`
+is refused when the request contains a pairing cue ("goes with",
+"pair", "serve with", "side for" and similar, word-boundary matched)
+— a narrow guard against clear misses, not semantic validation.
+`epicure_not_configured` is accepted only when the configuration or a
+tool outcome in the session confirms it, and is recorded as degraded
+mode (`epicure_degraded` in the final and the finish event). When
+Epicure is disabled or all pairing tools are not-configured, the loop
+records `epicure_not_configured` itself. Each suggestion gets one
+recorded line (`used …` / `rejected …`); the outcome
+(`consulted/used/rejected`) or skip reason is stored in
+`epicure_outcome` / `epicure_skip_reason`. The directive may carry one
 optional line per suggestion (`epicure_lines`: ingredient, used/rejected,
 reason), recorded as given; suggestions the model says nothing about get
 derived text prefixed `derived:` so it is never mistaken for the agent's
-reason.
+reason. No new `next_action` reason codes were added for this policy;
+validation messages and labels (`direct_dish_request`,
+`epicure_degraded`) are data, not stop reasons.
 
 ## Ask only when material, then resume
 
@@ -138,19 +152,27 @@ removed), and the next run substitutes (labelled `adaptation`,
 ## Outputs
 
 - `recommend`: 1–4 sourced options (2–4 normally; a single option only
-  for `direct_recipe_lookup`, or when several were submitted but just one
+  with Epicure consulted in the session — recorded as
+  `direct_dish_request` — or when several were submitted but just one
   validates — recorded as `only_one_valid_candidate` with the dropped
   ones reported). Every option passes deterministic
   validators: IDs resolve via exact `(dataset_id, source_id)` lookup,
   stated quantities match the source, adaptations carry
   `label: "adaptation"`, and every hard session constraint appears in
-  `constraints_honored`. Stored in `suggestions` (+ source refs in
+  `constraints_honored`. Evidence rule (P3-A-01): every option's pair
+  must have been returned by a successful `search_recipes` /
+  `get_recipe` call in this session's events (resumed runs count;
+  dataset-qualified; failures and other sessions do not count), and
+  quantities need a `get_recipe` full document, not a search row.
+  Stored in `suggestions` (+ source refs in
   `evidence`).
 - `select`: `POST …/select` stores the user's pick from the offered
   options (CAS to `selected_dish`, phase `select`).
 - `plan`: `cooking_plan` (mise en place, steps, plating) from the
   selected source, with `scale_recipe` / `convert_units` results where
-  asked. The plan source must equal the selected dish. Plan/cook steps
+  asked. The plan source must equal the selected dish **and** come from
+  a `get_recipe` full document in this session's events (a search row
+  is not enough). Plan/cook steps
   may cite `technique_refs` (`doc_id` + `chunk_id`, max 10): each must
   resolve in the technique corpus **and** have been returned by a
   `search_techniques` call in the same session

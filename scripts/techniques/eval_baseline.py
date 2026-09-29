@@ -55,6 +55,11 @@ def _verify_freeze(payload: dict[str, Any]) -> None:
         raise ValueError("cases freeze hash mismatch; labels changed after freezing")
 
 
+def _is_coverage_gap(case: dict[str, Any]) -> bool:
+    """Coverage-gap cases are reported separately, never scored."""
+    return case.get("expected") == "coverage_gap"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database-url", default="")
@@ -86,12 +91,23 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = create_engine(db_url)
     rows: list[dict[str, Any]] = []
+    gaps: list[dict[str, Any]] = []
     for case in payload["cases"]:
         hits, match = search_techniques_fulltext(engine, case["query"], limit=args.limit)
         seen: list[str] = []
         for hit in hits:
             if hit["doc_id"] not in seen:
                 seen.append(str(hit["doc_id"]))
+        if _is_coverage_gap(case):
+            gaps.append(
+                {
+                    "case_id": case["case_id"],
+                    "expected": "coverage_gap",
+                    "retrieved_docs": seen,
+                    "reason": case.get("coverage_gap_reason", ""),
+                }
+            )
+            continue
         relevant = [(d, d) for d in case["relevant_docs"]]
         retrieved = [(d, d) for d in seen]
         # Document-level HitRate@5: any relevant doc in the top-5.
@@ -116,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         "hit_rate_at_5": hits_n / len(rows) if rows else 0.0,
         "mrr": sum(rrs) / len(rrs) if rrs else 0.0,
         "cases_sha256": payload["freeze_sha256"],
+        "coverage_gap_cases": gaps,
         "rows": rows,
     }
     print(
@@ -203,6 +220,7 @@ def _run_vector(args: Any, payload: dict[str, Any], db_url: str) -> int:
         return 2
     engine = create_engine(db_url)
     rows: list[dict[str, Any]] = []
+    gaps: list[dict[str, Any]] = []
     query_used_reported = 0
     try:
         for case in payload["cases"]:
@@ -215,6 +233,20 @@ def _run_vector(args: Any, payload: dict[str, Any], db_url: str) -> int:
             kept = apply_technique_vector_cutoff(candidates, TECHNIQUE_VECTOR_CUTOFF)
             docs_cut = _dedup_docs(kept)
             docs_all = _dedup_docs(candidates)
+            if _is_coverage_gap(case):
+                gaps.append(
+                    {
+                        "case_id": case["case_id"],
+                        "expected": "coverage_gap",
+                        "retrieved_docs_cutoff": docs_cut,
+                        "retrieved_docs_no_cutoff": docs_all,
+                        "retrieved_distances": {
+                            str(c["doc_id"]): float(c["distance"]) for c in candidates
+                        },
+                        "reason": case.get("coverage_gap_reason", ""),
+                    }
+                )
+                continue
             distances = {
                 str(case_doc): min(
                     float(c["distance"]) for c in candidates if str(c["doc_id"]) == str(case_doc)
@@ -273,6 +305,7 @@ def _run_vector(args: Any, payload: dict[str, Any], db_url: str) -> int:
         "cutoff_0_66": _aggregate("cutoff_0_66"),
         "no_cutoff": _aggregate("no_cutoff"),
         "cases_sha256": payload["freeze_sha256"],
+        "coverage_gap_cases": gaps,
         "rows": rows,
     }
     print(

@@ -133,7 +133,94 @@ def test_single_option_needs_direct_lookup() -> None:
     errors = validate_options(
         [_option()], resolve=_resolve, hard_keys=set(), honored=[], allow_single=False
     )
-    assert any("direct_recipe_lookup" in e for e in errors)
+    assert any("Epicure consulted" in e for e in errors)
+
+
+def test_unretrieved_valid_id_rejected() -> None:
+    errors = validate_options(
+        [_option(quantities=[])],
+        resolve=_resolve,
+        hard_keys=set(),
+        honored=[],
+        allow_single=True,
+        retrieved=set(),
+        full=set(),
+    )
+    assert any("was not retrieved in this session" in e for e in errors)
+
+
+def test_cross_dataset_id_rejected() -> None:
+    retrieved = {("other/dataset", "curry-1")}
+    errors = validate_options(
+        [_option(quantities=[])],
+        resolve=_resolve,
+        hard_keys=set(),
+        honored=[],
+        allow_single=True,
+        retrieved=retrieved,
+        full=set(),
+    )
+    assert any("was not retrieved in this session" in e for e in errors)
+
+
+def test_retrieved_search_only_option_without_quantities_passes() -> None:
+    errors = validate_options(
+        [_option(quantities=[])],
+        resolve=_resolve,
+        hard_keys=set(),
+        honored=[],
+        allow_single=True,
+        retrieved={("odunola/foodie", "curry-1")},
+        full=set(),
+    )
+    assert errors == []
+
+
+def test_search_only_option_with_quantities_rejected() -> None:
+    errors = validate_options(
+        [_option()],
+        resolve=_resolve,
+        hard_keys=set(),
+        honored=[],
+        allow_single=True,
+        retrieved={("odunola/foodie", "curry-1")},
+        full=set(),
+    )
+    assert any("need a get_recipe result" in e for e in errors)
+
+
+def test_full_evidence_option_with_quantities_passes() -> None:
+    errors = validate_options(
+        [_option()],
+        resolve=_resolve,
+        hard_keys=set(),
+        honored=[],
+        allow_single=True,
+        retrieved={("odunola/foodie", "curry-1")},
+        full={("odunola/foodie", "curry-1")},
+    )
+    assert errors == []
+
+
+def test_plan_needs_full_recipe_evidence() -> None:
+    plan = {
+        "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+        "mise_en_place": ["dice chicken"],
+        "steps": ["cook"],
+        "plating": "bowls",
+    }
+    dish = {"dataset_id": "odunola/foodie", "source_id": "curry-1"}
+    errors = validate_plan(plan, selected_dish=dish, resolve=_resolve, full=set())
+    assert any("needs a get_recipe result" in e for e in errors)
+    assert (
+        validate_plan(
+            plan,
+            selected_dish=dish,
+            resolve=_resolve,
+            full={("odunola/foodie", "curry-1")},
+        )
+        == []
+    )
 
 
 def test_quantity_matching_numeric() -> None:

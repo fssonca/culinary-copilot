@@ -1,12 +1,30 @@
-# Phase 3 live evaluation plan (PREPARED, NOT RUN)
+# Phase 3 live evaluation plan (RUNNER BUILT, NOT RUN)
+
+Status: runner built (`evals/phase3_agent/live_run.py`), tested with
+fakes on disposable databases only. **The live run is NOT authorized:
+do not run it until the owner says "run it".** Re-verify pricing
+(`EMBED_PRICING_VERSION`, `PRICING_VERSION`) immediately before any
+live attempt; model and embedding prices change, and the figures below
+go stale.
 
 Owner checkpoint: review `REVIEW.md` (10 offline trajectories) and approve
 or correct the budget and the database choice below before anything else
 happens. No live call, embedding, download or application-database write
 has been made for Phase 3, and none is authorized by this plan alone.
 Each live run still needs its own explicit go-ahead with its share and
-stop conditions (Checkpoint 0, budget item). Do not write `live_run.py`
-until this plan is approved.
+stop conditions (Checkpoint 0, budget item).
+
+## 8 live scenarios (`evals/phase3_agent/live_scenarios.json`, frozen)
+
+Chicken dinner to plan, yogurt ask-and-resume (frozen answer),
+direct lentil request, vegetarian conflict, empty retrieval (asks
+with a concrete lemon-dessert choice), Epicure unavailable
+(per-scenario `epicure_enabled: false`, never `.env`), pure
+technique question, roast pairing. Expectations updated for the new
+Epicure policy: the direct request consults Epicure and may return
+one recipe (`direct_dish_request`). no-progress is deliberately
+absent: it may not trigger with a real model, and its coverage stays
+with the offline failure-injection tests.
 
 ## Model and pricing (repo-recorded, re-verify before running)
 
@@ -90,23 +108,57 @@ Each session may be retried once (same ceilings): at most 2 attempts.
 - The owner picks A or B at the checkpoint. The command below shows
   option A; for B replace `--expect-db-name` with the disposable name.
 
-## Exact command (do not run without owner approval)
+## Exact live command (paste-safe: no comment lines)
 
 ```sh
-# From the repo root, after pricing re-verification and a per-run go-ahead:
-HF_HUB_OFFLINE=1 uv run python evals/phase3_agent/live_run.py \
-  --sessions 8 --max-attempts 2 \
-  --input-token-ceiling 30000 --output-token-ceiling 12000 \
-  --model gpt-6-luna --expect-db-name culinary_copilot \
-  --out evals/phase3_agent/live-results
+HF_HUB_OFFLINE=1 uv run python evals/phase3_agent/live_run.py --live --yes --ceiling-usd 0.15 --expect-db-name culinary_copilot --expect-db-host localhost
 ```
 
-`live_run.py` does not exist yet (explicitly out of scope for this
-phase); it is written only after this plan is approved, and it refuses
-to start unless the recorded `PRICING_VERSION` matches the registry and
-the target database guard passes. `HF_HUB_OFFLINE=1` keeps Epicure
-cache-only (missing assets return `tool_not_configured`, never
-download).
+This uses `DATABASE_URL` from `.env` (target the correct database per
+the owner conditions before running). The runner refuses without
+`--live --yes --ceiling-usd` (any ceiling above $0.15 refused),
+without the DB guards, when `HF_HUB_OFFLINE` is not `1`, when the
+model or pricing is unknown, or when the technique snapshot is
+unverifiable (use option B then). `--fake` runs the full 8-scenario
+pipeline against the fake provider on a disposable database (dropped
+afterward); raw output goes under `data/phase3-live/` (git-ignored).
+
+## Runner design (`evals/phase3_agent/live_run.py`)
+
+Pre-call spending reservations: before every paid call the runner
+reserves input tokens plus the maximum permitted output against the
+$0.15 run ceiling, and refuses any call that does not fit (finishing
+fewer scenarios is acceptable).
+
+Input counting: conservative local bound — UTF-8 bytes/3 over the
+full payload (input items, tools, schema), never below chars/4. A
+Responses input-token endpoint exists and the installed SDK exposes
+`client.responses.input_tokens.count`, but the official docs do not
+confirm it is unbilled, so a counting call could itself cost money
+and break the ledger. The local bound is deterministic, offline, and
+testable; bytes/3 strictly dominates chars/4 for any UTF-8 text.
+
+Ledger: `SpendLedger` records reserve → reconcile (reported usage
+replaces the reservation, remainder released) or keep (ambiguous
+failure stays spent; unsent calls release). Model turns go through
+`LedgerModelProvider`; query embeddings (if vector mode ever runs)
+through `LedgerEmbedProvider`. Dollars use
+`recommendations/pricing.py` at the preflight-recorded
+`PRICING_VERSION`.
+
+Trial isolation: a fresh session per attempt (a retry never inherits
+answers or evidence); ask-and-resume stays inside one session with
+scripted answers frozen in `live_scenarios.json` (sha256 frozen
+before any run); the runner keeps a manifest of every session it
+created; pre/post snapshots (recipes, quarantine and technique
+counts plus a checksum over `technique_documents` hashes) prove no
+writes outside sessions/session_events. All verified by
+`tests/test_phase3_live.py` on disposable databases. If the snapshot
+is unverifiable at preflight, the runner refuses and tells the owner
+to use option B.
+
+Database A only with that verified isolation, otherwise B. The run
+happens after the P3-A-01/02 fixes and before Phase 5.
 
 ## Stop conditions (live)
 
