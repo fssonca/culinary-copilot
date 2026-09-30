@@ -151,9 +151,15 @@ core, cooc, chem, plus substitutions — recorded in the preflight
 JSON), when embeddings are enabled but no query-embedding provider
 can be built, or when the technique snapshot is unverifiable (use
 option B then). Preflight records vector availability (recipe and
-technique embedding counts). `--fake` runs the full 8-scenario
+technique embedding counts) plus the scenario keys and max attempts.
+`--fake` runs the full 8-scenario
 pipeline against the fake provider on a disposable database (dropped
 afterward); raw output goes under `data/phase3-live/` (git-ignored).
+`--scenarios key1,key2` runs a subset (default all; unknown keys
+refused); `--max-attempts {1,2}` caps runner-level retries per
+scenario (default 2). Both are recorded in the summary and the
+preflight JSON, and each scenario record carries
+`expected_stop_matched` (final stop vs `expected.stop_reason`).
 
 ## Runner design (`evals/phase3_agent/live_run.py`)
 

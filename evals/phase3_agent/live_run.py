@@ -585,6 +585,10 @@ def preflight(
         problems.append(f"unknown model {model!r} (not in registry)")
     record["model"] = model
     record["pricing_version"] = PRICING_VERSION
+    record["max_attempts"] = int(getattr(args, "max_attempts", MAX_ATTEMPTS) or MAX_ATTEMPTS)
+    record["scenario_keys"] = [
+        str(s.get("key", "")) for s in (scenarios or {}).get("scenarios", [])
+    ]
     if int(getattr(settings, "llm_app_max_retries", 0)) != 0:
         problems.append(
             "llm_app_max_retries must be 0 (one wrapped call must equal one request; "
@@ -1596,12 +1600,17 @@ def run_scenario_live(
 
 def _args(argv: list[str] | None = None) -> Any:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scenarios", default=str(DEFAULT_SCENARIOS))
+    parser.add_argument("--scenarios-file", default=str(DEFAULT_SCENARIOS))
+    parser.add_argument(
+        "--scenarios",
+        default="",
+        help="comma-separated scenario keys to run (default: all)",
+    )
     parser.add_argument("--database-url", default="")
     parser.add_argument("--expect-db-name", default="")
     parser.add_argument("--expect-db-host", default="")
     parser.add_argument("--model", default="")
-    parser.add_argument("--max-attempts", type=int, default=MAX_ATTEMPTS)
+    parser.add_argument("--max-attempts", type=int, choices=(1, 2), default=MAX_ATTEMPTS)
     parser.add_argument("--ceiling-usd", type=float, default=None)
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--yes", action="store_true")
@@ -1673,7 +1682,18 @@ def main(argv: list[str] | None = None) -> int:
     args = _args(argv)
     from culinary_copilot.config import Settings
 
-    scenarios = load_scenarios(Path(args.scenarios))
+    scenarios = load_scenarios(Path(args.scenarios_file))
+    wanted = [k.strip() for k in str(args.scenarios or "").split(",") if k.strip()]
+    if wanted:
+        known = [str(s.get("key", "")) for s in scenarios["scenarios"]]
+        unknown = [k for k in wanted if k not in known]
+        if unknown:
+            print(f"error: unknown scenario keys: {', '.join(unknown)}", file=sys.stderr)
+            return 2
+        scenarios = {
+            **scenarios,
+            "scenarios": [s for s in scenarios["scenarios"] if str(s.get("key")) in wanted],
+        }
     if args.fake:
         settings = Settings(_env_file=None)
         db_url = args.database_url or settings.database_url.get_secret_value()
@@ -1840,11 +1860,22 @@ def _run_all(
         runs = (attempt or {}).get("runs") or []
         return runs[-1].get("stop_reason") if runs else None
 
+    expected_by_key = {
+        str(s.get("key", "")): ((s.get("expected") or {}).get("stop_reason"))
+        for s in scenarios["scenarios"]
+    }
+
+    def _stop_matched(report: dict[str, Any]) -> bool:
+        expected = expected_by_key.get(str(report.get("key", "")))
+        return expected is not None and report.get("stop_reason") == expected
+
     summary = {
         "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "fake": fake,
         "scenarios_sha256": scenarios["freeze_sha256"],
         "model": model,
+        "scenario_keys": [str(r.get("key", "")) for r in scenario_reports],
+        "max_attempts": int(getattr(args, "max_attempts", MAX_ATTEMPTS) or MAX_ATTEMPTS),
         "spend": ledger.summary(),
         "isolation": {"ok": isolated, "problems": isolation_problems},
         "stopped_early": stopped_early,
@@ -1854,6 +1885,7 @@ def _run_all(
                 "status": r.get("status", "completed"),
                 "attempts": r.get("attempts", 0),
                 "stop_reason": r.get("stop_reason"),
+                "expected_stop_matched": _stop_matched(r),
                 "grades": r.get("grades", {"graded": False, "reason": "not-run"}),
                 "first_attempt_stop": _attempt_stop(r.get("first_attempt")),
             }
@@ -1868,10 +1900,11 @@ def _run_all(
     n_no_answer = sum(1 for s in done_statuses if s.startswith("completed: no-answer"))
     n_not_run = sum(1 for s in done_statuses if s.startswith("not_run"))
     n_stopped = len(done_statuses) - n_answered - n_no_answer - n_not_run
+    n_matched = sum(1 for e in summary["scenarios"] if e.get("expected_stop_matched") is True)
     print(
         f"scenarios: {n_answered} answered, {n_no_answer} no-answer, "
         f"{n_stopped} stopped, {n_not_run} not_run of {len(done_statuses)}; "
-        f"isolation ok: {isolated}"
+        f"{n_matched} matched expected stop; isolation ok: {isolated}"
     )
     this_run_spend = float(ledger.spent_usd)
     if history_path:

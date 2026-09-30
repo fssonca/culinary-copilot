@@ -69,6 +69,11 @@ class EpicureCore:
             self._names = sorted(vocab, key=vocab.__getitem__)
             self._vectors = vectors / norms
 
+    def vocabulary(self) -> list[str]:
+        """Loaded vocabulary names (loads once, thread-safe)."""
+        self._load()
+        return list(self._names)
+
     def find_balanced_pairings(self, ingredient: str, k: int = 5) -> list[Pairing]:
         if not self.settings.epicure_enabled:
             raise EpicureDisabledError(

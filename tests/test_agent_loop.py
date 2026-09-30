@@ -1156,13 +1156,37 @@ def test_hard_constraint_relaxation_rejected(engine) -> None:
     assert any(e.event_type == "agent_validation_reject" for e in events)
 
 
-def test_invalid_phase_move_is_defect(engine) -> None:
+def test_invalid_phase_move_is_feedback_not_terminal(engine) -> None:
     store = PostgresSessionStore(engine)
-    state = _session(store, current_phase="recommend")
-    provider = ScriptedProvider([("parsed", _finish_options([_opt()], move_to="cook"))])
-    with pytest.raises(AgentLoopError) as excinfo:
-        _run(run_agent(state.id, deps=_deps(store, provider)))
-    assert excinfo.value.reason == "invalid_phase_transition"
+    state = _session(store)
+    bad_finish = _finish_options(_two_opts(), move_to="plan")
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c0", "search_recipes", {"query": "hearty vegetarian"}),
+                    (
+                        "c1",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", bad_finish),
+            ("parsed", _finish_options(_two_opts())),
+        ]
+    )
+    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert any("invalid phase move" in str(e) for e in rejects[0].payload["errors"])
 
 
 def test_epicure_required_when_enabled(engine) -> None:
@@ -2105,3 +2129,187 @@ def test_enabled_epicure_offers_pairing_tools_and_marks_available(engine) -> Non
     assert "epicure_not_configured (Epicure is unavailable, and the answer is marked degraded)" in (
         _TASK_FRAMING
     )
+
+
+def _retrieval_turn() -> tuple[str, Any]:
+    return (
+        "tools",
+        [
+            ("c0", "search_recipes", {"query": "hearty vegetarian"}),
+            (
+                "c1",
+                "get_recipe",
+                {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+            ),
+            (
+                "c2",
+                "get_recipe",
+                {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+            ),
+        ],
+    )
+
+
+def test_final_turn_sends_no_tools_and_accepts_finish(engine) -> None:
+    from culinary_copilot.agent.loop import REASON_AGENT_SUFFICIENT
+
+    store = PostgresSessionStore(engine)
+    state = _session(store, steps_remaining=2)
+    provider = ScriptedProvider([_retrieval_turn(), ("parsed", _finish_options(_two_opts()))])
+    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert result.stop_reason == REASON_AGENT_SUFFICIENT
+    assert provider.seen_tools[1] == []
+    assert "Final step: no tools remain" in provider.seen_inputs[1][-1]["content"]
+
+
+def test_final_turn_rejection_ends_with_budget_stop(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store, steps_remaining=2)
+    bad_finish = {
+        "decision": "finish",
+        "move_to": "recommend",
+        "constraints_honored": [],
+        "note": "no result",
+    }
+    provider = ScriptedProvider([_retrieval_turn(), ("parsed", bad_finish)])
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert excinfo.value.reason == "agent_max_steps"
+    assert provider.seen_tools[1] == []
+
+
+def test_final_turn_exhausted_tool_budget_reports_tool_stop(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store, steps_remaining=8, tool_calls_remaining=3)
+    bad_finish = {
+        "decision": "finish",
+        "move_to": "recommend",
+        "constraints_honored": [],
+        "note": "no result",
+    }
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "a"}),
+                    ("c2", "search_recipes", {"query": "b"}),
+                    ("c3", "search_recipes", {"query": "c"}),
+                ],
+            ),
+            ("parsed", bad_finish),
+        ]
+    )
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert excinfo.value.reason == "agent_tool_budget_exhausted"
+    assert provider.seen_tools[1] == []
+
+
+def test_invalid_ask_phase_move_is_feedback(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    bad_ask = {
+        "decision": "ask_user",
+        "move_to": "plan",
+        "question": {
+            "question_id": "q1",
+            "question_text": "Which dish?",
+            "options": ["a", "b"],
+        },
+        "note": "bad move",
+    }
+    good_ask = {
+        "decision": "ask_user",
+        "question": {
+            "question_id": "q1",
+            "question_text": "Which dish?",
+            "options": ["a", "b"],
+        },
+        "note": "good move",
+    }
+    provider = ScriptedProvider([("parsed", bad_ask), ("parsed", good_ask)])
+    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert result.stop_reason == "agent_needs_user_input"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert any("invalid phase move" in str(e) for e in rejects[0].payload["errors"])
+
+
+def test_evidence_digest_lists_searches_fetches_pairings_and_techniques(engine) -> None:
+    from culinary_copilot.agent.loop import session_evidence_digest
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+
+    def _techniques(args: Any, context: Any) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "mode_ran": "fulltext",
+            "match": "all",
+            "cost_class": "free",
+            "results": [{"doc_id": "tech-egg-1", "chunk_id": 0, "title": "Boiled egg"}],
+        }
+
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c0", "search_recipes", {"query": "hearty vegetarian"}),
+                    (
+                        "c1",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    ("c2", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    ("c3", "search_techniques", {"query": "how to boil an egg"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(_two_opts(), epicure_skip_reason="simple_technique_question"),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"search_techniques": _techniques},
+    )
+    deps.tool_context.record_tool_args = True
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    digest = session_evidence_digest(store, state.id)
+    assert "search search_recipes query='hearty vegetarian' mode=fulltext results=2" in digest
+    assert "fetched odunola/foodie:curry-1 'Creamy Chicken Curry'" in digest
+    assert (
+        "epicure find_balanced_pairings requested='chicken' as='chicken' top=[pork, beef]" in digest
+    )
+    assert "technique tech-egg-1#0 'Boiled egg'" in digest
+    assert len(digest) <= 1500
+
+
+def test_evidence_digest_bounded_and_newest_first(engine) -> None:
+    from culinary_copilot.agent.loop import session_evidence_digest
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    for i in range(120):
+        store.append_event(
+            state.id,
+            "tool_call",
+            {
+                "call_id": f"c{i}",
+                "tool": "search_recipes",
+                "outcome": "ok",
+                "mode_ran": "fulltext",
+                "result_count": 2,
+                "args": f'{{"query": "dish number {i:03d} padding padding"}}',
+            },
+        )
+    digest = session_evidence_digest(store, state.id)
+    assert len(digest) <= 1500
+    assert "dish number 119" in digest
+    assert "dish number 000" not in digest

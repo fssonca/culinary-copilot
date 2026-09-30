@@ -313,6 +313,65 @@ def _result_count(tool_name: str, result: dict[str, Any]) -> int | None:
     return len(rows) if isinstance(rows, list) else 0
 
 
+_EPICURE_RESULT_TOOLS = frozenset(
+    {
+        "find_balanced_pairings",
+        "find_conventional_pairings",
+        "find_flavor_pairings",
+        "find_substitutions",
+    }
+)
+
+
+def _result_facts(tool_name: str, result: dict[str, Any]) -> dict[str, Any] | None:
+    """Small result facts for the session evidence digest (None otherwise).
+
+    Only successful calls record facts: pairing tools record the
+    requested/queried ingredient plus the top 5 pairing names,
+    ``get_recipe`` records the fetched title, and ``search_techniques``
+    records up to 10 hits (doc/chunk/title). Everything is bounded and
+    JSON-safe.
+    """
+    if not result.get("ok"):
+        return None
+    if tool_name in _EPICURE_RESULT_TOOLS:
+        rows = result.get("pairings")
+        if rows is None:
+            rows = result.get("candidates")
+        names: list[str] = []
+        if isinstance(rows, list):
+            for row in rows[:5]:
+                if isinstance(row, dict) and row.get("ingredient"):
+                    names.append(str(row["ingredient"])[:80])
+        return {
+            "requested": str(result.get("requested") or "")[:200],
+            "queried_as": str(result.get("queried_as") or "")[:200],
+            "names": names,
+        }
+    if tool_name == "get_recipe":
+        recipe = result.get("recipe")
+        title = recipe.get("title") if isinstance(recipe, dict) else None
+        return {"title": str(title or "")[:120]}
+    if tool_name == "search_techniques":
+        rows = result.get("results")
+        hits: list[dict[str, Any]] = []
+        if isinstance(rows, list):
+            for row in rows[:10]:
+                if not isinstance(row, dict):
+                    continue
+                doc_id, chunk_id = row.get("doc_id"), row.get("chunk_id")
+                if isinstance(doc_id, str) and isinstance(chunk_id, int):
+                    hits.append(
+                        {
+                            "doc_id": doc_id[:200],
+                            "chunk_id": chunk_id,
+                            "title": str(row.get("title") or "")[:120],
+                        }
+                    )
+        return {"hits": hits}
+    return None
+
+
 def _record_event(
     *,
     context: ToolContext,
@@ -329,6 +388,7 @@ def _record_event(
     match: str | None = None,
     returned_identities: list[dict[str, Any]] | None = None,
     result_count: int | None = None,
+    result_facts: dict[str, Any] | None = None,
     args: dict[str, Any] | None = None,
 ) -> None:
     payload: dict[str, Any] = {
@@ -349,6 +409,8 @@ def _record_event(
         payload["returned_identities"] = returned_identities
     if result_count is not None:
         payload["result_count"] = result_count
+    if result_facts is not None:
+        payload["result_facts"] = result_facts
     if session_id and getattr(context, "session_store", None) is not None:
         # Bounded args travel in the session event only when the caller
         # opts in (reviewable raw trajectories); the process log and the
@@ -464,6 +526,7 @@ async def run_tool(
             match=_as_opt_str(result.get("match")),
             returned_identities=_returned_identities(tool.name, parsed, result),
             result_count=_result_count(tool.name, result),
+            result_facts=_result_facts(tool.name, result),
             args=dict(validated_args),
         )
         return result

@@ -1129,3 +1129,80 @@ def test_zero_hit_search_records_result_count_zero() -> None:
         assert payload["outcome"] == "ok"
         assert payload["result_count"] == 0
         assert "returned_identities" not in payload
+
+
+class _VocabCore:
+    """Fake adapter with the real vocabulary contract (vocabulary hook
+    plus UnknownIngredientError on a miss)."""
+
+    def __init__(
+        self,
+        vocab: tuple[str, ...] = (
+            "chicken",
+            "lentil",
+            "olive_oil",
+            "dragon_fruit",
+            "pork",
+            "beef",
+            "garlic",
+            "onion",
+        ),
+        pairs: list[tuple[str, float]] | None = None,
+    ) -> None:
+        self.settings = _settings(epicure_enabled=True)
+        self._names = list(vocab)
+        self._pairs = pairs if pairs is not None else [("pork", 0.5), ("beef", 0.4)]
+        self.seen: list[str] = []
+
+    def vocabulary(self) -> list[str]:
+        return list(self._names)
+
+    def find_balanced_pairings(self, ingredient: str, k: int = 5):  # type: ignore[no-untyped-def]
+        from culinary_copilot.tools.epicure import UnknownIngredientError
+
+        self.seen.append(ingredient)
+        if ingredient not in self._names:
+            raise UnknownIngredientError(ingredient)
+        from culinary_copilot.tools.epicure import Pairing
+
+        return [Pairing(ingredient=n, score=s) for n, s in self._pairs[:k]]
+
+
+def _vocab_ctx() -> Any:
+    core = _VocabCore()
+    return _ctx(epicure_core=core, epicure_cooc=core, epicure_chem=core), core
+
+
+def test_epicure_normalization_order_and_queried_as() -> None:
+    ctx, core = _vocab_ctx()
+    cases = {
+        "lentils": "lentil",
+        "red lentils": "lentil",
+        "red_lentil": "lentil",
+        "chicken breast": "chicken",
+        "roast chicken": "chicken",
+        "lentil": "lentil",
+        "olive oil": "olive_oil",
+    }
+    for name in (
+        "find_balanced_pairings",
+        "find_conventional_pairings",
+        "find_flavor_pairings",
+        "find_substitutions",
+    ):
+        for raw, expected in cases.items():
+            result = _call(name, {"ingredient": raw}, ctx)
+            assert result["ok"] is True, (name, raw)
+            assert result["requested"] == raw, (name, raw)
+            assert result["queried_as"] == expected, (name, raw)
+    assert set(core.seen) <= {"lentil", "chicken", "olive_oil"}
+
+
+def test_epicure_miss_lists_suggestions() -> None:
+    ctx, _ = _vocab_ctx()
+    result = _call("find_balanced_pairings", {"ingredient": "chikcen"}, ctx)
+    assert result["ok"] is False
+    assert result["error_type"] == "invalid_arguments"
+    assert result["reason"] == REASON_TOOL_INVALID_ARGUMENTS
+    assert "chicken" in result["message"]
+    assert "queried_as" not in result

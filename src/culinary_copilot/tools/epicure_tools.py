@@ -20,6 +20,7 @@ nutrition stay unknown.
 
 from __future__ import annotations
 
+import difflib
 import logging
 from typing import Any, Literal
 
@@ -82,6 +83,94 @@ def _core_for(context: ToolContext, variant: Literal["core", "cooc", "chem"]) ->
     return getattr(context, "epicure_chem", None)
 
 
+# --- ingredient normalization --------------------------------------------------
+
+
+def _basic_form(ingredient: str) -> str:
+    """Lowercase, trim, spaces and hyphens to underscores."""
+    return "_".join(str(ingredient).strip().lower().replace("-", " ").split())
+
+
+def _singularize(word: str) -> str:
+    """Simple singular for one underscore token (small rule set)."""
+    if word.endswith("ies") and len(word) > 3:
+        return word[:-3] + "y"
+    for ending in ("ches", "shes", "sses", "xes", "zes", "oes"):
+        if word.endswith(ending) and len(word) > len(ending):
+            return word[:-2]
+    if word.endswith("s") and not word.endswith("ss") and len(word) > 2:
+        return word[:-1]
+    return word
+
+
+def ingredient_candidates(ingredient: str) -> list[str]:
+    """Ordered normalization candidates for one raw ingredient string.
+
+    a. lowercase/trim with spaces and hyphens as underscores; b. the
+    simple singular form; c. the last token, then the first token,
+    each singularized. Duplicates dropped, order kept.
+    """
+    basic = _basic_form(ingredient)
+    out: list[str] = []
+    forms = [basic, "_".join(_singularize(t) for t in basic.split("_"))]
+    tokens = basic.split("_")
+    if tokens:
+        forms.extend([_singularize(tokens[-1]), _singularize(tokens[0])])
+    for form in forms:
+        if form and form not in out:
+            out.append(form)
+    return out
+
+
+def normalize_ingredient(ingredient: str, vocabulary: set[str] | None) -> str | None:
+    """First normalization candidate found in the vocabulary.
+
+    ``None`` vocabulary keeps the old behavior: the basic form is used
+    unverified (cores without a vocabulary, e.g. test fakes, keep
+    working exactly as before).
+    """
+    candidates = ingredient_candidates(ingredient)
+    if vocabulary is None:
+        return candidates[0] if candidates else None
+    for candidate in candidates:
+        if candidate in vocabulary:
+            return candidate
+    return None
+
+
+def suggest_ingredients(ingredient: str, vocabulary: set[str], *, limit: int = 8) -> list[str]:
+    """Up to ``limit`` vocabulary hints for a miss: difflib close
+    matches first, then substring hits, alphabetically."""
+    basic = _basic_form(ingredient)
+    out = list(difflib.get_close_matches(basic, sorted(vocabulary), n=limit, cutoff=0.6))
+    for name in sorted(vocabulary):
+        if len(out) >= limit:
+            break
+        if name in out:
+            continue
+        if basic in name or (name and name in basic):
+            out.append(name)
+    return out[:limit]
+
+
+def _core_vocabulary(core: Any) -> set[str] | None:
+    """Vocabulary names for one core adapter (None when unavailable).
+
+    Prefers a ``vocabulary()`` hook (the real adapter loads once,
+    thread-safe); falls back to a ``_vocab`` mapping for older fakes.
+    Loading raises on missing assets — the caller maps that exactly
+    like a query-time load failure.
+    """
+    hook = getattr(core, "vocabulary", None)
+    if callable(hook):
+        names = hook()
+        return set(names) if names is not None else None
+    raw = getattr(core, "_vocab", None)
+    if isinstance(raw, dict) and raw:
+        return set(raw.keys())
+    return None
+
+
 def build_epicure_variants(settings: Any) -> dict[str, Any]:
     """Build cache-only core/cooc/chem ``EpicureCore`` instances.
 
@@ -136,6 +225,61 @@ def _variant_settings(settings: Any, model_id: str, revision: str) -> Any:
     return _View(settings)
 
 
+def _classify_core_error(tool_name: str, variant: str, exc: Exception) -> dict[str, Any]:
+    """Map an adapter failure to its typed result (never raises)."""
+    kind = type(exc).__name__
+    if "Disabled" in kind:
+        return _not_configured(f"{tool_name} not configured: disabled")
+    # Cache-only load failures (missing file / revision mismatch /
+    # offline) never download; they are permanent configuration errors.
+    if (
+        "LocalEntryNotFound" in kind
+        or "Offline" in kind
+        or isinstance(exc, (OSError, FileNotFoundError, ValueError))
+    ):
+        return _not_configured(f"{tool_name} not configured: {variant} asset missing ({kind})")
+    from culinary_copilot.domain.recommendations import (
+        REASON_TOOL_UNAVAILABLE,
+    )
+    from culinary_copilot.domain.recommendations import (
+        next_action_for as _naf,
+    )
+
+    return {
+        "ok": False,
+        "error_type": "unavailable",
+        "reason": REASON_TOOL_UNAVAILABLE,
+        "message": f"{tool_name} unavailable: {kind}",
+        "next_action": _naf(REASON_TOOL_UNAVAILABLE),
+    }
+
+
+def _resolve_queried(
+    tool_name: str, variant: str, requested: str, core: Any
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Normalize ``requested`` against the adapter vocabulary.
+
+    Returns ``(queried_as, None)`` on success, ``(None, error_result)``
+    on a miss (``invalid_arguments`` with up to 8 vocabulary
+    suggestions) or an asset-load failure (mapped exactly like a
+    query-time failure).
+    """
+    try:
+        vocabulary = _core_vocabulary(core)
+    except Exception as exc:
+        return None, _classify_core_error(tool_name, variant, exc)
+    queried = normalize_ingredient(requested, vocabulary)
+    if queried is None:
+        assert vocabulary is not None
+        suggestions = suggest_ingredients(requested, vocabulary)
+        hint = f"; did you mean: {', '.join(suggestions)}" if suggestions else ""
+        return None, _invalid(
+            f"{tool_name}: unknown ingredient {requested!r}{hint} "
+            "(use one base ingredient, singular, e.g. chicken, lentil, olive_oil)"
+        )
+    return queried, None
+
+
 async def _pairings_impl(
     args: PairingsArgs,
     context: ToolContext,
@@ -149,42 +293,29 @@ async def _pairings_impl(
     settings = getattr(core, "settings", None)
     if settings is not None and not bool(getattr(settings, "epicure_enabled", False)):
         return _not_configured(f"{tool_name} not configured: EPICURE_ENABLED=false")
+    requested = args.ingredient
+    queried, error = _resolve_queried(tool_name, variant, requested, core)
+    if error is not None:
+        return error
+    assert queried is not None
     try:
         import asyncio as _asyncio
 
-        pairs = await _asyncio.to_thread(core.find_balanced_pairings, args.ingredient, args.k)
+        pairs = await _asyncio.to_thread(core.find_balanced_pairings, queried, args.k)
     except Exception as exc:
-        kind = type(exc).__name__
-        if "UnknownIngredient" in kind:
-            return _invalid(f"{tool_name}: unknown canonical ingredient {args.ingredient!r}")
-        if "Disabled" in kind:
-            return _not_configured(f"{tool_name} not configured: disabled")
-        # Cache-only load failures (missing file / revision mismatch /
-        # offline) never download; they are permanent configuration errors.
-        if (
-            "LocalEntryNotFound" in kind
-            or "Offline" in kind
-            or isinstance(exc, (OSError, FileNotFoundError, ValueError))
-        ):
-            return _not_configured(f"{tool_name} not configured: {variant} asset missing ({kind})")
-        from culinary_copilot.domain.recommendations import (
-            REASON_TOOL_UNAVAILABLE,
-        )
-        from culinary_copilot.domain.recommendations import (
-            next_action_for as _naf,
-        )
-
-        return {
-            "ok": False,
-            "error_type": "unavailable",
-            "reason": REASON_TOOL_UNAVAILABLE,
-            "message": f"{tool_name} unavailable: {kind}",
-            "next_action": _naf(REASON_TOOL_UNAVAILABLE),
-        }
+        if "UnknownIngredient" in type(exc).__name__:
+            # Safety net (the vocabulary listed it): same invalid shape.
+            return _invalid(
+                f"{tool_name}: unknown ingredient {requested!r} (queried as {queried!r}); "
+                "use one base ingredient, singular, e.g. chicken, lentil, olive_oil"
+            )
+        return _classify_core_error(tool_name, variant, exc)
     return {
         "ok": True,
         "variant": variant,
-        "ingredient": args.ingredient,
+        "ingredient": requested,
+        "requested": requested,
+        "queried_as": queried,
         "pairings": [{"ingredient": p.ingredient, "score": float(p.score)} for p in pairs],
     }
 
@@ -222,37 +353,23 @@ async def find_substitutions_impl(args: SubstitutionsArgs, context: ToolContext)
     settings = getattr(core, "settings", None)
     if settings is not None and not bool(getattr(settings, "epicure_enabled", False)):
         return _not_configured("find_substitutions not configured: EPICURE_ENABLED=false")
+    requested = args.ingredient
+    queried, error = _resolve_queried("find_substitutions", "core", requested, core)
+    if error is not None:
+        return error
+    assert queried is not None
     try:
         import asyncio as _asyncio
 
-        pairs = await _asyncio.to_thread(core.find_balanced_pairings, args.ingredient, args.k)
+        pairs = await _asyncio.to_thread(core.find_balanced_pairings, queried, args.k)
     except Exception as exc:
-        kind = type(exc).__name__
-        if "UnknownIngredient" in kind:
-            return _invalid(f"find_substitutions: unknown canonical ingredient {args.ingredient!r}")
-        if (
-            "Disabled" in kind
-            or "LocalEntryNotFound" in kind
-            or "Offline" in kind
-            or isinstance(exc, (OSError, FileNotFoundError, ValueError))
-        ):
-            return _not_configured(
-                f"find_substitutions not configured: core asset missing ({kind})"
+        if "UnknownIngredient" in type(exc).__name__:
+            return _invalid(
+                f"find_substitutions: unknown ingredient {requested!r} "
+                f"(queried as {queried!r}); use one base ingredient, singular, "
+                "e.g. chicken, lentil, olive_oil"
             )
-        from culinary_copilot.domain.recommendations import (
-            REASON_TOOL_UNAVAILABLE,
-        )
-        from culinary_copilot.domain.recommendations import (
-            next_action_for as _naf,
-        )
-
-        return {
-            "ok": False,
-            "error_type": "unavailable",
-            "reason": REASON_TOOL_UNAVAILABLE,
-            "message": f"find_substitutions unavailable: {kind}",
-            "next_action": _naf(REASON_TOOL_UNAVAILABLE),
-        }
+        return _classify_core_error("find_substitutions", "core", exc)
     candidates = [
         {
             "ingredient": p.ingredient,
@@ -263,7 +380,9 @@ async def find_substitutions_impl(args: SubstitutionsArgs, context: ToolContext)
     ]
     return {
         "ok": True,
-        "ingredient": args.ingredient,
+        "ingredient": requested,
+        "requested": requested,
+        "queried_as": queried,
         "candidates": candidates,
         "disclaimer": (
             "Substitution candidates are unverified Epicure neighbors; "
@@ -278,7 +397,10 @@ def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
     return [
         ToolDefinition(
             name="find_balanced_pairings",
-            description="Balanced ingredient pairings (epicure-core).",
+            description=(
+                "Balanced ingredient pairings (epicure-core): one base ingredient, "
+                "singular, e.g. chicken, lentil, olive_oil."
+            ),
             args_model=PairingsArgs,
             timeout_s=float(timeout_s),
             idempotent=True,
@@ -286,7 +408,10 @@ def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="find_conventional_pairings",
-            description="Conventional pairings (epicure-cooc, recipe context only).",
+            description=(
+                "Conventional pairings (epicure-cooc, recipe context only): one base "
+                "ingredient, singular, e.g. chicken, lentil, olive_oil."
+            ),
             args_model=PairingsArgs,
             timeout_s=float(timeout_s),
             idempotent=True,
@@ -294,7 +419,10 @@ def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="find_flavor_pairings",
-            description="Flavor pairings (epicure-chem, chemistry only).",
+            description=(
+                "Flavor pairings (epicure-chem, chemistry only): one base ingredient, "
+                "singular, e.g. chicken, lentil, olive_oil."
+            ),
             args_model=PairingsArgs,
             timeout_s=float(timeout_s),
             idempotent=True,
@@ -302,7 +430,10 @@ def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="find_substitutions",
-            description="Unverified Epicure substitution candidates; never a dietary claim.",
+            description=(
+                "Unverified Epicure substitution candidates; never a dietary claim. "
+                "One base ingredient, singular, e.g. chicken, lentil, olive_oil."
+            ),
             args_model=SubstitutionsArgs,
             timeout_s=float(timeout_s),
             idempotent=True,
@@ -319,5 +450,8 @@ __all__ = [
     "find_conventional_pairings_impl",
     "find_flavor_pairings_impl",
     "find_substitutions_impl",
+    "ingredient_candidates",
+    "normalize_ingredient",
+    "suggest_ingredients",
     "tool_definitions",
 ]

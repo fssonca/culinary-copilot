@@ -2098,3 +2098,57 @@ def test_fake_path_uses_effective_epicure_settings(engine, tmp_path: Path) -> No
     )
     assert enabled["status"] == "completed: answered"
     assert enabled["stop_reason"] == "agent_sufficient_evidence"
+
+
+def test_scenario_filter_and_attempts_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setenv("EPICURE_ENABLED", "true")
+    from culinary_copilot.config import Settings
+
+    base = Settings().database_url.get_secret_value()
+    head, _, _ = base.rpartition("/")
+    db_url = f"{head}/culinary_test_live_filter"
+    raw_dir = tmp_path / "raw"
+    summary_out = tmp_path / "summary.json"
+    rc = live_run.main(
+        [
+            "--fake",
+            "--database-url",
+            db_url,
+            "--raw-dir",
+            str(raw_dir),
+            "--summary-out",
+            str(summary_out),
+            "--scenarios",
+            "live-direct-lentil",
+            "--max-attempts",
+            "1",
+        ]
+    )
+    assert rc == 0
+    summary = json.loads(summary_out.read_text(encoding="utf-8"))
+    assert [s["key"] for s in summary["scenarios"]] == ["live-direct-lentil"]
+    assert summary["scenario_keys"] == ["live-direct-lentil"]
+    assert summary["max_attempts"] == 1
+    entry = summary["scenarios"][0]
+    assert entry["stop_reason"] == "agent_sufficient_evidence"
+    assert entry["expected_stop_matched"] is True
+    out = capsys.readouterr().out
+    assert "1 matched expected stop" in out
+
+
+def test_unknown_scenario_key_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    rc = live_run.main(["--fake", "--scenarios", "no-such-scenario"])
+    assert rc == 2
+    assert "unknown scenario keys" in capsys.readouterr().err
+
+
+def test_max_attempts_rejects_three(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        live_run.main(["--fake", "--max-attempts", "3"])
+    assert excinfo.value.code == 2

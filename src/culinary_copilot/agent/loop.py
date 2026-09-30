@@ -500,6 +500,96 @@ def recipe_session_evidence(
     return retrieved, full
 
 
+_EVIDENCE_DIGEST_LIMIT = 1500
+
+
+def _event_args(payload: dict[str, Any]) -> dict[str, Any]:
+    """Bounded recorded args from a tool_call event ({} when absent)."""
+    raw = payload.get("args")
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def session_evidence_digest(
+    store: PostgresSessionStore, session_id: str, *, limit_chars: int = _EVIDENCE_DIGEST_LIMIT
+) -> str:
+    """Compact evidence digest rebuilt from session events each turn.
+
+    The tool history is capped, so the framing snapshot carries this
+    digest instead: searches (tool/query/mode/count), fetched recipes
+    (dataset/source/title), Epicure queries (tool/requested/queried_as,
+    top 5 names) and technique hits (doc/chunk/title). Only successful
+    calls count; identical lines collapse; beyond the budget the oldest
+    lines drop first.
+    """
+    try:
+        events = store.list_events(session_id)
+    except Exception:
+        return ""
+    lines: list[str] = []
+    for event in events:
+        if getattr(event, "event_type", "") != "tool_call":
+            continue
+        payload = getattr(event, "payload", None) or {}
+        if payload.get("outcome") != "ok":
+            continue
+        tool = str(payload.get("tool") or "")
+        args = _event_args(payload)
+        facts = payload.get("result_facts")
+        if not isinstance(facts, dict):
+            facts = {}
+        if tool in ("search_recipes", "search_techniques"):
+            query = args.get("query", "?")
+            lines.append(
+                f"search {tool} query={query!r} "
+                f"mode={payload.get('mode_ran')} results={payload.get('result_count')}"
+            )
+            hits = facts.get("hits")
+            if isinstance(hits, list):
+                for hit in hits[:10]:
+                    if isinstance(hit, dict):
+                        lines.append(
+                            f"technique {hit.get('doc_id')}#{hit.get('chunk_id')} "
+                            f"{str(hit.get('title') or '')!r}"
+                        )
+        elif tool == "get_recipe":
+            title = str(facts.get("title") or "")
+            identities = payload.get("returned_identities")
+            if isinstance(identities, list):
+                for ident in identities:
+                    if isinstance(ident, dict) and ident.get("via") == "full":
+                        lines.append(
+                            f"fetched {ident.get('dataset_id')}:{ident.get('source_id')} {title!r}"
+                        )
+        elif tool in _PAIRING_TOOLS:
+            names = ", ".join(str(n) for n in (facts.get("names") or [])[:5])
+            lines.append(
+                f"epicure {tool} requested={str(facts.get('requested') or '')!r} "
+                f"as={str(facts.get('queried_as') or '')!r} top=[{names}]"
+            )
+    deduped: list[str] = []
+    for line in lines:
+        if line not in deduped:
+            deduped.append(line)
+    kept: list[str] = []
+    used = 0
+    for line in reversed(deduped):
+        cost = len(line) + 1
+        if kept and used + cost > limit_chars:
+            break
+        kept.append(line)
+        used += cost
+    kept.reverse()
+    return "\n".join(kept)
+
+
 def epicure_evidence(
     *, store: PostgresSessionStore, session_id: str, state: Any, run_queried: bool
 ) -> bool:
@@ -535,7 +625,14 @@ _TASK_FRAMING = (
     "recommend; skipping needs an allowlisted reason: "
     "simple_technique_question (a technique-only question with no pairing "
     "cue) or epicure_not_configured (Epicure is unavailable, and the "
-    "answer is marked degraded)."
+    'answer is marked degraded). "finish" means 2-3 recipe options, each '
+    "fetched with get_recipe in this session; technique and pairing "
+    "questions answer the same way, adding technique_refs or epicure_lines. "
+    "A plan comes only after the user selects a dish; never move to plan "
+    "from discover or research. The typical path is one search, get_recipe "
+    "on the top 2-3, one Epicure query on the main base ingredient, then "
+    "finish; do not repeat a query listed in the evidence digest. "
+    "Quantities are copied exactly from get_recipe, or omitted."
 )
 
 
@@ -546,6 +643,8 @@ def build_turn_input(
     last_outcome: str | None,
     user_messages: list[str] | None = None,
     epicure_available: bool = True,
+    evidence_digest: str | None = None,
+    final_turn: bool = False,
 ) -> list[dict[str, Any]]:
     """Model input: user messages + history + task framing snapshot.
 
@@ -556,7 +655,10 @@ def build_turn_input(
     ``epicure_available`` tells the model whether Epicure can be
     queried at all (disabled, or the whole pairing family excluded
     after a ``tool_not_configured``): when false, a finish must carry
-    the ``epicure_not_configured`` skip reason.
+    the ``epicure_not_configured`` skip reason. ``evidence_digest`` is
+    the session evidence rebuilt from events (it survives the history
+    cap). On a ``final_turn`` no tools are sent and the framing says
+    so.
     """
     snapshot = {
         "phase": state.current_phase,
@@ -567,12 +669,20 @@ def build_turn_input(
         "tool_calls_remaining": state.tool_calls_remaining,
         "internet_search_allowed": state.internet_search_allowed,
         "epicure_available": bool(epicure_available),
+        "evidence_digest": evidence_digest or "",
+        "final_turn": bool(final_turn),
         "epicure_outcome": state.epicure_outcome,
         "epicure_skip_reason": state.epicure_skip_reason,
         "has_suggestions": bool(state.suggestions),
         "selected_dish": state.selected_dish,
     }
     text = _TASK_FRAMING + "\nSession: " + json.dumps(snapshot, default=str)
+    if final_turn:
+        text += (
+            "\nFinal step: no tools remain. Finish now with options from "
+            "the evidence listed, or ask one question if nothing suitable "
+            "was found."
+        )
     if last_outcome:
         text += "\nLast step outcome: " + last_outcome
     items = [{"role": "user", "content": message} for message in (user_messages or [])]
@@ -620,6 +730,8 @@ def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
     elif name in _PAIRING_TOOLS and result.get("ok"):
         key = "candidates" if name == "find_substitutions" else "pairings"
         summary[key] = (result.get(key) or result.get("pairings") or [])[:10]
+        if result.get("queried_as"):
+            summary["queried_as"] = result.get("queried_as")
     elif name in ("scale_recipe", "convert_units") and result.get("ok"):
         for key in (
             "factor",
@@ -975,17 +1087,14 @@ async def run_agent(
                 422,
                 "step budget exhausted (max_steps); start a new session",
             )
-        if state.tool_calls_remaining <= 0:
-            return await _stop(
-                deps,
-                store,
-                session_id,
-                state,
-                revision,
-                REASON_AGENT_TOOL_BUDGET,
-                422,
-                "tool-call budget exhausted; start a new session",
-            )
+        # Final turn: one step left, or no tool calls left. The model
+        # gets no tools on this turn — only the evidence digest — and
+        # must finish or ask. A rejected directive ends with the
+        # budget stop instead of another retry (see
+        # _validation_feedback). The tool budget is intentionally not
+        # a pre-turn stop: the last turn can still answer from
+        # evidence.
+        final_turn = state.steps_remaining <= 1 or state.tool_calls_remaining <= 0
         remaining_wall = deadline - time.monotonic()
         if remaining_wall <= 0:
             return await _stop(
@@ -1008,6 +1117,12 @@ async def run_agent(
             timeout_s=timeout_s,
             epicure_enabled=bool(getattr(settings, "epicure_enabled", False)),
         )
+        if final_turn:
+            # No tools are sent on the final turn: the request carries
+            # an empty tool list, so the model can only return a
+            # directive (finish/ask). Calls the model makes anyway are
+            # rejected as unoffered.
+            offered = []
         offered_by_name = {d.name: d for d in offered}
         tool_defs = function_defs_for(offered)
         turn_input = build_turn_input(
@@ -1017,6 +1132,8 @@ async def run_agent(
             user_messages=user_messages,
             epicure_available=bool(getattr(settings, "epicure_enabled", False))
             and not all(tool in excluded for tool in _PAIRING_TOOLS),
+            evidence_digest=session_evidence_digest(store, session_id),
+            final_turn=final_turn,
         )
         est_in = estimate_turn_input(turn_input, tool_defs, response_schema=directive_schema)
         if used_in + est_in >= in_ceiling or used_out >= out_ceiling:
@@ -1410,6 +1527,7 @@ async def run_agent(
                 history,
                 last_outcome,
                 turn_usage,
+                final_turn=final_turn,
             )
             state, revision, validation_retries, last_outcome, history_note = feedback
             history.append({"role": "user", "content": history_note})
@@ -1418,9 +1536,38 @@ async def run_agent(
             continue
 
         if directive.decision == "ask_user":
-            return await _handle_ask(
-                deps, store, session_id, state, revision, directive, turn_usage
+            ask_outcome: AgentRunResult | tuple[Any, ...] = await _handle_ask(
+                deps,
+                store,
+                session_id,
+                state,
+                revision,
+                directive,
+                turn_usage,
+                validation_retries=validation_retries,
+                history=history,
+                last_outcome=last_outcome,
+                final_turn=final_turn,
             )
+            if isinstance(ask_outcome, tuple):
+                # (state, revision, validation_retries, last_outcome, history_note)
+                state, revision, validation_retries, last_outcome, history_note = ask_outcome
+                history.append({"role": "user", "content": history_note})
+                history = _cap_history(history)
+                consecutive_errors += 1
+                if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                    return await _stop(
+                        deps,
+                        store,
+                        session_id,
+                        state,
+                        revision,
+                        REASON_AGENT_NO_PROGRESS,
+                        422,
+                        "repeated validation failures without progress",
+                    )
+                continue
+            return ask_outcome
         finish_outcome: AgentRunResult | tuple[Any, ...] = await _handle_finish(
             deps,
             store,
@@ -1434,6 +1581,7 @@ async def run_agent(
             validation_retries=validation_retries,
             turn_usage=turn_usage,
             returned_technique_chunks=returned_technique_chunks,
+            final_turn=final_turn,
         )
         if isinstance(finish_outcome, tuple):
             # (state, revision, validation_retries, last_outcome, history_note)
@@ -1620,7 +1768,18 @@ async def _handle_ask(
     revision: int,
     directive: AgentDirective,
     turn_usage: dict[str, Any] | None = None,
-) -> AgentRunResult:
+    *,
+    validation_retries: int = 0,
+    history: list[dict[str, Any]] | None = None,
+    last_outcome: str | None = None,
+    final_turn: bool = False,
+) -> Any:
+    """Ask turn: commit the question, or feedback tuple for one retry.
+
+    An invalid phase move from the model directive is recoverable
+    validation feedback (the model gets another turn within budget);
+    transitions requested through the API stay terminal.
+    """
     question = directive.question
     if question is None:
         raise AgentLoopError(
@@ -1632,11 +1791,19 @@ async def _handle_ask(
     try:
         validate_transition(state.current_phase, target)
     except ValueError as exc:
-        raise AgentLoopError(
-            http_status=422,
-            reason=REASON_INVALID_PHASE_TRANSITION,
-            message=f"invalid phase move: {exc}",
-        ) from exc
+        return await _validation_feedback(
+            deps,
+            store,
+            session_id,
+            state,
+            revision,
+            [f"invalid phase move: {exc}"],
+            validation_retries,
+            history if history is not None else [],
+            last_outcome,
+            turn_usage,
+            final_turn=final_turn,
+        )
 
     def _apply(snapshot: Any) -> Any:
         snapshot.unresolved_questions = list(snapshot.unresolved_questions) + [
@@ -1715,8 +1882,15 @@ async def _handle_finish(
     validation_retries: int,
     turn_usage: dict[str, Any] | None = None,
     returned_technique_chunks: set[tuple[str, int]] | None = None,
+    final_turn: bool = False,
 ) -> Any:
-    """Finish turn: validate + commit, or feedback tuple for one retry."""
+    """Finish turn: validate + commit, or feedback tuple for one retry.
+
+    An invalid phase move from the model directive is recoverable
+    validation feedback (the model gets another turn within budget);
+    transitions requested through the API stay terminal. On a final
+    turn there is no retry: feedback ends with the budget stop.
+    """
     result = directive.result
     if result is None:
         return await _validation_feedback(
@@ -1730,6 +1904,7 @@ async def _handle_finish(
             [],
             None,
             turn_usage,
+            final_turn=final_turn,
         )
     wants_plan = result.plan is not None
     wants_options = result.options is not None
@@ -1745,16 +1920,25 @@ async def _handle_finish(
             [],
             None,
             turn_usage,
+            final_turn=final_turn,
         )
     target = directive.move_to or ("plan" if wants_plan else "recommend")
     try:
         validate_transition(state.current_phase, target)
     except ValueError as exc:
-        raise AgentLoopError(
-            http_status=422,
-            reason=REASON_INVALID_PHASE_TRANSITION,
-            message=f"invalid phase move: {exc}",
-        ) from exc
+        return await _validation_feedback(
+            deps,
+            store,
+            session_id,
+            state,
+            revision,
+            [f"invalid phase move: {exc}"],
+            validation_retries,
+            [],
+            None,
+            turn_usage,
+            final_turn=final_turn,
+        )
 
     settings = deps.settings
     epicure_enabled = bool(getattr(settings, "epicure_enabled", False))
@@ -1890,6 +2074,7 @@ async def _handle_finish(
             [],
             None,
             turn_usage,
+            final_turn=final_turn,
         )
 
     note = _truncate_note(directive.note)
@@ -2073,8 +2258,15 @@ async def _validation_feedback(
     history: list[dict[str, Any]],
     last_outcome: str | None,
     turn_usage: dict[str, Any] | None = None,
+    *,
+    final_turn: bool = False,
 ) -> Any:
-    """Feed validation errors back once; second failure stops the run."""
+    """Feed validation errors back once; second failure stops the run.
+
+    On a final turn there is no retry left: the rejection is recorded
+    and the run ends with the budget stop that fired the turn
+    (tool budget when no calls remain, else max steps).
+    """
     message = "validation rejected: " + "; ".join(errors[:5])
 
     def _apply(snapshot: Any) -> Any:
@@ -2099,6 +2291,25 @@ async def _validation_feedback(
             message=f"session store unavailable: {type(exc).__name__}",
         ) from exc
     new_revision = updated.revision
+    if final_turn:
+        reason = (
+            REASON_AGENT_TOOL_BUDGET if state.tool_calls_remaining <= 0 else REASON_AGENT_MAX_STEPS
+        )
+        budget_note = (
+            "tool-call budget exhausted; start a new session"
+            if reason == REASON_AGENT_TOOL_BUDGET
+            else "step budget exhausted (max_steps); start a new session"
+        )
+        return await _stop(
+            deps,
+            store,
+            session_id,
+            updated,
+            new_revision,
+            reason,
+            422,
+            f"final turn rejected ({message}); {budget_note}",
+        )
     if validation_retries >= 1:
         raise AgentLoopError(
             http_status=422, reason=REASON_AGENT_VALIDATION_FAILED, message=message
