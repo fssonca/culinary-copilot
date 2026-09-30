@@ -78,8 +78,25 @@ def estimate_input_tokens(payload: Any) -> int:
 # --- spend ledger --------------------------------------------------------------
 
 
+class BudgetExhausted(RuntimeError):
+    """A reservation refusal: ending the run cleanly, not a provider failure.
+
+    Raised by the ledger wrappers when a call's reservation does not fit
+    the remaining cap. run_agent maps it to an internal error terminal;
+    run_scenario_live detects it through the exception chain and marks
+    the scenario "not_completed: budget" (never counted as an agent or
+    provider failure in the grades).
+    """
+
+
 class SpendLedger:
-    """Run-level ledger: reserve before each paid call, reconcile after."""
+    """Run-level ledger: reserve before each paid call, reconcile after.
+
+    Every entry is priced by its own model: chat turns at the chat-model
+    rate, query embeddings at the embedding rate from
+    ``embeddings/registry.py``. The entry records the model, its kind,
+    and the pricing version used.
+    """
 
     def __init__(self, *, model: str, ceiling_usd: float) -> None:
         self.model = model
@@ -88,18 +105,51 @@ class SpendLedger:
         self.spent_usd = 0.0
         self.entries: list[dict[str, Any]] = []
 
-    def _cost(self, input_tokens: int, output_tokens: int) -> float | None:
+    def _cost(
+        self, model: str, kind: str, input_tokens: int, output_tokens: int
+    ) -> tuple[float | None, str | None]:
+        if kind == "embedding":
+            from culinary_copilot.embeddings.registry import (
+                EMBED_PRICING_VERSION,
+            )
+            from culinary_copilot.embeddings.registry import (
+                estimate_cost_usd as estimate_embed_cost_usd,
+            )
+
+            return (
+                estimate_embed_cost_usd(int(input_tokens) + int(output_tokens), model),
+                EMBED_PRICING_VERSION,
+            )
+        from culinary_copilot.llm.models import PRICING_VERSION
         from culinary_copilot.recommendations.pricing import estimate_cost_usd
 
-        return estimate_cost_usd(input_tokens, output_tokens, self.model)
+        return estimate_cost_usd(int(input_tokens), int(output_tokens), model), PRICING_VERSION
 
-    def reserve(self, label: str, *, input_tokens: int, max_output: int) -> bool:
+    def reserve(
+        self,
+        label: str,
+        *,
+        input_tokens: int,
+        max_output: int,
+        model: str | None = None,
+        kind: str = "chat",
+    ) -> bool:
         """Reserve input + maximum output. False (no state change) when unaffordable."""
-        cost = self._cost(int(input_tokens), int(max_output))
+        priced_model = model or self.model
+        cost, pricing_version = self._cost(priced_model, kind, int(input_tokens), int(max_output))
         if cost is None:
             return False
         if cost > self.remaining_usd:
-            self.entries.append({"label": label, "decision": "refused", "reserved_usd": cost})
+            self.entries.append(
+                {
+                    "label": label,
+                    "decision": "refused",
+                    "reserved_usd": cost,
+                    "model": priced_model,
+                    "kind": kind,
+                    "pricing_version": pricing_version,
+                }
+            )
             return False
         self.remaining_usd -= cost
         self.entries.append(
@@ -109,6 +159,9 @@ class SpendLedger:
                 "reserved_in": int(input_tokens),
                 "reserved_out": int(max_output),
                 "reserved_usd": cost,
+                "model": priced_model,
+                "kind": kind,
+                "pricing_version": pricing_version,
             }
         )
         return True
@@ -121,7 +174,13 @@ class SpendLedger:
                     entry["decision"] = "kept-ambiguous"
                     self.spent_usd += float(entry["reserved_usd"])
                     return
-                actual = self._cost(int(reported_in), int(reported_out)) or 0.0
+                actual, _ = self._cost(
+                    str(entry.get("model") or self.model),
+                    str(entry.get("kind") or "chat"),
+                    int(reported_in),
+                    int(reported_out),
+                )
+                actual = actual or 0.0
                 entry["decision"] = "reconciled"
                 entry["used_in"] = int(reported_in)
                 entry["used_out"] = int(reported_out)
@@ -226,10 +285,13 @@ def load_scenarios(path: Path) -> dict[str, Any]:
 class LedgerModelProvider:
     """Wraps a model provider: reserve per turn, reconcile with usage."""
 
-    def __init__(self, inner: Any, ledger: SpendLedger, *, max_output: int) -> None:
+    def __init__(
+        self, inner: Any, ledger: SpendLedger, *, max_output: int, model: str | None = None
+    ) -> None:
         self._inner = inner
         self._ledger = ledger
         self._max_output = int(max_output)
+        self._model = model
         self._seq = 0
 
     async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
@@ -241,13 +303,20 @@ class LedgerModelProvider:
         self._seq += 1
         label = f"model-turn-{self._seq}"
         reserved_in = estimate_input_tokens(payload)
-        if not self._ledger.reserve(label, input_tokens=reserved_in, max_output=self._max_output):
-            from culinary_copilot.llm.client import ProviderUnavailableError
-
-            raise ProviderUnavailableError(
+        # The call's own cap wins when the loop passes one; otherwise the
+        # configured per-turn maximum.
+        max_out = kwargs.get("max_output_tokens", self._max_output)
+        try:
+            max_out = int(max_out)
+        except (TypeError, ValueError):
+            max_out = self._max_output
+        model = self._model or self._ledger.model
+        if not self._ledger.reserve(
+            label, input_tokens=reserved_in, max_output=max_out, model=model, kind="chat"
+        ):
+            raise BudgetExhausted(
                 f"overrun guard: turn reservation exceeds remaining "
-                f"${self._ledger.remaining_usd:.4f}",
-                request_sent=False,
+                f"${self._ledger.remaining_usd:.4f}"
             )
         try:
             result = await self._inner.complete_native_tool_turn(**kwargs)
@@ -271,12 +340,20 @@ class LedgerModelProvider:
 
 
 class LedgerEmbedProvider:
-    """Wraps an embedding provider: reserve per call, reconcile with usage."""
+    """Wraps an embedding provider: reserve per call, reconcile with usage.
 
-    def __init__(self, inner: Any, ledger: SpendLedger, *, retries: int) -> None:
+    Exactly one request per wrapped call: the runner forces
+    ``embed_max_retries=0`` on the effective settings, so retries happen
+    only as runner-level scenario attempts, each reserved separately.
+    """
+
+    def __init__(
+        self, inner: Any, ledger: SpendLedger, *, retries: int, model: str | None = None
+    ) -> None:
         self._inner = inner
         self._ledger = ledger
         self._retries = max(0, int(retries))
+        self._model = model or getattr(inner, "model", None) or "text-embedding-3-small"
         self._seq = 0
 
     async def embed_texts(self, texts: list[str]) -> Any:
@@ -285,9 +362,11 @@ class LedgerEmbedProvider:
         self._seq += 1
         label = f"query-embed-{self._seq}"
         reserved = sum(estimate_tokens_bytes(t) for t in texts) * (self._retries + 1)
-        if not self._ledger.reserve(label, input_tokens=reserved, max_output=0):
-            raise RuntimeError(
-                f"overrun guard: embedding reservation does not fit remaining "
+        if not self._ledger.reserve(
+            label, input_tokens=reserved, max_output=0, model=self._model, kind="embedding"
+        ):
+            raise BudgetExhausted(
+                f"overrun guard: embedding reservation exceeds remaining "
                 f"${self._ledger.remaining_usd:.4f}"
             )
         try:
@@ -306,6 +385,17 @@ class LedgerEmbedProvider:
 # --- preflight -----------------------------------------------------------------
 
 
+def _effective_settings(settings: Any) -> Any:
+    """Runner settings copy: provider-internal retries forced to zero.
+
+    One wrapped call then equals exactly one billed request (model turns
+    via ``llm_app_max_retries``, embeddings via ``embed_max_retries``);
+    retries happen only as runner-level scenario attempts, each reserved
+    separately. Never edits .env; the copy lives for the run only.
+    """
+    return settings.model_copy(update={"llm_app_max_retries": 0, "embed_max_retries": 0})
+
+
 def preflight(args: Any, settings: Any) -> tuple[bool, list[str], dict[str, Any]]:
     """Refuse (False) on any failed check; records versions and corpus state."""
     problems: list[str] = []
@@ -318,6 +408,16 @@ def preflight(args: Any, settings: Any) -> tuple[bool, list[str], dict[str, Any]
         problems.append(f"unknown model {model!r} (not in registry)")
     record["model"] = model
     record["pricing_version"] = PRICING_VERSION
+    if int(getattr(settings, "llm_app_max_retries", 0)) != 0:
+        problems.append(
+            "llm_app_max_retries must be 0 (one wrapped call must equal one request; "
+            "retries are runner-level attempts only)"
+        )
+    if int(getattr(settings, "embed_max_retries", 0)) != 0:
+        problems.append(
+            "embed_max_retries must be 0 (one wrapped call must equal one request; "
+            "retries are runner-level attempts only)"
+        )
     if float(args.ceiling_usd) > LIVE_CAP_USD:
         problems.append(f"ceiling ${float(args.ceiling_usd):.2f} exceeds ${LIVE_CAP_USD:.2f} cap")
     if os.environ.get("HF_HUB_OFFLINE") != "1":
@@ -333,6 +433,19 @@ def preflight(args: Any, settings: Any) -> tuple[bool, list[str], dict[str, Any]
             f"DB guard mismatch: {host}/{name} != {args.expect_db_host}/{args.expect_db_name}"
         )
     record["technique"] = {}
+    if bool(getattr(settings, "embeddings_enabled", False)):
+        # Embeddings on: the query-embedding provider must build, or the
+        # vector calls the agent may choose have no funding path.
+        try:
+            from culinary_copilot.tools.search_tools import build_embed_provider
+
+            if build_embed_provider(settings) is None:
+                problems.append("EMBEDDINGS_ENABLED but no query-embedding provider could be built")
+        except Exception as exc:
+            problems.append(
+                "EMBEDDINGS_ENABLED but the query-embedding provider failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
     if not problems:
         try:
             from sqlalchemy import create_engine
@@ -357,8 +470,18 @@ def preflight(args: Any, settings: Any) -> tuple[bool, list[str], dict[str, Any]
                 embeddings = conn.execute(
                     text("SELECT count(*) FROM technique_embeddings")
                 ).scalar()
+                try:
+                    recipe_embeddings = conn.execute(
+                        text("SELECT count(*) FROM recipe_embeddings")
+                    ).scalar()
+                except Exception:
+                    recipe_embeddings = 0
             engine2.dispose()
             record["technique"]["embeddings"] = int(embeddings or 0)
+            record["vector"] = {
+                "recipe_embeddings": int(recipe_embeddings or 0),
+                "technique_embeddings": int(embeddings or 0),
+            }
         except Exception as exc:
             problems.append(f"technique snapshot unverifiable: {type(exc).__name__} (use option B)")
     return (not problems, problems, record)
@@ -747,6 +870,27 @@ def _new_session_id(scenario_key: str, attempt: int) -> str:
     return f"ses-live-{scenario_key[:12]}-a{attempt}-{uuid.uuid4().hex[:6]}"
 
 
+def _caused_by_budget(exc: BaseException) -> bool:
+    """True when BudgetExhausted is anywhere in the exception chain."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, BudgetExhausted):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _classify_loop_error(exc: Any) -> str | None:
+    """Fatal run stops: provider-auth and contact-operator terminals."""
+    if getattr(exc, "reason", None) == "provider_auth":
+        return "provider-auth"
+    if getattr(exc, "next_action", None) == "contact_operator":
+        return "contact-operator"
+    return None
+
+
 def run_scenario_live(
     *,
     engine: Any,
@@ -773,6 +917,7 @@ def run_scenario_live(
     flow = list(scenario.get("flow", ["recommend"]))
     last_final: dict[str, Any] | None = None
     last_stop = ""
+    run_stop: dict[str, str] | None = None
     for attempt in range(1, max_attempts + 1):
         sid = _new_session_id(scenario["key"], attempt)
         created.append(sid)
@@ -836,6 +981,17 @@ def run_scenario_live(
                     )
                     last_final, last_stop = result3.final, result3.stop_reason
         except AgentLoopError as exc:
+            if _caused_by_budget(exc):
+                # Reservation refusal: end the scenario cleanly with no
+                # further attempt. Never an agent or provider failure.
+                attempt_record["runs"].append(
+                    {"stop_reason": "budget-exhausted", "budget_stop": True}
+                )
+                last_final, last_stop = None, "budget-exhausted"
+                run_stop = {"reason": "budget"}
+                attempts.append(attempt_record)
+                break
+            fatal = _classify_loop_error(exc)
             attempt_record["runs"].append(
                 {
                     "stop_reason": exc.reason,
@@ -845,16 +1001,35 @@ def run_scenario_live(
                 }
             )
             last_final, last_stop = None, exc.reason
+            if fatal is not None:
+                run_stop = {"reason": fatal}
+        except Exception as exc:
+            # Preflight-class failure mid-run (snapshot, store, driver):
+            # stop the run, do not grade the wreckage.
+            attempt_record["runs"].append(
+                {"stop_reason": "runner-error", "error": True, "message": str(exc)[:200]}
+            )
+            last_final, last_stop = None, "runner-error"
+            run_stop = {"reason": "runner-error"}
+            attempts.append(attempt_record)
+            break
         attempts.append(attempt_record)
+        if run_stop is not None:
+            break
         if last_stop == (scenario.get("expected", {}) or {}).get("stop_reason") and last_final:
             break
-    grades = grade_attempt(scenario, last_final, last_stop, store, created[-1])
+    if run_stop is not None and run_stop.get("reason") == "budget":
+        grades: dict[str, Any] = {"graded": False, "reason": "budget-exhausted"}
+    else:
+        grades = grade_attempt(scenario, last_final, last_stop, store, created[-1])
     return {
         "key": scenario["key"],
         "first_attempt": attempts[0] if attempts else None,
         "final_attempt": attempts[-1] if attempts else None,
         "attempts": len(attempts),
         "stop_reason": last_stop,
+        "status": "not_completed: budget" if last_stop == "budget-exhausted" else "completed",
+        "run_stop": run_stop,
         "grades": grades,
         "sessions": created,
     }
@@ -970,7 +1145,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.expect_db_name or not args.expect_db_host:
         print("error: --expect-db-name and --expect-db-host are required", file=sys.stderr)
         return 2
-    settings = Settings()
+    settings = _effective_settings(Settings())
     ok, problems, record = preflight(args, settings)
     if not ok:
         for problem in problems:
@@ -1003,26 +1178,17 @@ def _run_all(
     model = str(args.model or settings.llm_rec_model)
     ledger = SpendLedger(model=model, ceiling_usd=float(args.ceiling_usd or 0.0))
     max_output = int(settings.llm_rec_max_output_tokens)
+    effective = _effective_settings(settings)
     pre = snapshot(engine)
     created_all: list[str] = []
     scenario_reports: list[dict[str, Any]] = []
     raw_dir.mkdir(parents=True, exist_ok=True)
+    streak = 0
+    stopped_early: dict[str, str] | None = None
 
     if not fake:
-        from culinary_copilot.llm.client import OpenAIApplicationProvider
-        from culinary_copilot.tools import build_tool_context
-
-        def _provider_factory(scenario: dict[str, Any]) -> Any:
-            inner = OpenAIApplicationProvider(settings)
-            return LedgerModelProvider(inner, ledger, max_output=max_output)
-
-        def _context_factory(current_store: Any, scenario: dict[str, Any]) -> Any:
-            ctx = build_tool_context(settings, engine, current_store)
-            if getattr(ctx, "embed_provider", None) is not None:
-                ctx.embed_provider = LedgerEmbedProvider(
-                    ctx.embed_provider, ledger, retries=settings.embed_max_retries
-                )
-            return ctx
+        _provider_factory = _live_provider_factory(effective, ledger, max_output)
+        _context_factory = _live_context_factory(effective, engine, ledger)
 
     for scenario in scenarios["scenarios"]:
         if fake:
@@ -1030,7 +1196,7 @@ def _run_all(
                 engine, store, settings, scenario, ledger, raw_dir, args.max_attempts
             )
         else:
-            scenario_settings = _scenario_settings(settings, scenario)
+            scenario_settings = _scenario_settings(effective, scenario)
             report = run_scenario_live(
                 engine=engine,
                 store=store,
@@ -1048,6 +1214,30 @@ def _run_all(
         (raw_dir / f"{scenario['key']}.json").write_text(
             json.dumps(report, indent=2) + "\n", encoding="utf-8"
         )
+        if report.get("run_stop") is not None:
+            stopped_early = {
+                "reason": str(report["run_stop"].get("reason")),
+                "after_scenario": scenario["key"],
+            }
+            break
+        if report.get("stop_reason") in ("agent_no_progress", "agent_validation_failed"):
+            streak += 1
+            if streak >= 2:
+                stopped_early = {
+                    "reason": "consecutive-failures",
+                    "after_scenario": scenario["key"],
+                }
+                break
+        else:
+            streak = 0
+
+    if stopped_early is not None:
+        done_keys = {r["key"] for r in scenario_reports}
+        for scenario in scenarios["scenarios"]:
+            if scenario["key"] not in done_keys:
+                scenario_reports.append(
+                    {"key": scenario["key"], "status": f"not_run: {stopped_early['reason']}"}
+                )
 
     post = snapshot(engine)
     isolated, isolation_problems = verify_isolation(pre, post, set(created_all))
@@ -1063,12 +1253,14 @@ def _run_all(
         "model": model,
         "spend": ledger.summary(),
         "isolation": {"ok": isolated, "problems": isolation_problems},
+        "stopped_early": stopped_early,
         "scenarios": [
             {
                 "key": r["key"],
-                "attempts": r["attempts"],
-                "stop_reason": r["stop_reason"],
-                "grades": r["grades"],
+                "status": r.get("status", "completed"),
+                "attempts": r.get("attempts", 0),
+                "stop_reason": r.get("stop_reason"),
+                "grades": r.get("grades", {"graded": False, "reason": "not-run"}),
                 "first_attempt_stop": _attempt_stop(r.get("first_attempt")),
             }
             for r in scenario_reports
@@ -1106,14 +1298,55 @@ def _scenario_settings(settings: Any, scenario: dict[str, Any]) -> Any:
     """Per-scenario settings: scenario overrides win, never the .env file.
 
     The Epicure-unavailable scenario sets ``epicure_enabled: false``
-    here (configuration for that scenario only).
+    here (configuration for that scenario only). Internal retries stay
+    forced to zero (runner-level attempts only).
     """
     overrides = dict(scenario.get("settings", {}))
     if not overrides:
-        return settings
+        return _effective_settings(settings)
     data = settings.model_dump()
     data.update(overrides)
-    return type(settings)(_env_file=None, **data)
+    return _effective_settings(type(settings)(_env_file=None, **data))
+
+
+def _live_provider_factory(settings: Any, ledger: SpendLedger, max_output: int) -> Any:
+    """Model provider factory for live runs (module-level for tests)."""
+
+    def _factory(scenario: dict[str, Any]) -> Any:
+        from culinary_copilot.llm.client import OpenAIApplicationProvider
+
+        return LedgerModelProvider(
+            OpenAIApplicationProvider(settings), ledger, max_output=max_output
+        )
+
+    return _factory
+
+
+def _wrap_context_embed_provider(ctx: Any, ledger: SpendLedger, settings: Any) -> Any:
+    """Install the ledger-wrapped query-embedding provider on one context.
+
+    The single shared ``embed_provider`` serves both ``search_recipes``
+    and ``search_techniques`` (each reads it from the tool context), so
+    wrapping it once covers both tools' query embeddings.
+    """
+    if getattr(ctx, "embed_provider", None) is not None:
+        ctx.embed_provider = LedgerEmbedProvider(
+            ctx.embed_provider, ledger, retries=int(getattr(settings, "embed_max_retries", 0) or 0)
+        )
+    return ctx
+
+
+def _live_context_factory(settings: Any, engine: Any, ledger: SpendLedger) -> Any:
+    """Tool-context factory for live runs (module-level for tests)."""
+
+    def _factory(current_store: Any, scenario: dict[str, Any]) -> Any:
+        from culinary_copilot.tools import build_tool_context
+
+        return _wrap_context_embed_provider(
+            build_tool_context(settings, engine, current_store), ledger, settings
+        )
+
+    return _factory
 
 
 def _run_fake_scenario(

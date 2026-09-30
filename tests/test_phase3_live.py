@@ -548,3 +548,359 @@ def test_first_attempt_vs_after_retry_reported(engine, tmp_path: Path) -> None:
     assert first_stop == "agent_validation_failed"
     assert report["stop_reason"] == "agent_sufficient_evidence"
     assert report["grades"]["task_completion"] is True
+
+
+# --- zero internal retries -----------------------------------------------------------
+
+
+def test_effective_settings_force_zero_retries() -> None:
+    from culinary_copilot.config import Settings
+
+    settings = Settings(_env_file=None)
+    assert int(settings.llm_app_max_retries) != 0
+    assert int(settings.embed_max_retries) != 0
+    effective = live_run._effective_settings(settings)
+    assert int(effective.llm_app_max_retries) == 0
+    assert int(effective.embed_max_retries) == 0
+
+
+def test_preflight_refuses_nonzero_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    import argparse
+
+    from culinary_copilot.config import Settings
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    args = argparse.Namespace(
+        model="", ceiling_usd=0.15, expect_db_name="x", expect_db_host="y", database_url=""
+    )
+    ok, problems, _ = live_run.preflight(args, Settings(_env_file=None))
+    assert not ok
+    assert any("llm_app_max_retries" in p for p in problems)
+    assert any("embed_max_retries" in p for p in problems)
+    ok, _, _ = live_run.preflight(args, live_run._effective_settings(Settings(_env_file=None)))
+    assert not ok  # DB guard mismatch still refuses (no DB touched)
+
+
+def test_wrapped_provider_receives_zeroed_settings() -> None:
+    from culinary_copilot.config import Settings
+
+    ledger = SpendLedger(model="gpt-6-luna", ceiling_usd=0.15)
+    factory = live_run._live_provider_factory(
+        live_run._effective_settings(Settings(_env_file=None)), ledger, 100
+    )
+    inner = factory({})._inner
+    assert int(inner.settings.llm_app_max_retries) == 0
+
+
+def test_max_output_kwarg_wins_over_configured() -> None:
+    inner = _ScriptedModel([{"in": 11, "out": 7}, {"in": 11, "out": 7}])
+    ledger = _ledger()
+    wrapped = live_run.LedgerModelProvider(inner, ledger, max_output=6500)
+    asyncio.run(wrapped.complete_native_tool_turn(input_items=[], tools=[], response_model=None))
+    assert ledger.entries[-1]["reserved_out"] == 6500
+    asyncio.run(
+        wrapped.complete_native_tool_turn(
+            input_items=[], tools=[], response_model=None, max_output_tokens=50
+        )
+    )
+    assert ledger.entries[-1]["reserved_out"] == 50
+
+
+# --- per-model pricing ---------------------------------------------------------------
+
+
+def test_embedding_entries_use_embedding_rate() -> None:
+    from culinary_copilot.embeddings.registry import EMBED_PRICING_VERSION
+
+    ledger = _ledger()
+    assert ledger.reserve(
+        "q1",
+        input_tokens=1_000_000,
+        max_output=0,
+        model="text-embedding-3-small",
+        kind="embedding",
+    )
+    entry = ledger.entries[-1]
+    assert entry["reserved_usd"] == pytest.approx(0.02)
+    assert entry["pricing_version"] == EMBED_PRICING_VERSION
+    ledger.reconcile("q1", reported_in=500_000, reported_out=0)
+    assert entry["used_usd"] == pytest.approx(0.01)
+
+
+def test_chat_entries_use_chat_rate_and_version() -> None:
+    from culinary_copilot.llm.models import PRICING_VERSION
+
+    ledger = _ledger()
+    assert ledger.reserve("t1", input_tokens=1_000_000, max_output=0)
+    entry = ledger.entries[-1]
+    assert entry["model"] == "gpt-6-luna"
+    assert entry["kind"] == "chat"
+    assert entry["pricing_version"] == PRICING_VERSION
+    assert entry["reserved_usd"] == pytest.approx(0.10)
+
+
+# --- stop conditions -----------------------------------------------------------------
+
+
+def _live_scenario(**overrides: Any) -> dict[str, Any]:
+    scenario: dict[str, Any] = {
+        "key": "stop-probe",
+        "title": "stop probe",
+        "request": "Give me the red lentil soup recipe.",
+        "session": {},
+        "settings": {},
+        "scripted_answers": [],
+        "flow": ["recommend"],
+        "fake_flow": "direct",
+        "expected": {"stop_reason": "agent_sufficient_evidence", "min_options": 1},
+    }
+    scenario.update(overrides)
+    return scenario
+
+
+def _raising_provider(exc: BaseException) -> Any:
+    class _Raise:
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+            raise exc
+
+    return _Raise()
+
+
+def test_budget_stop_marks_not_completed(engine, tmp_path: Path) -> None:
+    from culinary_copilot.config import Settings
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    settings = Settings(_env_file=None)
+    store = PostgresSessionStore(engine)
+    ledger = SpendLedger(model="gpt-6-luna", ceiling_usd=0.0000001)
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=_live_scenario(),
+        ledger=ledger,
+        provider_factory=lambda s: live_run.LedgerModelProvider(
+            _ScriptedModel([{"in": 5, "out": 5}]), ledger, max_output=100
+        ),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=2,
+        recipe_resolver=lambda ds, sid: dict(live_run._FAKE_DOCS.get((ds, sid)) or {}) or None,
+    )
+    assert report["status"] == "not_completed: budget"
+    assert report["attempts"] == 1
+    assert report["run_stop"] == {"reason": "budget"}
+    assert report["grades"] == {"graded": False, "reason": "budget-exhausted"}
+    assert report["stop_reason"] == "budget-exhausted"
+
+
+def test_provider_auth_stops_run(engine, tmp_path: Path) -> None:
+    from culinary_copilot.config import Settings
+    from culinary_copilot.llm.client import ProviderAuthError
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    settings = Settings(_env_file=None)
+    store = PostgresSessionStore(engine)
+    ledger = _ledger()
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=_live_scenario(),
+        ledger=ledger,
+        provider_factory=lambda s: _raising_provider(ProviderAuthError("bad key")),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=2,
+        recipe_resolver=None,
+    )
+    assert report["run_stop"] == {"reason": "provider-auth"}
+    assert report["stop_reason"] == "provider_auth"
+
+
+def test_contact_operator_stops_run(engine, tmp_path: Path) -> None:
+    from culinary_copilot.config import Settings
+    from culinary_copilot.llm.client import ProviderBadRequestError
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    settings = Settings(_env_file=None)
+    store = PostgresSessionStore(engine)
+    ledger = _ledger()
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=_live_scenario(),
+        ledger=ledger,
+        provider_factory=lambda s: _raising_provider(ProviderBadRequestError("bad")),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=2,
+        recipe_resolver=None,
+    )
+    assert report["run_stop"] == {"reason": "contact-operator"}
+
+
+def test_consecutive_failures_stop_run(
+    engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import argparse
+
+    from culinary_copilot.config import Settings
+
+    def _failed(key: str) -> dict[str, Any]:
+        return {
+            "key": key,
+            "status": "completed",
+            "run_stop": None,
+            "sessions": [],
+            "attempts": 1,
+            "stop_reason": "agent_validation_failed",
+            "grades": {},
+            "first_attempt": {"runs": [{"stop_reason": "agent_validation_failed"}]},
+        }
+
+    calls = {"n": 0}
+
+    def _fake_run_scenario(**kwargs: Any) -> dict[str, Any]:
+        calls["n"] += 1
+        return _failed(f"s{calls['n']}")
+
+    monkeypatch.setattr(live_run, "run_scenario_live", _fake_run_scenario)
+    args = argparse.Namespace(model="", max_attempts=2, ceiling_usd=0.15)
+    settings = Settings(_env_file=None)
+    _, test_url = _urls()
+
+    eng = create_engine(test_url)
+    try:
+        rc = live_run._run_all(
+            args,
+            settings,
+            {"freeze_sha256": "x", "scenarios": [{"key": "s1"}, {"key": "s2"}, {"key": "s3"}]},
+            test_url,
+            tmp_path,
+            tmp_path / "summary.json",
+            fake=False,
+        )
+    finally:
+        eng.dispose()
+    assert rc == 0
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["stopped_early"] == {"reason": "consecutive-failures", "after_scenario": "s2"}
+    assert summary["scenarios"][2]["key"] == "s3"
+    assert summary["scenarios"][2]["status"] == "not_run: consecutive-failures"
+
+
+def test_budget_marks_remaining_not_run(
+    engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import argparse
+
+    from culinary_copilot.config import Settings
+
+    def _budget(key: str) -> dict[str, Any]:
+        return {
+            "key": key,
+            "status": "not_completed: budget",
+            "run_stop": {"reason": "budget"},
+            "sessions": [],
+            "attempts": 1,
+            "stop_reason": "budget-exhausted",
+            "grades": {"graded": False, "reason": "budget-exhausted"},
+            "first_attempt": {"runs": [{"stop_reason": "budget-exhausted"}]},
+        }
+
+    monkeypatch.setattr(live_run, "run_scenario_live", lambda **kwargs: _budget("s1"))
+    args = argparse.Namespace(model="", max_attempts=2, ceiling_usd=0.15)
+    settings = Settings(_env_file=None)
+    _, test_url = _urls()
+
+    eng = create_engine(test_url)
+    try:
+        live_run._run_all(
+            args,
+            settings,
+            {"freeze_sha256": "x", "scenarios": [{"key": "s1"}, {"key": "s2"}]},
+            test_url,
+            tmp_path,
+            tmp_path / "summary.json",
+            fake=False,
+        )
+    finally:
+        eng.dispose()
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["stopped_early"] == {"reason": "budget", "after_scenario": "s1"}
+    assert summary["scenarios"][0]["status"] == "not_completed: budget"
+    assert summary["scenarios"][1]["key"] == "s2"
+    assert summary["scenarios"][1]["status"] == "not_run: budget"
+
+
+# --- wrapped query embeddings for both retrieval tools --------------------------------
+
+
+def test_both_tools_route_through_wrapped_provider() -> None:
+    import asyncio as _asyncio
+
+    from culinary_copilot.config import Settings
+    from culinary_copilot.tools import all_tool_impls
+    from culinary_copilot.tools.registry import ToolContext
+
+    class _SentinelUsedError(RuntimeError):
+        pass
+
+    class _Sentinel:
+        model = "text-embedding-3-small"
+
+        async def embed_texts(self, texts: list[str]) -> Any:
+            raise _SentinelUsedError("wrapped-provider-marker")
+
+    settings = Settings(_env_file=None, embeddings_enabled=True)
+    ledger = _ledger()
+    impls = all_tool_impls()
+    from culinary_copilot.tools.search_tools import SearchRecipesArgs
+    from culinary_copilot.tools.technique_tools import SearchTechniquesArgs
+
+    cases = (
+        ("search_recipes", SearchRecipesArgs(query="chicken", mode="vector")),
+        ("search_techniques", SearchTechniquesArgs(query="chicken", mode="vector")),
+    )
+    for tool_name, parsed in cases:
+        ctx = ToolContext(settings=settings, engine=object())
+        ctx.embed_provider = _Sentinel()  # type: ignore[assignment]
+        live_run._wrap_context_embed_provider(ctx, ledger, live_run._effective_settings(settings))
+        assert isinstance(ctx.embed_provider, live_run.LedgerEmbedProvider)
+        result = _asyncio.run(impls[tool_name](parsed, ctx))
+        assert result["ok"] is False
+        assert "SentinelUsed" in result["message"]
+
+    kinds = [e.get("kind") for e in ledger.entries if e.get("label", "").startswith("query-embed")]
+    assert kinds == ["embedding", "embedding"]
+    assert all(
+        e["model"] == "text-embedding-3-small"
+        for e in ledger.entries
+        if e.get("kind") == "embedding"
+    )
+
+
+def test_preflight_refuses_unbuildable_embed_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    import argparse
+
+    import culinary_copilot.tools.search_tools as _search_tools
+    from culinary_copilot.config import Settings
+
+    def _boom(settings: Any) -> Any:
+        raise ValueError("no key in this environment")
+
+    monkeypatch.setattr(_search_tools, "build_embed_provider", _boom)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    args = argparse.Namespace(
+        model="",
+        ceiling_usd=0.15,
+        expect_db_name="culinary_test_live",
+        expect_db_host="localhost",
+        database_url="",
+    )
+    settings = Settings(_env_file=None, embeddings_enabled=True)
+    ok, problems, _ = live_run.preflight(args, live_run._effective_settings(settings))
+    assert not ok
+    assert any("query-embedding provider" in p for p in problems)

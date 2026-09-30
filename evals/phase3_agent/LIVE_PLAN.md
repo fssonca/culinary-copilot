@@ -111,15 +111,20 @@ Each session may be retried once (same ceilings): at most 2 attempts.
 ## Exact live command (paste-safe: no comment lines)
 
 ```sh
-HF_HUB_OFFLINE=1 uv run python evals/phase3_agent/live_run.py --live --yes --ceiling-usd 0.15 --expect-db-name culinary_copilot --expect-db-host localhost
+EMBEDDINGS_ENABLED=true HF_HUB_OFFLINE=1 uv run python evals/phase3_agent/live_run.py --live --yes --ceiling-usd 0.15 --expect-db-name culinary_copilot --expect-db-host localhost
 ```
 
 This uses `DATABASE_URL` from `.env` (target the correct database per
-the owner conditions before running). The runner refuses without
-`--live --yes --ceiling-usd` (any ceiling above $0.15 refused),
-without the DB guards, when `HF_HUB_OFFLINE` is not `1`, when the
-model or pricing is unknown, or when the technique snapshot is
-unverifiable (use option B then). `--fake` runs the full 8-scenario
+the owner conditions before running). `EMBEDDINGS_ENABLED=true` is on
+the command line because Checkpoint 0 lets the agent choose fulltext
+or vector per call, which needs query embeddings. The runner refuses
+without `--live --yes --ceiling-usd` (any ceiling above $0.15
+refused), without the DB guards, when `HF_HUB_OFFLINE` is not `1`,
+when the model or pricing is unknown, when retry settings are not
+zero, when embeddings are enabled but no query-embedding provider
+can be built, or when the technique snapshot is unverifiable (use
+option B then). Preflight records vector availability (recipe and
+technique embedding counts). `--fake` runs the full 8-scenario
 pipeline against the fake provider on a disposable database (dropped
 afterward); raw output goes under `data/phase3-live/` (git-ignored).
 
@@ -141,10 +146,32 @@ testable; bytes/3 strictly dominates chars/4 for any UTF-8 text.
 Ledger: `SpendLedger` records reserve → reconcile (reported usage
 replaces the reservation, remainder released) or keep (ambiguous
 failure stays spent; unsent calls release). Model turns go through
-`LedgerModelProvider`; query embeddings (if vector mode ever runs)
-through `LedgerEmbedProvider`. Dollars use
-`recommendations/pricing.py` at the preflight-recorded
-`PRICING_VERSION`.
+`LedgerModelProvider` (the call's own `max_output_tokens` cap wins
+when the loop passes one, otherwise the configured per-turn
+maximum); query embeddings for both `search_recipes` and
+`search_techniques` go through `LedgerEmbedProvider` (one shared
+context provider serves both tools). Every entry is priced by its
+own model — chat turns at the chat rate, embeddings at
+`text-embedding-3-small` $0.02/1M from `embeddings/registry.py` —
+and records the model, kind, and pricing version used.
+
+Retry policy: provider-internal retries are forced to zero on a
+runner settings copy (`llm_app_max_retries=0`, `embed_max_retries=0`;
+preflight refuses anything else), so one wrapped call equals exactly
+one billed request. Retries happen only as runner-level scenario
+attempts, each reserved separately. The embedding provider retries
+internally by default, so it gets the same treatment (reserve and
+keep per single attempt).
+
+Worst-case reservation math (luna $0.10 in / $0.50 out per 1M):
+per turn at most ~40,000 input tokens (a payload at the 30k
+chars/4-token ceiling is ~120k chars ≈ 40k at bytes/3) plus at most
+6,500 output tokens: $0.004 + $0.00325 = $0.00725. Per session at
+most 8 steps: $0.058. So $0.15 guarantees at least 2 full
+worst-case sessions with headroom; typical sessions (~11.2k input +
+~0.35k output ≈ $0.0013) put the planned 8 scenarios × 2 attempts
+(16 sessions ≈ $0.021) comfortably inside the cap, with query
+embeddings negligible (~$0.00002 for 16 queries).
 
 Trial isolation: a fresh session per attempt (a retry never inherits
 answers or evidence); ask-and-resume stays inside one session with
@@ -160,12 +187,18 @@ to use option B.
 Database A only with that verified isolation, otherwise B. The run
 happens after the P3-A-01/02 fixes and before Phase 5.
 
-## Stop conditions (live)
+## Stop conditions (live, as implemented in `live_run.py`)
 
-- Stop the whole evaluation when spend reaches `$0.15` (usage summed via
-  `recommendations/pricing.py::estimate_cost_usd`), when 2 sessions in a
-  row stop with `agent_no_progress` or `agent_validation_failed`, or on
-  any `provider_auth` / `contact_operator` error.
+- A reservation refusal ends the run cleanly via the dedicated
+  `BudgetExhausted` error (never a provider error): the scenario is
+  marked `not_completed: budget` with no further attempt and no grade,
+  and every remaining scenario is listed as `not_run: budget`. The
+  overrun guard is never counted as an agent or provider failure.
+- Stop the whole evaluation (`stopped_early` with reason and
+  after-scenario in the summary) on any `provider_auth` or
+  `contact_operator` terminal, on a preflight-class failure mid-run,
+  or after 2 sessions in a row stop with `agent_no_progress` or
+  `agent_validation_failed` (budget stops do not feed the streak).
 - Abort a session run on any `unknown_session`, `stale_revision`
   (concurrent run), or token-ceiling breach.
 - Every trajectory (stage events, tool outcomes, stop reason, final) is
