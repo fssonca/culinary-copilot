@@ -111,6 +111,12 @@ it.
 - Bound: `8 sessions x 2 attempts x $0.009 = $0.144`, rounded to **$0.15**.
 - **$0.15** fits inside the **$1.00 total Milestone 3 ceiling**
   (Checkpoint 0) and leaves **$0.85 for Phases 4, 5 and 7**.
+- Cumulative ledger (`data/phase3-live/spend-history.json`, gitignored):
+  every run appends its entries and preflight refuses when the remainder
+  cannot fit a first turn. Seeded with conservative recorded amounts —
+  attempt 3 $0.0034661 (kept-ambiguous 400) and attempt 4 $0.0059122
+  (reconciled usage plus one kept-ambiguous 400) — leaving **$0.1406**
+  for the next attempt.
 
 ## Target database (owner decision)
 

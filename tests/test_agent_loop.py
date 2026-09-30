@@ -1701,3 +1701,247 @@ def test_epicure_not_configured_recorded_degraded(engine) -> None:
     finished = [e for e in store.list_events(state.id) if e.event_type == "agent_finished"][0]
     assert finished.payload["epicure_skip_reason"] == "epicure_not_configured"
     assert finished.payload["epicure_degraded"] is True
+
+
+# --- user messages -----------------------------------------------------------------
+
+
+def test_user_message_reaches_provider_input(engine) -> None:
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    record_user_message(store, state.id, text="chicken curry for dinner")
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt(), _opt(source_id="lentil-2", title="Red Lentil Soup")],
+                    epicure_lines=[
+                        {
+                            "ingredient": "pork",
+                            "decision": "used",
+                            "reason": "crisp contrast for the curry",
+                        }
+                    ],
+                ),
+            ),
+        ]
+    )
+    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    first_input = provider.seen_inputs[0]
+    assert {"role": "user", "content": "chicken curry for dinner"} in first_input
+    # User items come before tool history; the snapshot framing stays last.
+    roles = [i.get("role", i.get("type")) for i in first_input]
+    assert roles[-1] == "user"
+    assert first_input[-1].get("content", "").startswith("You are a cooking assistant")
+
+
+def test_user_message_survives_answer_resume(engine) -> None:
+    from culinary_copilot.agent.loop import record_answer, record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    record_user_message(store, state.id, text="plain yogurt question")
+    ask = {
+        "decision": "ask_user",
+        "question": {
+            "question_id": "q-1",
+            "question_text": "Do you have plain yogurt?",
+            "options": ["yes", "no"],
+        },
+        "note": "ask",
+    }
+    provider = ScriptedProvider([("parsed", ask)])
+    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert result.stop_reason == "agent_needs_user_input"
+    current = store.get(state.id)
+    record_answer(
+        store, state.id, expected_revision=current.revision, question_id="q-1", answer="yes"
+    )
+    provider2 = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt(), _opt(source_id="lentil-2", title="Red Lentil Soup")],
+                    epicure_lines=[
+                        {
+                            "ingredient": "pork",
+                            "decision": "used",
+                            "reason": "crisp contrast for the curry",
+                        }
+                    ],
+                ),
+            ),
+        ]
+    )
+    result2 = _run(run_agent(state.id, deps=_deps(store, provider2)))
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert {"role": "user", "content": "plain yogurt question"} in provider2.seen_inputs[0]
+
+
+def test_effective_request_text_derivation() -> None:
+    from culinary_copilot.agent.loop import effective_request_text
+
+    assert effective_request_text("explicit", ["stored"]) == "explicit"
+    assert effective_request_text(None, ["first", "latest"]) == "latest"
+    assert effective_request_text("", ["stored"]) == "stored"
+    assert effective_request_text(None, []) is None
+    assert effective_request_text(None, None) is None
+
+
+def test_user_message_window_and_bounds(engine) -> None:
+    from culinary_copilot.agent.loop import (
+        USER_MESSAGE_CHARS,
+        USER_MESSAGE_KEEP,
+        record_user_message,
+        user_messages_from_events,
+    )
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    for i in range(8):
+        record_user_message(store, state.id, text=f"message {i}")
+    record_user_message(store, state.id, text="x" * (USER_MESSAGE_CHARS + 500))
+    messages = user_messages_from_events(store, state.id)
+    assert len(messages) == USER_MESSAGE_KEEP
+    assert messages[-1] == "x" * USER_MESSAGE_CHARS
+    assert messages[0] == "message 4"
+
+
+# --- history cap and pairing -------------------------------------------------------
+
+
+def _synthetic_history(rng: Any, turns: int) -> list[dict[str, Any]]:
+    history: list[dict[str, Any]] = []
+    for turn in range(turns):
+        if rng.random() < 0.3:
+            history.append({"type": "reasoning", "id": f"rs-{turn}"})
+        width = 1 + rng.randrange(3)
+        for w in range(width):
+            history.append(
+                {
+                    "type": "function_call",
+                    "call_id": f"c{turn}-{w}",
+                    "name": "search_recipes",
+                    "arguments": "{}",
+                }
+            )
+        for w in range(width):
+            history.append(
+                {"type": "function_call_output", "call_id": f"c{turn}-{w}", "output": "{}"}
+            )
+        if rng.random() < 0.2:
+            history.append({"role": "user", "content": f"note {turn}"})
+    return history
+
+
+def test_cap_history_keeps_whole_paired_groups() -> None:
+    import random
+
+    from culinary_copilot.agent.loop import (
+        _HISTORY_KEEP,
+        _cap_history,
+        history_pairing_violations,
+    )
+
+    rng = random.Random(20260930)
+    for trial in range(200):
+        history = _synthetic_history(rng, turns=1 + rng.randrange(12))
+        assert history_pairing_violations(history) == []
+        capped = _cap_history(history)
+        # Pairing invariant holds after capping.
+        assert history_pairing_violations(capped) == []
+        if len(history) <= _HISTORY_KEEP:
+            assert capped == history
+        else:
+            # Newest turn group is intact (its calls survive whole).
+            newest_call = next(
+                i.get("call_id") for i in reversed(history) if i.get("type") == "function_call"
+            )
+            call_ids = [i.get("call_id") for i in capped if i.get("type") == "function_call"]
+            assert newest_call in call_ids
+            # Order preserved (subsequence) and never longer.
+            assert len(capped) <= len(history)
+            full = [json.dumps(i, sort_keys=True, default=str) for i in history]
+            flat = [json.dumps(i, sort_keys=True, default=str) for i in capped]
+            pos = 0
+            for item in flat:
+                pos = full.index(item, pos) + 1
+
+
+def test_cap_history_never_pins_first_item() -> None:
+    from culinary_copilot.agent.loop import _cap_history, history_pairing_violations
+
+    history: list[dict[str, Any]] = []
+    for turn in range(12):
+        history.append(
+            {
+                "type": "function_call",
+                "call_id": f"old-{turn}",
+                "name": "search_recipes",
+                "arguments": "{}",
+            }
+        )
+        history.append({"type": "function_call_output", "call_id": f"old-{turn}", "output": "{}"})
+    assert len(history) == 24  # over the cap: oldest whole groups must drop
+    capped = _cap_history(history)
+    assert history_pairing_violations(capped) == []
+    kept_ids = [i.get("call_id") for i in capped if i.get("type") == "function_call"]
+    assert "old-0" not in kept_ids  # the old pin-everything-first bug
+    assert "old-11" in kept_ids  # the newest group survives whole
+
+
+def test_duplicate_call_id_fails_locally_without_sending(engine) -> None:
+    from culinary_copilot.agent.loop import _cap_history  # noqa: F401 (cap import smoke)
+
+    sent = {"n": 0}
+
+    class _CountingProvider(ScriptedProvider):
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:  # type: ignore[override]
+            sent["n"] += 1
+            return await super().complete_native_tool_turn(**kwargs)
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = _CountingProvider(
+        [
+            ("tools", [("dup", "search_recipes", {"query": "a"})]),
+            ("tools", [("dup", "search_recipes", {"query": "b"})]),
+            ("parsed", _finish_options([_opt()])),
+        ]
+    )
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert excinfo.value.reason == "history_pairing_error"
+    assert sent["n"] == 2  # the paired first two turns sent; the third never was

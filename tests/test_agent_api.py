@@ -395,3 +395,41 @@ def test_stream_concurrent_run_409(engine) -> None:
     assert errors[0]["status"] == 409
     assert errors[0]["reason"] == "stale_revision"
     assert errors[0]["next_action"] == "refetch_and_retry"
+
+
+def test_stream_message_is_stored_and_sent(engine) -> None:
+    store = PostgresSessionStore(engine)
+    settings = _settings()
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", _finish_two()),
+        ]
+    )
+    client = _client(engine, store, provider, _fake_context(store, settings))
+    resp = client.post(
+        f"/api/v1/sessions/{state.id}/agent/stream",
+        json={"message": "chicken curry for dinner"},
+    )
+    assert resp.status_code == 200, resp.text
+    events = _parse_sse(resp.text)
+    assert [p for k, p in events if k == "final"]
+    stored = [e for e in store.list_events(state.id) if e.event_type == "user_message"]
+    assert [e.payload["text"] for e in stored] == ["chicken curry for dinner"]
+    assert {"role": "user", "content": "chicken curry for dinner"} in provider.seen_inputs[0]

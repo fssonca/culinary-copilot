@@ -50,6 +50,7 @@ from culinary_copilot.domain.recommendations import (
     REASON_AGENT_TOOL_BUDGET,
     REASON_AGENT_VALIDATION_FAILED,
     REASON_AGENT_WALL_CLOCK,
+    REASON_HISTORY_PAIRING,
     REASON_INVALID_PHASE_TRANSITION,
     REASON_SESSION_UNAVAILABLE,
     REASON_TOOL_INVALID_ARGUMENTS,
@@ -123,9 +124,18 @@ _PAIRING_TOOLS = frozenset(
 # with no_progress.
 _MAX_CONSECUTIVE_ERRORS = 3
 _MAX_IDENTICAL_CALLS = 3
-# History cap: first (task) item plus the newest items; older tool outputs
-# are dropped from model input (session_events keeps the full record).
+# History cap: whole turn groups only (newest first); a group is a
+# turn's reasoning items, its function_calls and their outputs, plus
+# any trailing user note. Older tool outputs are dropped from model
+# input (session_events keeps the full record). User messages travel
+# outside history and are never trimmed here.
 _HISTORY_KEEP = 13
+# User messages: event type plus the per-run window (oldest first) and
+# the per-message character bound. Stored in session_events, never
+# trimmed by the history cap.
+USER_MESSAGE_EVENT = "user_message"
+USER_MESSAGE_KEEP = 5
+USER_MESSAGE_CHARS = 2000
 _NOTE_LIMIT = 280
 
 
@@ -510,9 +520,19 @@ _TASK_FRAMING = (
 
 
 def build_turn_input(
-    *, state: Any, history: list[dict[str, Any]], last_outcome: str | None
+    *,
+    state: Any,
+    history: list[dict[str, Any]],
+    last_outcome: str | None,
+    user_messages: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Model input: task framing + compact session snapshot + history."""
+    """Model input: user messages + history + task framing snapshot.
+
+    The user's own messages come first (oldest first) as ``role:
+    "user"`` items so the request actually reaches the model; the tool
+    history follows; the task framing + session snapshot item stays
+    last. Confirmed answers stay in the snapshot, not here.
+    """
     snapshot = {
         "phase": state.current_phase,
         "constraints": state.constraints,
@@ -529,7 +549,8 @@ def build_turn_input(
     text = _TASK_FRAMING + "\nSession: " + json.dumps(snapshot, default=str)
     if last_outcome:
         text += "\nLast step outcome: " + last_outcome
-    items = list(history)
+    items = [{"role": "user", "content": message} for message in (user_messages or [])]
+    items.extend(history)
     items.append({"role": "user", "content": text})
     return items
 
@@ -655,6 +676,49 @@ def _provider_error_detail(exc: Exception) -> dict[str, Any]:
 
 
 # --- answer / select (shared by endpoints and tests) ------------------------------
+
+
+def record_user_message(store: PostgresSessionStore, session_id: str, *, text: str) -> Any:
+    """Append the user's request text as a ``user_message`` event.
+
+    The event log is append-only, so replays and resumes see the same
+    text the first run saw. Shared by the API stream endpoint and the
+    live runner.
+    """
+    return store.append_event(
+        session_id, USER_MESSAGE_EVENT, {"text": str(text)[:USER_MESSAGE_CHARS]}
+    )
+
+
+def user_messages_from_events(store: PostgresSessionStore, session_id: str) -> list[str]:
+    """Oldest-first user message texts (the last few, each bounded).
+
+    Fail-closed like the other event-log readers: store errors yield no
+    messages rather than a failed run.
+    """
+    try:
+        events = store.list_events(session_id)
+    except Exception:
+        return []
+    texts: list[str] = []
+    for event in events:
+        if getattr(event, "event_type", "") != USER_MESSAGE_EVENT:
+            continue
+        payload = getattr(event, "payload", None) or {}
+        text = payload.get("text")
+        if isinstance(text, str) and text:
+            texts.append(text[:USER_MESSAGE_CHARS])
+    return texts[-USER_MESSAGE_KEEP:]
+
+
+def effective_request_text(explicit: str | None, user_messages: list[str] | None) -> str | None:
+    """The pairing-cue input: explicit ``request_text`` wins, otherwise
+    the latest stored user message, so the cue guard and the model see
+    the same text."""
+    if explicit:
+        return explicit
+    messages = list(user_messages or [])
+    return messages[-1] if messages else None
 
 
 def record_answer(
@@ -827,6 +891,9 @@ async def run_agent(
         )
     revision = state.revision
     excluded = seed_excluded_from_events(store, session_id)
+    # The user's request text, loaded once per run from the append-only
+    # event log (a replay or resume sees the same messages).
+    user_messages = user_messages_from_events(store, session_id)
     in_ceiling = int(getattr(settings, "agent_input_token_ceiling", 30_000))
     out_ceiling = int(getattr(settings, "agent_output_token_ceiling", 12_000))
     configured_max_output = int(getattr(settings, "llm_rec_max_output_tokens", 4000))
@@ -912,7 +979,12 @@ async def run_agent(
         offered = offered_tools(state=state, excluded=excluded, timeout_s=timeout_s)
         offered_by_name = {d.name: d for d in offered}
         tool_defs = function_defs_for(offered)
-        turn_input = build_turn_input(state=state, history=history, last_outcome=last_outcome)
+        turn_input = build_turn_input(
+            state=state,
+            history=history,
+            last_outcome=last_outcome,
+            user_messages=user_messages,
+        )
         est_in = estimate_turn_input(turn_input, tool_defs, response_schema=directive_schema)
         if used_in + est_in >= in_ceiling or used_out >= out_ceiling:
             return await _stop(
@@ -943,6 +1015,16 @@ async def run_agent(
                 f"minimum useful {_MIN_USEFUL_OUTPUT_TOKENS}); start a new session",
             )
         turn_cap = min(configured_max_output, remaining_out)
+        # Local invariant, checked pre-send and unbilled: an unpaired
+        # call/output (e.g. from a bad trim) is a provider 400, so fail
+        # here instead of sending it.
+        pairing = history_pairing_violations(history)
+        if pairing:
+            raise AgentLoopError(
+                http_status=500,
+                reason=REASON_HISTORY_PAIRING,
+                message=f"unpaired tool history, not sent: {pairing[0]}",
+            )
         remaining_wall = deadline - time.monotonic()
         try:
             turn = await asyncio.wait_for(
@@ -986,6 +1068,12 @@ async def run_agent(
             reason, retryable = _provider_reason(exc)
             detail = _provider_error_detail(exc)
             await _emit(deps, "provider_error", {"reason": reason, **detail})
+            try:
+                # Durable copy for reviewable raw trajectories (best
+                # effort: never fail the run on a logging write).
+                store.append_event(session_id, "provider_error", {"reason": reason, **detail})
+            except Exception:
+                pass
             if not retryable:
                 qualifiers = " ".join(
                     f"{key}={detail[key]}"
@@ -1412,10 +1500,75 @@ def _apply_step_commit(
         ) from exc
 
 
+def _turn_groups(history: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Split tool history into whole-turn groups (oldest first).
+
+    A new group starts when a ``function_call`` or ``reasoning`` item
+    follows a ``function_call_output`` (the previous turn's outputs are
+    complete); outputs and trailing user notes join the open group, so
+    a call is never separated from its output.
+    """
+    groups: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    for item in history:
+        item_type = item.get("type") if isinstance(item, dict) else None
+        if (
+            current
+            and isinstance(current[-1], dict)
+            and current[-1].get("type") == "function_call_output"
+            and item_type in ("function_call", "reasoning")
+        ):
+            groups.append(current)
+            current = []
+        current.append(item)
+    if current:
+        groups.append(current)
+    return groups
+
+
 def _cap_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the newest whole-turn groups that fit the cap.
+
+    Whole older groups are dropped; the newest group is always kept
+    whole even when it alone exceeds the cap (pairing beats size).
+    """
     if len(history) <= _HISTORY_KEEP:
         return history
-    return [history[0], *history[-(_HISTORY_KEEP - 1) :]]
+    kept: list[dict[str, Any]] = []
+    for group in reversed(_turn_groups(history)):
+        if kept and len(kept) + len(group) > _HISTORY_KEEP:
+            break
+        kept = group + kept
+    return kept
+
+
+def history_pairing_violations(history: list[Any]) -> list[str]:
+    """Call/output pairing violations (empty means paired).
+
+    Every ``function_call`` needs exactly one ``function_call_output``
+    with the same ``call_id`` and vice versa; missing or duplicated
+    ids are violations.
+    """
+    from collections import Counter
+
+    calls: Counter[str] = Counter()
+    outputs: Counter[str] = Counter()
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type")
+        call_id = item.get("call_id")
+        if item_type == "function_call":
+            calls[str(call_id or "")] += 1
+        elif item_type == "function_call_output":
+            outputs[str(call_id or "")] += 1
+    violations: list[str] = []
+    for call_id in sorted(set(calls) | set(outputs)):
+        if not call_id:
+            violations.append("empty call_id")
+        elif calls[call_id] != 1 or outputs[call_id] != 1:
+            violations.append(f"call {call_id}: {calls[call_id]} calls, {outputs[call_id]} outputs")
+    return violations
 
 
 async def _handle_ask(
@@ -1464,6 +1617,8 @@ async def _handle_ask(
             event_type="agent_question",
             event_payload={
                 "question_id": question.question_id,
+                "question_text": question.question_text,
+                "question_options": list(question.options or [])[:10],
                 "note": _truncate_note(directive.note),
                 **(turn_usage or {}),
             },
@@ -1590,7 +1745,12 @@ async def _handle_finish(
                 f"(allowlist: {sorted(EPICURE_SKIP_ALLOWLIST)})"
             )
         elif effective_skip == "simple_technique_question":
-            cue = pairing_cue_in(getattr(deps, "request_text", None))
+            cue = pairing_cue_in(
+                effective_request_text(
+                    getattr(deps, "request_text", None),
+                    user_messages_from_events(store, session_id),
+                )
+            )
             if cue is not None:
                 errors.append(
                     "simple_technique_question refused: the request asks for a "
@@ -1922,16 +2082,20 @@ __all__ = [
     "PlanPayload",
     "QuantityClaim",
     "build_turn_input",
+    "effective_request_text",
     "epicure_evidence",
     "estimate_tokens",
     "estimate_turn_input",
     "function_defs_for",
+    "history_pairing_violations",
     "offered_tools",
     "pairing_cue_in",
     "recipe_session_evidence",
     "record_answer",
     "record_select",
+    "record_user_message",
     "run_agent",
     "seed_excluded_from_events",
     "session_token_usage",
+    "user_messages_from_events",
 ]

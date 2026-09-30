@@ -1040,3 +1040,20 @@ def test_explicit_optional_values_still_apply() -> None:
     )
     assert result["ok"] is True
     assert seen == {"query": "soup", "limit": 3, "mode": "fulltext"}
+
+
+def test_tool_call_event_opt_in_records_bounded_args() -> None:
+    from culinary_copilot.tools.search_tools import SearchRecipesArgs
+
+    seen: dict[str, Any] = {}
+    tool = _echo_tool("search_recipes", SearchRecipesArgs)
+    store = _FakeSessionStore(allowed=True)
+    ctx = _ctx(session_store=store)
+    ctx.record_tool_args = True
+    result = _run(run_tool(tool, _echo_impl(seen), {"query": "soup"}, ctx, session_id="s"))
+    assert result["ok"] is True
+    payload = store.events[0]["payload"]
+    assert payload["args_digest"] == args_digest({"query": "soup", "limit": 5, "mode": None})
+    import json as _json
+
+    assert _json.loads(str(payload["args"])) == {"query": "soup", "limit": 5, "mode": None}

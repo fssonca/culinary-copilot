@@ -140,6 +140,7 @@ REASON_AGENT_NO_PROGRESS = "agent_no_progress"
 REASON_AGENT_VALIDATION_FAILED = "agent_validation_failed"
 REASON_UNKNOWN_QUESTION = "unknown_question"
 REASON_UNKNOWN_OPTION = "unknown_option"
+REASON_HISTORY_PAIRING = "history_pairing_error"
 
 # What a client should do after a failure (P4-REV-01). Messages state the
 # failure; ``next_action`` states the remedy, so a retry is never suggested
@@ -189,6 +190,7 @@ _NEXT_ACTION_BY_REASON: dict[str, str] = {
     REASON_AGENT_VALIDATION_FAILED: NEXT_CHANGE_REQUEST,
     REASON_UNKNOWN_QUESTION: NEXT_CHANGE_REQUEST,
     REASON_UNKNOWN_OPTION: NEXT_CHANGE_REQUEST,
+    REASON_HISTORY_PAIRING: NEXT_RETRY,
     "malformed": NEXT_CHANGE_REQUEST,
     # State moved on while running.
     "stale_revision": NEXT_REFETCH_AND_RETRY,

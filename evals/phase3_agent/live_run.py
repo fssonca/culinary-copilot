@@ -52,6 +52,74 @@ EVALS_DIR = REPO_ROOT / "evals" / "phase3_agent"
 DEFAULT_SCENARIOS = EVALS_DIR / "live_scenarios.json"
 DEFAULT_RAW_DIR = REPO_ROOT / "data" / "phase3-live"
 LIVE_SUMMARY = EVALS_DIR / "live-summary.json"
+SPEND_HISTORY = DEFAULT_RAW_DIR / "spend-history.json"
+
+
+def recorded_entry_usd(entry: dict[str, Any]) -> float:
+    """Recorded cost of one ledger entry: reconciled usage, or the
+    reserved cost for kept-ambiguous failures (conservative)."""
+    decision = entry.get("decision")
+    if decision == "reconciled":
+        return float(entry.get("used_usd") or 0.0)
+    if decision == "kept-ambiguous":
+        return float(entry.get("reserved_usd") or entry.get("usd") or 0.0)
+    return 0.0
+
+
+def load_spend_history(path: Path) -> list[dict[str, Any]]:
+    """Prior run records (empty when the file does not exist yet)."""
+    try:
+        body = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    runs = body.get("runs") if isinstance(body, dict) else None
+    return list(runs) if isinstance(runs, list) else []
+
+
+def recorded_spend_total(path: Path) -> float:
+    """Conservative prior spend across all recorded runs."""
+    total = 0.0
+    for run in load_spend_history(path):
+        for entry in run.get("entries", []) or []:
+            if isinstance(entry, dict):
+                total += recorded_entry_usd(entry)
+    return total
+
+
+def append_spend_history(
+    path: Path, *, model: str, entries: list[dict[str, Any]], ceiling_usd: float
+) -> float:
+    """Append this run's entries with a timestamp; returns the new total."""
+    try:
+        body = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(body, dict):
+            body = {}
+    except (OSError, ValueError):
+        body = {}
+    runs = body.get("runs")
+    if not isinstance(runs, list):
+        runs = []
+        body["runs"] = runs
+    body["ceiling_usd"] = float(ceiling_usd)
+    runs.append(
+        {
+            "run_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "model": model,
+            "entries": [
+                {
+                    "label": e.get("label"),
+                    "decision": e.get("decision"),
+                    "usd": recorded_entry_usd(e),
+                }
+                for e in entries
+                if isinstance(e, dict)
+            ],
+        }
+    )
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+    return recorded_spend_total(path)
+
 
 LIVE_CAP_USD = 0.15
 MAX_ATTEMPTS = 2
@@ -353,6 +421,9 @@ class LedgerModelProvider:
         )
         return result
 
+    async def aclose(self) -> None:
+        await _aclose_provider(self._inner)
+
 
 class LedgerEmbedProvider:
     """Wraps an embedding provider: reserve per call, reconcile with usage.
@@ -421,8 +492,15 @@ def _effective_settings(settings: Any) -> Any:
     )
 
 
-def preflight(args: Any, settings: Any) -> tuple[bool, list[str], dict[str, Any]]:
-    """Refuse (False) on any failed check; records versions and corpus state."""
+def preflight(
+    args: Any, settings: Any, history_path: Path | str | None = None
+) -> tuple[bool, list[str], dict[str, Any]]:
+    """Refuse (False) on any failed check; records versions and corpus state.
+
+    ``history_path`` enables the cumulative budget: prior recorded spend
+    is subtracted from the ceiling, and the run is refused when not even
+    a small first turn fits the remainder.
+    """
     problems: list[str] = []
     record: dict[str, Any] = {}
     from culinary_copilot.llm.models import PRICING_VERSION, model_spec
@@ -457,6 +535,19 @@ def preflight(args: Any, settings: Any) -> tuple[bool, list[str], dict[str, Any]
         )
     if float(args.ceiling_usd) > LIVE_CAP_USD:
         problems.append(f"ceiling ${float(args.ceiling_usd):.2f} exceeds ${LIVE_CAP_USD:.2f} cap")
+    prior_spend = recorded_spend_total(Path(history_path)) if history_path else 0.0
+    remaining_budget = float(args.ceiling_usd) - prior_spend
+    record["prior_recorded_spend_usd"] = prior_spend
+    record["remaining_budget_usd"] = remaining_budget
+    if history_path and spec is not None:
+        from culinary_copilot.recommendations.pricing import estimate_cost_usd
+
+        first_turn_floor = estimate_cost_usd(2000, 1000, model)
+        if first_turn_floor is not None and remaining_budget < first_turn_floor:
+            problems.append(
+                f"remaining budget ${remaining_budget:.4f} cannot fit a first turn "
+                f"(floor ${first_turn_floor:.4f} after ${prior_spend:.4f} prior recorded spend)"
+            )
     if os.environ.get("HF_HUB_OFFLINE") != "1":
         problems.append("HF_HUB_OFFLINE != 1 (Epicure assets must fail fast, never download)")
     db_url = args.database_url or settings.database_url.get_secret_value()
@@ -533,8 +624,16 @@ def grade_attempt(
     stop_reason: str,
     store: Any,
     session_id: str,
+    *,
+    manual_review: bool = False,
 ) -> dict[str, Any]:
-    """Structural grades (deterministic; relevance stays owner review)."""
+    """Structural grades (deterministic; relevance stays owner review).
+
+    A run with no options, no plan and no final question has nothing to
+    judge: evidence, constraint and Epicure grades are ``"n/a"`` rather
+    than vacuous ``true``. ``manual_review`` (real-provider runs) marks
+    clarification quality for the owner instead of auto-grading it.
+    """
     from culinary_copilot.agent.loop import recipe_session_evidence
 
     expected = scenario.get("expected", {})
@@ -547,20 +646,28 @@ def grade_attempt(
             options = list((committed.suggestions if committed else []) or [])
         except Exception:
             options = []
+    plan = (final or {}).get("plan")
+    question = (final or {}).get("question") or {}
+    empty_run = not options and not plan and not question
     grades["task_completion"] = stop_reason == expected.get("stop_reason") and (
         len(options) >= int(expected.get("min_options", 0))
     )
     grades["termination"] = stop_reason == expected.get("stop_reason")
     hard = set((scenario.get("session", {}).get("constraints") or {}).keys())
     honored = set((final or {}).get("constraints_honored") or [])
-    grades["constraint_adherence"] = not hard or hard <= honored
+    grades["constraint_adherence"] = "n/a" if empty_run else (not hard or hard <= honored)
     retrieved, _full = recipe_session_evidence(store=store, session_id=session_id)
-    grades["evidence_support"] = all(
-        isinstance(o, dict) and (str(o.get("dataset_id")), str(o.get("source_id"))) in retrieved
-        for o in options
+    grades["evidence_support"] = (
+        "n/a"
+        if empty_run
+        else all(
+            isinstance(o, dict) and (str(o.get("dataset_id")), str(o.get("source_id"))) in retrieved
+            for o in options
+        )
     )
-    question = (final or {}).get("question") or {}
-    if expected.get("stop_reason") == "agent_needs_user_input":
+    if manual_review:
+        grades["clarification_quality"] = "manual-review"
+    elif expected.get("stop_reason") == "agent_needs_user_input":
         grades["clarification_quality"] = bool(question.get("question_text")) and bool(
             question.get("options")
         )
@@ -572,7 +679,9 @@ def grade_attempt(
     else:
         grades["clarification_quality"] = question == {}
     epicure_expected = str(expected.get("epicure", "consulted"))
-    if epicure_expected == "consulted":
+    if empty_run:
+        grades["epicure_behaviour"] = "n/a"
+    elif epicure_expected == "consulted":
         grades["epicure_behaviour"] = not bool(
             (final or {}).get("epicure_skip_reason")
         ) and not bool((final or {}).get("epicure_degraded"))
@@ -907,6 +1016,108 @@ def _new_session_id(scenario_key: str, attempt: int) -> str:
     return f"ses-live-{scenario_key[:12]}-a{attempt}-{uuid.uuid4().hex[:6]}"
 
 
+# Event types projected into reviewable raw trajectories (read-only).
+_TRAJECTORY_TOOL_KEYS = (
+    "tool",
+    "args_digest",
+    "args",
+    "returned_identities",
+    "outcome",
+    "error_type",
+    "reason",
+)
+_TRAJECTORY_ERROR_KEYS = (
+    "reason",
+    "error_code",
+    "error_param",
+    "error_message",
+    "attempts",
+    "request_sent",
+)
+
+
+def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """One session event, trimmed for review (no prompts or secrets)."""
+    if event_type == "tool_call":
+        return {"type": event_type, **{k: payload.get(k) for k in _TRAJECTORY_TOOL_KEYS}}
+    if event_type == "provider_error":
+        return {"type": event_type, **{k: payload.get(k) for k in _TRAJECTORY_ERROR_KEYS}}
+    if event_type in ("agent_step", "agent_validation_reject"):
+        return {"type": event_type, "note": payload.get("note")}
+    if event_type == "agent_question":
+        return {
+            "type": event_type,
+            "question_id": payload.get("question_id"),
+            "question_text": payload.get("question_text"),
+            "question_options": payload.get("question_options"),
+        }
+    if event_type == "agent_finished":
+        return {
+            "type": event_type,
+            "note": payload.get("note"),
+            "options": payload.get("options"),
+            "stop_reason": payload.get("stop_reason"),
+        }
+    if event_type in ("agent_answer", "agent_select"):
+        return {"type": event_type, **{k: v for k, v in payload.items() if k != "answer"}}
+    return None
+
+
+def _session_trajectories(store: Any, session_ids: list[str]) -> list[dict[str, Any]]:
+    """Read-only per-session trajectories for the raw file."""
+    out: list[dict[str, Any]] = []
+    for sid in session_ids:
+        try:
+            events = store.list_events(sid)
+        except Exception as exc:
+            out.append({"session_id": sid, "error": type(exc).__name__})
+            continue
+        items: list[dict[str, Any]] = []
+        questions: list[dict[str, Any]] = []
+        for event in events:
+            payload = dict(getattr(event, "payload", None) or {})
+            projected = _project_trajectory_event(str(getattr(event, "event_type", "")), payload)
+            if projected is None:
+                continue
+            items.append(projected)
+            if projected["type"] == "agent_question":
+                questions.append(
+                    {
+                        "question_id": projected.get("question_id"),
+                        "question_text": projected.get("question_text"),
+                        "options": projected.get("question_options"),
+                    }
+                )
+        try:
+            Committed = store.get(sid)
+            titles = [
+                str(s.get("title"))
+                for s in (getattr(Committed, "suggestions", None) or [])
+                if isinstance(s, dict)
+            ]
+        except Exception:
+            titles = []
+        out.append(
+            {
+                "session_id": sid,
+                "events": items,
+                "questions": questions,
+                "option_titles": titles,
+            }
+        )
+    return out
+
+
+async def _aclose_provider(candidate: Any) -> None:
+    """Close a provider when it offers ``aclose`` (real SDK clients hold
+    loop-bound pools; fakes simply lack the method)."""
+    close = getattr(candidate, "aclose", None)
+    if callable(close):
+        closing = close()
+        if asyncio.iscoroutine(closing):
+            await closing
+
+
 def _caused_by_budget(exc: BaseException) -> bool:
     """True when BudgetExhausted is anywhere in the exception chain."""
     seen: set[int] = set()
@@ -962,12 +1173,15 @@ def run_scenario_live(
     raw_dir: Path,
     max_attempts: int = MAX_ATTEMPTS,
     recipe_resolver: Any = None,
+    manual_review: bool = False,
+    fresh_provider_per_run: bool = False,
 ) -> dict[str, Any]:
     from culinary_copilot.agent.loop import (
         AgentDeps,
         AgentLoopError,
         record_answer,
         record_select,
+        record_user_message,
         run_agent,
     )
 
@@ -977,13 +1191,58 @@ def run_scenario_live(
     last_final: dict[str, Any] | None = None
     last_stop = ""
     run_stop: dict[str, str] | None = None
+
+    def _runner_error(
+        attempt_record: dict[str, Any], exc: BaseException, what: str
+    ) -> dict[str, str]:
+        detail = f"{what}: {type(exc).__name__}: {str(exc)[:200]}"
+        attempt_record["runs"].append(
+            {"stop_reason": "runner-error", "error": True, "message": detail}
+        )
+        return {"reason": "runner-error", "detail": detail}
+
+    def _run_once(sid: str, shared_deps: Any, tool_context: Any) -> Any:
+        """One run_agent on a loop-bound provider.
+
+        With ``fresh_provider_per_run`` (live path) each run gets a new
+        provider that is used and closed inside a single event loop, so
+        no AsyncOpenAI client outlives its loop. Otherwise the
+        scenario-level provider is reused (scripted fakes keep
+        cross-run state).
+        """
+        if not fresh_provider_per_run:
+            return asyncio.run(run_agent(sid, deps=shared_deps))
+
+        async def _run_and_close() -> Any:
+            fresh = provider_factory(scenario)
+            fresh_deps = AgentDeps(
+                settings=settings,
+                session_store=store,
+                provider=fresh,
+                tool_context=tool_context,
+                recipe_resolver=recipe_resolver,
+                request_text=scenario.get("request"),
+            )
+            try:
+                return await run_agent(sid, deps=fresh_deps)
+            finally:
+                await _aclose_provider(fresh)
+
+        return asyncio.run(_run_and_close())
+
     for attempt in range(1, max_attempts + 1):
         sid = _new_session_id(scenario["key"], attempt)
         attempt_record: dict[str, Any] = {"attempt": attempt, "session_id": sid, "runs": []}
         try:
             # Build before any write: a setup failure leaves no session row.
+            # The probe doubles as the scenario provider on the shared
+            # path; on the fresh path it is closed at once and each run
+            # gets its own loop-bound provider via _run_once.
             provider = provider_factory(scenario)
             tool_context = context_factory(store, scenario)
+            if fresh_provider_per_run:
+                asyncio.run(_aclose_provider(provider))
+                provider = None
         except Exception as exc:
             attempt_record["setup_error"] = {
                 "type": type(exc).__name__,
@@ -1002,6 +1261,10 @@ def run_scenario_live(
 
         try:
             store.create(SessionState(id=sid, **session_seed))
+            if scenario.get("request"):
+                # The model sees the request via user_message events (the
+                # same helper the API uses); replay/resume-safe.
+                record_user_message(store, sid, text=str(scenario["request"]))
             deps = AgentDeps(
                 settings=settings,
                 session_store=store,
@@ -1010,7 +1273,7 @@ def run_scenario_live(
                 recipe_resolver=recipe_resolver,
                 request_text=scenario.get("request"),
             )
-            result = asyncio.run(run_agent(sid, deps=deps))
+            result = _run_once(sid, deps, tool_context)
             attempt_record["runs"].append(
                 {"stop_reason": result.stop_reason, "phase": result.phase, "final": result.final}
             )
@@ -1018,15 +1281,31 @@ def run_scenario_live(
             if result.stop_reason == "agent_needs_user_input" and "resume" in flow:
                 answers = list(scenario.get("scripted_answers", []))
                 if answers:
-                    current = store.get(sid)
-                    record_answer(
-                        store,
-                        sid,
-                        expected_revision=current.revision,
-                        question_id=answers[0]["question_id"],
-                        answer=answers[0]["answer"],
-                    )
-                    result2 = asyncio.run(run_agent(sid, deps=deps))
+                    # Answer the actual pending question from the last
+                    # final (the model invents its own IDs); the asked
+                    # text is recorded for manual review, never graded.
+                    asked = (last_final or {}).get("question") or {}
+                    try:
+                        current = store.get(sid)
+                        record_answer(
+                            store,
+                            sid,
+                            expected_revision=current.revision,
+                            question_id=asked.get("question_id"),
+                            answer=answers[0]["answer"],
+                        )
+                    except Exception as exc:
+                        last_final, last_stop = None, "runner-error"
+                        run_stop = _runner_error(attempt_record, exc, "answer")
+                        attempts.append(attempt_record)
+                        break
+                    attempt_record["answered_question"] = {
+                        "question_id": asked.get("question_id"),
+                        "question_text": asked.get("question_text"),
+                        "question_options": asked.get("options"),
+                        "scripted_answer": answers[0]["answer"],
+                    }
+                    result2 = _run_once(sid, deps, tool_context)
                     attempt_record["runs"].append(
                         {
                             "stop_reason": result2.stop_reason,
@@ -1036,17 +1315,23 @@ def run_scenario_live(
                     )
                     last_final, last_stop = result2.final, result2.stop_reason
             if "select-first" in flow and (last_final or {}).get("options"):
-                current = store.get(sid)
                 first = last_final["options"][0]
-                record_select(
-                    store,
-                    sid,
-                    expected_revision=current.revision,
-                    dataset_id=first["dataset_id"],
-                    source_id=first["source_id"],
-                )
+                try:
+                    current = store.get(sid)
+                    record_select(
+                        store,
+                        sid,
+                        expected_revision=current.revision,
+                        dataset_id=first["dataset_id"],
+                        source_id=first["source_id"],
+                    )
+                except Exception as exc:
+                    last_final, last_stop = None, "runner-error"
+                    run_stop = _runner_error(attempt_record, exc, "select")
+                    attempts.append(attempt_record)
+                    break
                 if "plan" in flow:
-                    result3 = asyncio.run(run_agent(sid, deps=deps))
+                    result3 = _run_once(sid, deps, tool_context)
                     attempt_record["runs"].append(
                         {
                             "stop_reason": result3.stop_reason,
@@ -1117,7 +1402,9 @@ def run_scenario_live(
         grades = {"graded": False, "reason": last_stop}
         status = "stopped: config-error"
     else:
-        grades = grade_attempt(scenario, last_final, last_stop, store, created[-1])
+        grades = grade_attempt(
+            scenario, last_final, last_stop, store, created[-1], manual_review=manual_review
+        )
         status = "completed"
     return {
         "key": scenario["key"],
@@ -1129,6 +1416,7 @@ def run_scenario_live(
         "run_stop": run_stop,
         "grades": grades,
         "sessions": created,
+        "trajectory": _session_trajectories(store, created),
     }
 
 
@@ -1243,7 +1531,7 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --expect-db-name and --expect-db-host are required", file=sys.stderr)
         return 2
     settings = _effective_settings(Settings())
-    ok, problems, record = preflight(args, settings)
+    ok, problems, record = preflight(args, settings, history_path=SPEND_HISTORY)
     if not ok:
         for problem in problems:
             print(f"preflight: {problem}", file=sys.stderr)
@@ -1251,7 +1539,16 @@ def main(argv: list[str] | None = None) -> int:
     db_url = args.database_url or settings.database_url.get_secret_value()
     raw_dir = Path(args.raw_dir) if args.raw_dir else DEFAULT_RAW_DIR
     summary_out = Path(args.summary_out) if args.summary_out else LIVE_SUMMARY
-    result = _run_all(args, settings, scenarios, db_url, raw_dir, summary_out, fake=False)
+    result = _run_all(
+        args,
+        settings,
+        scenarios,
+        db_url,
+        raw_dir,
+        summary_out,
+        fake=False,
+        history_path=SPEND_HISTORY,
+    )
     print(json.dumps({"preflight": record}, indent=2))
     return result
 
@@ -1265,6 +1562,7 @@ def _run_all(
     summary_out: Path,
     *,
     fake: bool,
+    history_path: Path | str | None = None,
 ) -> int:
     from sqlalchemy import create_engine
 
@@ -1274,6 +1572,13 @@ def _run_all(
     store = PostgresSessionStore(engine)
     model = str(args.model or settings.llm_rec_model)
     ledger = SpendLedger(model=model, ceiling_usd=float(args.ceiling_usd or 0.0))
+    if history_path:
+        # The cap covers the whole evaluation: this run may only spend
+        # what prior recorded runs left.
+        prior = recorded_spend_total(Path(history_path))
+        ledger = SpendLedger(
+            model=model, ceiling_usd=max(0.0, float(args.ceiling_usd or 0.0) - prior)
+        )
     max_output = int(settings.llm_rec_max_output_tokens)
     effective = _effective_settings(settings)
     pre = snapshot(engine)
@@ -1306,6 +1611,8 @@ def _run_all(
                     raw_dir=raw_dir,
                     max_attempts=args.max_attempts,
                     recipe_resolver=None,
+                    manual_review=True,
+                    fresh_provider_per_run=True,
                 )
         except Exception as exc:
             # Never die with a traceback and no summary: record the
@@ -1393,6 +1700,20 @@ def _run_all(
         f"scenarios: {n_completed} completed, {n_stopped} stopped, "
         f"{n_not_run} not_run of {len(done_statuses)}; isolation ok: {isolated}"
     )
+    this_run_spend = float(ledger.spent_usd)
+    if history_path:
+        recorded_total = append_spend_history(
+            Path(history_path),
+            model=model,
+            entries=list(ledger.entries),
+            ceiling_usd=float(args.ceiling_usd or 0.0),
+        )
+        print(
+            f"spent ${this_run_spend:.4f} this run; "
+            f"${recorded_total:.4f} recorded total of ${float(args.ceiling_usd or 0.0):.2f}"
+        )
+    else:
+        print(f"spent ${this_run_spend:.4f} this run")
     print(f"spent ${ledger.spent_usd:.4f} of ${ledger.ceiling_usd:.2f}")
     engine.dispose()
     return 0 if isolated else 1
@@ -1407,6 +1728,7 @@ def _fake_context(current_store: Any, settings: Any, scenario: dict[str, Any] | 
         settings=settings,
         engine=None,
         session_store=current_store,
+        record_tool_args=True,
         impl_overrides={
             "search_recipes": _fake_search(rows),
             "get_recipe": _fake_get,
@@ -1466,8 +1788,12 @@ def _live_context_factory(settings: Any, engine: Any, ledger: SpendLedger) -> An
     def _factory(current_store: Any, scenario: dict[str, Any]) -> Any:
         from culinary_copilot.tools import build_tool_context
 
+        context = build_tool_context(settings=settings, engine=engine, session_store=current_store)
+        # Reviewable raw trajectories: the live run opts into bounded
+        # args in tool_call events (default stays digest-only).
+        context.record_tool_args = True
         return _wrap_context_embed_provider(
-            build_tool_context(settings=settings, engine=engine, session_store=current_store),
+            context,
             ledger,
             settings,
         )

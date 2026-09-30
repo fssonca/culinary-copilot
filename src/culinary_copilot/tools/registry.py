@@ -19,8 +19,11 @@ discarded, so implementations must be side-effect free or idempotent
 event (session id, call id, tool, args digest, outcome/error, latency,
 cost); with a session id the event is appended to ``session_events``
 via ``PostgresSessionStore.append_event``, otherwise it goes to the
-logger. Raw arguments are never logged, only a sha256 digest of the
-canonical JSON. The event cost is the mode that actually ran when the
+logger. Raw arguments are never written to the process log, only a
+sha256 digest of the canonical JSON; the ``session_events`` copy also
+keeps the digest only, unless the caller opts in with
+``record_tool_args`` (bounded validated args for reviewable raw
+trajectories). The event cost is the mode that actually ran when the
 result carries a valid ``cost_class`` (e.g. ``search_recipes``
 fulltext=free vs vector=paid); otherwise the tool's static class.
 """
@@ -186,6 +189,10 @@ class ToolContext:
     epicure_chem: Any = None
     # Test hook: wrap the raw implementation (e.g. inject a sleeping fake).
     impl_overrides: dict[str, Callable[..., Any]] = field(default_factory=dict)
+    # Review hook: also store the bounded validated args in the session
+    # event (reviewable raw trajectories). Off by default: raw arguments
+    # stay out of events and logs unless the caller opts in.
+    record_tool_args: bool = False
 
 
 def _timeout_for(context: ToolContext, tool: ToolDefinition) -> float:
@@ -291,6 +298,7 @@ def _record_event(
     mode_ran: str | None = None,
     match: str | None = None,
     returned_identities: list[dict[str, str]] | None = None,
+    args: dict[str, Any] | None = None,
 ) -> None:
     payload: dict[str, Any] = {
         "call_id": call_id,
@@ -309,6 +317,14 @@ def _record_event(
     if returned_identities is not None:
         payload["returned_identities"] = returned_identities
     if session_id and getattr(context, "session_store", None) is not None:
+        # Bounded args travel in the session event only when the caller
+        # opts in (reviewable raw trajectories); the process log and the
+        # default event keep the digest only.
+        if args is not None and bool(getattr(context, "record_tool_args", False)):
+            try:
+                payload["args"] = json.dumps(args, default=str)[:2000]
+            except (TypeError, ValueError):
+                payload["args"] = str(args)[:2000]
         try:
             context.session_store.append_event(session_id, TOOL_CALL_EVENT_TYPE, payload)
         except Exception:
@@ -369,6 +385,7 @@ async def run_tool(
             reason=reason,
             latency_ms=0.0,
             cost_class=tool.cost_class,
+            args=dict(raw_args) if isinstance(raw_args, dict) else None,
         )
         return result
 
@@ -412,6 +429,7 @@ async def run_tool(
             mode_ran=_as_opt_str(result.get("mode_ran")),
             match=_as_opt_str(result.get("match")),
             returned_identities=_returned_identities(tool.name, parsed, result),
+            args=dict(validated_args),
         )
         return result
     except (asyncio.TimeoutError, TimeoutError):

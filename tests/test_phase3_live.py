@@ -68,6 +68,19 @@ def _ledger(model: str = "gpt-6-luna", ceiling: float = 0.15) -> SpendLedger:
     return SpendLedger(model=model, ceiling_usd=ceiling)
 
 
+def _default_summary_bytes() -> bytes | None:
+    """Raw bytes of the committed default summary path (None when absent).
+
+    Test runs must leave it untouched: a pre-existing attempt file stays
+    byte-identical, and none is created when absent.
+    """
+    path = Path(__file__).resolve().parents[1] / "evals" / "phase3_agent" / "live-summary.json"
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
 # --- refusals ----------------------------------------------------------------------
 
 
@@ -380,6 +393,7 @@ def test_foreign_session_evidence_does_not_count(engine) -> None:
 
 def test_full_fake_run_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    default_summary_before = _default_summary_bytes()
     from culinary_copilot.config import Settings
 
     base = Settings().database_url.get_secret_value()
@@ -405,10 +419,10 @@ def test_full_fake_run_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert len(summary["scenarios"]) == 8
     assert summary["isolation"]["ok"] is True
     assert summary["spend"]["spent_usd"] == 0.0
-    assert not Path("evals/phase3_agent/live-summary.json").exists()
-    assert not (
-        Path(__file__).resolve().parents[1] / "evals" / "phase3_agent" / "live-summary.json"
-    ).exists()
+    # The run must not touch the committed default summary path: a
+    # pre-existing attempt file stays byte-identical, and none is
+    # created when absent.
+    assert _default_summary_bytes() == default_summary_before
     raws = sorted(raw_dir.glob("*.json"))
     assert len(raws) == 8
 
@@ -471,28 +485,30 @@ def test_first_attempt_vs_after_retry_reported(engine, tmp_path: Path) -> None:
             if self.bad:
                 return self._bad_finish()
             if self.turns == 1:
+                calls = [
+                    ("c1", "search_recipes", {"query": "lentil"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c3", "find_balanced_pairings", {"ingredient": "lentils"}),
+                ]
                 return NativeTurnResult(
                     tool_calls=[
-                        NativeToolCall(
-                            call_id="c1",
-                            name="search_recipes",
-                            arguments=json.dumps({"query": "lentil"}),
-                        ),
-                        NativeToolCall(
-                            call_id="c2",
-                            name="get_recipe",
-                            arguments=json.dumps(
-                                {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}
-                            ),
-                        ),
-                        NativeToolCall(
-                            call_id="c3",
-                            name="find_balanced_pairings",
-                            arguments=json.dumps({"ingredient": "lentils"}),
-                        ),
+                        NativeToolCall(call_id=cid, name=name, arguments=json.dumps(args))
+                        for cid, name, args in calls
                     ],
                     parsed=None,
-                    chain_items=[],
+                    chain_items=[
+                        {
+                            "type": "function_call",
+                            "call_id": cid,
+                            "name": name,
+                            "arguments": json.dumps(args),
+                        }
+                        for cid, name, args in calls
+                    ],
                     input_tokens=5,
                     output_tokens=5,
                 )
@@ -987,7 +1003,7 @@ def _livepath_scenarios():
             "key": "lp-recommend",
             "title": "recommend two",
             "request": "soup for dinner",
-            "session": {},
+            "session": {"steps_remaining": 20, "tool_calls_remaining": 20},
             "settings": {},
             "scripted_answers": [],
             "flow": ["recommend"],
@@ -1066,13 +1082,22 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
         "note": "live-path ask",
     }
     script = [
+        # Eight tool turns (one call each): the capped history must keep
+        # whole call/output groups, never strand an output.
+        _sdk_response(calls=[("c1", "search_recipes", {"query": "soup for dinner"})]),
         _sdk_response(
-            calls=[
-                ("c1", "search_recipes", {"query": "soup for dinner"}),
-                ("c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "soup-1"}),
-                ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
-            ]
+            calls=[("c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "soup-1"})]
         ),
+        _sdk_response(calls=[("c3", "search_techniques", {"query": "soup"})]),
+        _sdk_response(
+            calls=[("c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"})]
+        ),
+        _sdk_response(calls=[("c5", "search_recipes", {"query": "chicken curry"})]),
+        _sdk_response(calls=[("c6", "search_techniques", {"query": "chicken"})]),
+        _sdk_response(
+            calls=[("c7", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "soup-1"})]
+        ),
+        _sdk_response(calls=[("c8", "search_recipes", {"query": "tomato dinner"})]),
         _sdk_response(parsed=finish_a),
         _sdk_response(calls=[("c1", "search_recipes", {"query": "dragonfruit"})]),
         _sdk_response(parsed=ask_b),
@@ -1092,6 +1117,45 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
                 "type": "invalid_request_error",
                 "code": "strict_schema_violation",
                 "param": param,
+            }
+        }
+        request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+        return BadRequestError(
+            message=message,
+            response=httpx.Response(400, request=request, json=body),
+            body=body,
+        )
+
+    def _unpaired_call_id(input_items: list[Any]) -> str | None:
+        """First call id without exactly one output (None when paired)."""
+        from collections import Counter
+
+        calls: Counter[str] = Counter()
+        outputs: Counter[str] = Counter()
+        for item in input_items:
+            if not isinstance(item, dict):
+                continue
+            call_id = str(item.get("call_id") or "")
+            if item.get("type") == "function_call":
+                calls[call_id] += 1
+            elif item.get("type") == "function_call_output":
+                outputs[call_id] += 1
+        for call_id in list(calls) + [c for c in outputs if c not in calls]:
+            if calls[call_id] != 1 or outputs[call_id] != 1:
+                return call_id or "unknown"
+        return None
+
+    def _pairing_bad_request(call_id: str) -> Any:
+        import httpx
+        from openai import BadRequestError
+
+        message = f"No tool output found for function call {call_id}"
+        body = {
+            "error": {
+                "message": message,
+                "type": "invalid_request_error",
+                "code": "missing_tool_output",
+                "param": "input",
             }
         }
         request = httpx.Request("POST", "https://api.openai.com/v1/responses")
@@ -1128,6 +1192,10 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
                         "text.format",
                         _format_violations,
                     )
+            _pairing = _unpaired_call_id(kwargs.get("input") or [])
+            if _pairing is not None:
+                # Behave like OpenAI: an output-less call is a 400.
+                raise _pairing_bad_request(_pairing)
             item = script.pop(0)
             if isinstance(item, BaseException):
                 raise item
@@ -1208,6 +1276,7 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
             args = _argparse.Namespace(model="", max_attempts=1, ceiling_usd=0.15)
             raw_dir = tmp_path / "raw"
             summary_out = tmp_path / "live-summary.json"
+            live_summary_before = _default_summary_bytes()
             rc = live_run._run_all(
                 args,
                 settings,
@@ -1219,16 +1288,20 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
             )
             assert rc == 0
             summary = json.loads(summary_out.read_text(encoding="utf-8"))
-            assert len(sdk_calls) == 4
+            assert len(sdk_calls) == 11
             from culinary_copilot.tools.registry import strict_violations as _check_strict
 
-            assert len(seen_tools) == 4
+            assert len(seen_tools) == 11
             for payload_tools in seen_tools:
                 assert payload_tools, "every model turn is sent the tool schemas"
                 for _tool in payload_tools:
                     assert _tool["strict"] is True
                     assert _check_strict(_tool["parameters"]) == []
-            assert seen_formats == ["AgentDirective"] * 4
+            assert seen_formats == ["AgentDirective"] * 11
+            # The scenario request reaches the model: the first turn's
+            # input carries it as a user item.
+            first_input = sdk_calls[0].get("input") or []
+            assert {"role": "user", "content": "soup for dinner"} in first_input
             assert [s["key"] for s in summary["scenarios"]] == ["lp-recommend", "lp-empty"]
             assert summary["scenarios"][0]["stop_reason"] == "agent_sufficient_evidence"
             assert summary["scenarios"][1]["stop_reason"] == "agent_needs_user_input"
@@ -1237,12 +1310,12 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
             spend = summary["spend"]
             assert spend["spent_usd"] > 0.0
             reconciled = [e for e in spend["entries"] if e.get("decision") == "reconciled"]
-            assert len(reconciled) == 4
+            assert len(reconciled) == 11
             assert all(e["used_in"] == 1000 and e["used_out"] == 200 for e in reconciled)
             assert live_run.LIVE_SUMMARY == Path(__file__).resolve().parents[1] / (
                 "evals/phase3_agent/live-summary.json"
             )
-            assert not live_run.LIVE_SUMMARY.exists()
+            assert _default_summary_bytes() == live_summary_before
         finally:
             eng.dispose()
             for path in list(sys.path):
@@ -1539,3 +1612,287 @@ def test_disabled_generation_is_stopped_config_error(engine, tmp_path: Path) -> 
     assert report["status"] == "stopped: config-error"
     assert report["stop_reason"] == "generation_disabled"
     assert report["grades"] == {"graded": False, "reason": "generation_disabled"}
+
+
+# --- request text, pending answers, honest grades, ledger, loops, trajectory --
+
+
+def _invented_ask_turns() -> list[Any]:
+    from culinary_copilot.llm.client import NativeToolCall, NativeTurnResult
+
+    def _chain(calls: list[tuple[str, str, dict[str, Any]]]) -> list[dict[str, Any]]:
+        return [
+            {
+                "type": "function_call",
+                "call_id": cid,
+                "name": name,
+                "arguments": json.dumps(args),
+            }
+            for cid, name, args in calls
+        ]
+
+    get_calls = [
+        ("g1", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+        ("g2", "find_balanced_pairings", {"ingredient": "lentils"}),
+    ]
+    finish = {
+        "decision": "finish",
+        "move_to": "recommend",
+        "result": {
+            "options": [
+                {
+                    "dataset_id": "odunola/foodie",
+                    "source_id": "lentil-2",
+                    "title": "Red Lentil Soup",
+                    "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+                    "adaptations": [],
+                }
+            ]
+        },
+        "constraints_honored": [],
+        "note": "good finish",
+    }
+    ask = {
+        "decision": "ask_user",
+        "question": {
+            "question_id": "model-made-7",
+            "question_text": "Do you want the lentil soup spicy?",
+            "options": ["yes", "no"],
+        },
+        "note": "ask",
+    }
+    return [
+        NativeTurnResult(
+            tool_calls=[
+                NativeToolCall(call_id=cid, name=name, arguments=json.dumps(args))
+                for cid, name, args in get_calls
+            ],
+            parsed=None,
+            chain_items=_chain(get_calls),
+            input_tokens=5,
+            output_tokens=5,
+        ),
+        NativeTurnResult(
+            tool_calls=[], parsed=ask, chain_items=[], input_tokens=5, output_tokens=5
+        ),
+        NativeTurnResult(
+            tool_calls=[], parsed=finish, chain_items=[], input_tokens=5, output_tokens=5
+        ),
+    ]
+
+
+def test_runner_answers_pending_question(engine, tmp_path: Path) -> None:
+    from culinary_copilot.config import Settings
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    settings = Settings(_env_file=None, epicure_enabled=True)
+    store = PostgresSessionStore(engine)
+    turns = _invented_ask_turns()
+
+    class _Script:
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+            return turns.pop(0)
+
+    scenario = _live_scenario(
+        flow=["recommend", "resume"],
+        scripted_answers=[{"question_id": "q-yogurt", "answer": "yes"}],
+    )
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=scenario,
+        ledger=_ledger(),
+        provider_factory=lambda s: _Script(),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=1,
+        recipe_resolver=lambda ds, sid: dict(live_run._FAKE_DOCS.get((ds, sid)) or {}) or None,
+    )
+    assert report["status"] == "completed"
+    assert report["stop_reason"] == "agent_sufficient_evidence"
+    answered = report["first_attempt"]["answered_question"]
+    assert answered["question_id"] == "model-made-7"  # actual, not q-yogurt
+    assert answered["question_text"] == "Do you want the lentil soup spicy?"
+    assert answered["scripted_answer"] == "yes"
+
+
+def test_answer_failure_is_stopped_runner_error(
+    engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import culinary_copilot.agent.loop as _loop
+    from culinary_copilot.agent.loop import AgentLoopError
+    from culinary_copilot.config import Settings
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    def _boom(*args: Any, **kwargs: Any) -> Any:
+        raise AgentLoopError(
+            http_status=404, reason="unknown_question", message="unknown question 'x'"
+        )
+
+    monkeypatch.setattr(_loop, "record_answer", _boom)
+    settings = Settings(_env_file=None, epicure_enabled=True)
+    store = PostgresSessionStore(engine)
+    turns = _invented_ask_turns()
+
+    class _Script:
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+            return turns.pop(0)
+
+    scenario = _live_scenario(
+        flow=["recommend", "resume"],
+        scripted_answers=[{"question_id": "q-yogurt", "answer": "yes"}],
+    )
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=scenario,
+        ledger=_ledger(),
+        provider_factory=lambda s: _Script(),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=1,
+        recipe_resolver=lambda ds, sid: dict(live_run._FAKE_DOCS.get((ds, sid)) or {}) or None,
+    )
+    assert report["status"] == "stopped: runner-error"
+    assert report["stop_reason"] == "runner-error"
+    assert report["grades"] == {"graded": False, "reason": "runner-error"}
+
+
+def test_empty_run_grades_are_na(engine) -> None:
+    from culinary_copilot.domain.sessions import SessionState
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    store = PostgresSessionStore(engine)
+    state = store.create(SessionState(id="ses-grade-probe"))
+    scenario = _live_scenario()
+    grades = live_run.grade_attempt(
+        scenario, None, "agent_no_progress", store, state.id, manual_review=True
+    )
+    assert grades["evidence_support"] == "n/a"
+    assert grades["constraint_adherence"] == "n/a"
+    assert grades["epicure_behaviour"] == "n/a"
+    assert grades["clarification_quality"] == "manual-review"
+    assert grades["task_completion"] is False
+
+
+def test_spend_history_floor_refuses(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import argparse
+    import json as _json
+
+    from culinary_copilot.config import Settings
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    history = tmp_path / "spend-history.json"
+    history.write_text(
+        _json.dumps(
+            {
+                "ceiling_usd": 0.15,
+                "runs": [
+                    {
+                        "run_utc": "2026-09-30T01:05:26Z",
+                        "attempt": 3,
+                        "model": "gpt-6-luna",
+                        "entries": [
+                            {
+                                "label": "model-turn-1",
+                                "decision": "kept-ambiguous",
+                                "usd": 0.1499,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert live_run.recorded_spend_total(history) == 0.1499
+    args = argparse.Namespace(
+        model="",
+        ceiling_usd=0.15,
+        expect_db_name="culinary_test_live",
+        expect_db_host="localhost",
+        database_url="",
+    )
+    settings = live_run._effective_settings(
+        Settings(_env_file=None, llm_recommendation_enabled=True)
+    )
+    ok, problems, record = live_run.preflight(args, settings, history_path=history)
+    assert not ok
+    assert any("first turn" in p for p in problems)
+    assert record["prior_recorded_spend_usd"] == 0.1499
+
+
+def test_fresh_providers_are_loop_bound(engine, tmp_path: Path) -> None:
+    import asyncio as _asyncio
+
+    from culinary_copilot.config import Settings
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    settings = Settings(_env_file=None, epicure_enabled=True)
+    store = PostgresSessionStore(engine)
+    instances: list[Any] = []
+    script = list(_invented_ask_turns())
+
+    class _Tracked:
+        def __init__(self) -> None:
+            self.used: list[Any] = []
+            self.closed: list[Any] = []
+            instances.append(self)
+
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+            self.used.append(_asyncio.get_running_loop())
+            return script.pop(0)
+
+        async def aclose(self) -> None:
+            self.closed.append(_asyncio.get_running_loop())
+
+    scenario = _live_scenario(
+        flow=["recommend", "resume"],
+        scripted_answers=[{"question_id": "q-yogurt", "answer": "yes"}],
+    )
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=scenario,
+        ledger=_ledger(),
+        provider_factory=lambda s: _Tracked(),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=1,
+        recipe_resolver=lambda ds, sid: dict(live_run._FAKE_DOCS.get((ds, sid)) or {}) or None,
+        fresh_provider_per_run=True,
+    )
+    assert report["stop_reason"] == "agent_sufficient_evidence"
+    used = [inst for inst in instances if inst.used]
+    assert len(used) == 2  # ask run + resume run; the setup probe is never used
+    for inst in used:
+        assert len(inst.closed) == 1
+        assert all(loop is inst.closed[0] for loop in inst.used)
+
+
+def test_trajectory_recorded_in_raw_report(engine, tmp_path: Path) -> None:
+    from culinary_copilot.config import Settings
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    settings = Settings(_env_file=None, epicure_enabled=True)
+    store = PostgresSessionStore(engine)
+    report = live_run._run_fake_scenario(
+        engine,
+        store,
+        settings,
+        _live_scenario(),
+        _ledger(),
+        tmp_path,
+        max_attempts=1,
+    )
+    assert report["trajectory"], "every scenario records a trajectory"
+    session_traj = report["trajectory"][0]
+    tool_events = [e for e in session_traj["events"] if e["type"] == "tool_call"]
+    assert tool_events, "tool calls are in the trajectory"
+    first = tool_events[0]
+    assert first["args_digest"] and first["args"]
+    assert first["outcome"] in ("ok", "error")
+    assert session_traj["option_titles"], "model option titles are recorded"

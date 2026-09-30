@@ -52,11 +52,17 @@ STREAM_CONTRACT_VERSION = "v1"
 
 
 class AgentStreamRequest(BaseModel):
-    """Stream body: optional CAS guard for the run."""
+    """Stream body: optional CAS guard plus the user's request text.
+
+    ``message`` (when present) is stored as a ``user_message`` event
+    before the run starts, so the model sees the request and replays
+    and resumes see it too.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     expected_revision: int | None = Field(default=None, ge=1)
+    message: str | None = Field(default=None, min_length=1, max_length=2000)
 
 
 class AnswerRequest(BaseModel):
@@ -224,6 +230,15 @@ def build_router(
         async def _sink(stage: str, detail: dict[str, Any]) -> None:
             await queue.put((stage, dict(detail)))
 
+        if body.message is not None:
+            from culinary_copilot.agent.loop import record_user_message
+
+            try:
+                record_user_message(session_store, session_id, text=body.message)
+            except SQLAlchemyError:
+                raise _failure(
+                    503, REASON_SESSION_UNAVAILABLE, "Session store unavailable"
+                ) from None
         deps = AgentDeps(
             settings=settings,
             session_store=session_store,
