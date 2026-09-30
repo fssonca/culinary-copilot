@@ -915,3 +915,128 @@ def test_technique_summaries_and_hits_always_carry_attribution() -> None:
     summary = _summarize_result("search_techniques", result)
     assert summary["results"][0]["attribution_text"]
     assert summary["results"][0]["licence_url"]
+
+
+# --- strict function-calling schemas ---------------------------------------
+
+
+def test_sent_tool_schemas_pass_strict_checker() -> None:
+    from culinary_copilot.agent.loop import function_defs_for
+    from culinary_copilot.tools.registry import strict_violations
+
+    sent = function_defs_for(list(_defs().values()))
+    assert len(sent) == 10
+    for tool in sent:
+        assert tool["strict"] is True, tool["name"]
+        assert strict_violations(tool["parameters"]) == [], tool["name"]
+
+
+def test_directive_response_schema_passes_strict_checker() -> None:
+    from openai.lib._parsing._responses import type_to_text_format_param
+
+    from culinary_copilot.agent.loop import AgentDirective
+    from culinary_copilot.tools.registry import strict_violations
+
+    converted = type_to_text_format_param(AgentDirective)
+    assert converted["strict"] is True
+    assert strict_violations(converted["schema"]) == []
+
+
+def test_open_object_schemas_are_flagged() -> None:
+    from pydantic import BaseModel
+
+    from culinary_copilot.tools.registry import strict_violations
+
+    class _Open(BaseModel):
+        mapping: dict[str, str]
+
+    violations = strict_violations(_Open.model_json_schema())
+    assert any("mapping" in v and "additionalProperties" in v for v in violations)
+
+
+def test_closed_source_model_dump_shape() -> None:
+    from culinary_copilot.agent.loop import PlanPayload
+
+    plan = PlanPayload.model_validate(
+        {
+            "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+            "mise_en_place": ["chop"],
+            "steps": ["cook"],
+            "plating": "bowls",
+            "quantities": [],
+            "adaptations": [],
+        }
+    )
+    assert plan.model_dump()["source"] == {
+        "dataset_id": "odunola/foodie",
+        "source_id": "curry-1",
+    }
+
+
+def _echo_impl(seen: dict[str, Any]) -> Any:
+    async def _echo(args: Any, context: ToolContext) -> dict[str, Any]:
+        seen.update(args.model_dump())
+        return {"ok": True}
+
+    return _echo
+
+
+def _echo_tool(name: str, args_model: Any) -> ToolDefinition:
+    return ToolDefinition(
+        name=name,
+        description="echo fake",
+        args_model=args_model,
+        timeout_s=10.0,
+        idempotent=True,
+        cost_class="free",
+    )
+
+
+def _run_echo(tool: ToolDefinition, seen: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    return _run(run_tool(tool, _echo_impl(seen), args, _ctx()))
+
+
+def test_null_optional_arguments_fall_back_to_defaults() -> None:
+    from culinary_copilot.tools.epicure_tools import PairingsArgs
+    from culinary_copilot.tools.search_tools import SearchRecipesArgs
+    from culinary_copilot.tools.technique_tools import SearchTechniquesArgs
+
+    seen: dict[str, Any] = {}
+    result = _run_echo(
+        _echo_tool("search_recipes", SearchRecipesArgs),
+        seen,
+        {"query": "soup", "limit": None, "mode": None},
+    )
+    assert result["ok"] is True
+    assert seen == {"query": "soup", "limit": 5, "mode": None}
+
+    seen.clear()
+    result = _run_echo(
+        _echo_tool("search_techniques", SearchTechniquesArgs),
+        seen,
+        {"query": "sear", "limit": None, "mode": None},
+    )
+    assert result["ok"] is True
+    assert seen == {"query": "sear", "limit": 5, "mode": None}
+
+    seen.clear()
+    result = _run_echo(
+        _echo_tool("find_flavor_pairings", PairingsArgs),
+        seen,
+        {"ingredient": "chicken", "k": None},
+    )
+    assert result["ok"] is True
+    assert seen["k"] == 5
+
+
+def test_explicit_optional_values_still_apply() -> None:
+    from culinary_copilot.tools.search_tools import SearchRecipesArgs
+
+    seen: dict[str, Any] = {}
+    result = _run_echo(
+        _echo_tool("search_recipes", SearchRecipesArgs),
+        seen,
+        {"query": "soup", "limit": 3, "mode": "fulltext"},
+    )
+    assert result["ok"] is True
+    assert seen == {"query": "soup", "limit": 3, "mode": "fulltext"}

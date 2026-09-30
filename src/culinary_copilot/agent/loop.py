@@ -197,11 +197,19 @@ def session_token_usage(store: Any, session_id: str) -> tuple[int, int]:
 class AgentLoopError(Exception):
     """Terminal loop failure with HTTP status, stable reason and message."""
 
-    def __init__(self, *, http_status: int, reason: str, message: str) -> None:
+    def __init__(
+        self,
+        *,
+        http_status: int,
+        reason: str,
+        message: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.http_status = http_status
         self.reason = reason
         self.message = message
+        self.detail = dict(detail or {})
         self.next_action = next_action_for(reason)
 
 
@@ -237,7 +245,7 @@ class Adaptation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     description: str = Field(min_length=1, max_length=500)
-    label: Literal["adaptation"] = "adaptation"
+    label: Literal["adaptation"]
 
 
 class FinishOption(BaseModel):
@@ -259,13 +267,26 @@ class TechniqueRef(BaseModel):
     chunk_id: int = Field(ge=0)
 
 
+class PlanSource(BaseModel):
+    """Closed plan-source model (strict function calling forbids the
+    open ``dict[str, str]`` shape: every object needs
+    ``additionalProperties: false``). Dumps to the same
+    ``{"dataset_id", "source_id"}`` mapping the validators and event
+    payloads already consume."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_id: str = Field(min_length=1, max_length=200)
+    source_id: str = Field(min_length=1, max_length=200)
+
+
 class PlanPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source: dict[str, str] = Field(default_factory=dict)
+    source: PlanSource
     mise_en_place: list[str] = Field(default_factory=list, max_length=30)
     steps: list[str] = Field(default_factory=list, max_length=50)
-    plating: str = Field(default="", max_length=2000)
+    plating: str = Field(max_length=2000)
     quantities: list[QuantityClaim] = Field(default_factory=list, max_length=20)
     adaptations: list[Adaptation] = Field(default_factory=list, max_length=10)
     technique_refs: list[TechniqueRef] = Field(default_factory=list, max_length=10)
@@ -300,7 +321,7 @@ class AgentDirective(BaseModel):
     epicure_skip_reason: str | None = Field(default=None, max_length=200)
     epicure_lines: list[EpicureLine] = Field(default_factory=list, max_length=20)
     constraints_honored: list[str] = Field(default_factory=list, max_length=20)
-    note: str = Field(default="", max_length=2000)
+    note: str = Field(max_length=2000)
 
 
 # --- dependencies and results -------------------------------------------------
@@ -372,7 +393,15 @@ def offered_tools(*, state: Any, excluded: set[str], timeout_s: float) -> list[T
 
 
 def function_defs_for(definitions: list[ToolDefinition]) -> list[dict[str, Any]]:
-    """Native function definitions for the provider request."""
+    """Native function definitions for the provider request.
+
+    Parameter schemas go through the registry's strict-mode conversion
+    (all properties required and nullable where optional, no defaults,
+    ``additionalProperties: false``): the provider rejects anything
+    else with a 400 on the first model turn.
+    """
+    from culinary_copilot.tools.registry import strict_parameters_schema
+
     tools: list[dict[str, Any]] = []
     for definition in definitions:
         tools.append(
@@ -380,7 +409,7 @@ def function_defs_for(definitions: list[ToolDefinition]) -> list[dict[str, Any]]
                 "type": "function",
                 "name": definition.name,
                 "description": definition.description,
-                "parameters": definition.args_model.model_json_schema(),
+                "parameters": strict_parameters_schema(definition.args_model),
                 "strict": True,
             }
         )
@@ -601,6 +630,28 @@ def _provider_reason(exc: Exception) -> tuple[str, bool]:
         if isinstance(exc, cls):
             return reason, retryable
     return "internal_error", False
+
+
+def _provider_error_detail(exc: Exception) -> dict[str, Any]:
+    """Safe operator metadata kept on provider-turn failures.
+
+    Attempt counts, the request_sent flag, and the bounded provider
+    error-body fields (message truncated, code, param) — never prompts,
+    secrets, or raw model output. The loop's mapping would otherwise
+    drop these, leaving a bare reason for a paid 400.
+    """
+    detail: dict[str, Any] = {"attempts": int(getattr(exc, "attempts", 0) or 0)}
+    detail["request_sent"] = bool(getattr(exc, "request_sent", False))
+    message = getattr(exc, "error_message", None)
+    if message:
+        detail["error_message"] = str(message)[:300]
+    code = getattr(exc, "error_code", None)
+    if code:
+        detail["error_code"] = str(code)[:200]
+    param = getattr(exc, "error_param", None)
+    if param:
+        detail["error_param"] = str(param)[:200]
+    return detail
 
 
 # --- answer / select (shared by endpoints and tests) ------------------------------
@@ -933,12 +984,22 @@ async def run_agent(
                     message=("response truncated by the output cap; start a new session"),
                 ) from exc
             reason, retryable = _provider_reason(exc)
-            await _emit(deps, "provider_error", {"reason": reason})
+            detail = _provider_error_detail(exc)
+            await _emit(deps, "provider_error", {"reason": reason, **detail})
             if not retryable:
+                qualifiers = " ".join(
+                    f"{key}={detail[key]}"
+                    for key in ("error_code", "error_param")
+                    if detail.get(key)
+                )
+                suffix = f" ({qualifiers})" if qualifiers else ""
+                if detail.get("error_message"):
+                    suffix += f": {detail['error_message'][:200]}"
                 raise AgentLoopError(
                     http_status=502 if "provider" in reason else 500,
                     reason=reason,
-                    message=f"provider turn failed: {reason}",
+                    message=f"provider turn failed: {reason}{suffix}",
+                    detail=detail,
                 ) from exc
             consecutive_errors += 1
             last_outcome = f"provider error ({reason}); retrying"

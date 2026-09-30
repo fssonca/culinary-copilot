@@ -1078,10 +1078,56 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
         _sdk_response(parsed=ask_b),
     ]
     sdk_calls: list[dict[str, Any]] = []
+    seen_tools: list[Any] = []
+    seen_formats: list[str] = []
+
+    def _strict_bad_request(what: str, param: str, violations: list[str]) -> Any:
+        import httpx
+        from openai import BadRequestError
+
+        message = f"Invalid schema for {what}: {violations[0]}"
+        body = {
+            "error": {
+                "message": message,
+                "type": "invalid_request_error",
+                "code": "strict_schema_violation",
+                "param": param,
+            }
+        }
+        request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+        return BadRequestError(
+            message=message,
+            response=httpx.Response(400, request=request, json=body),
+            body=body,
+        )
 
     class _FakeResponses:
         async def parse(self, **kwargs: Any) -> Any:
             sdk_calls.append(kwargs)
+            from openai.lib._parsing._responses import (
+                type_to_text_format_param as _to_text_format,
+            )
+
+            from culinary_copilot.tools.registry import strict_violations as _strict_violations
+
+            tools = kwargs.get("tools") or []
+            seen_tools.append(tools)
+            for _tool in tools:
+                _violations = _strict_violations(_tool.get("parameters", {}))
+                if _violations:
+                    raise _strict_bad_request(
+                        f"function '{_tool.get('name')}'", "tools", _violations
+                    )
+            model = kwargs.get("text_format")
+            if model is not None and not isinstance(model, dict):
+                seen_formats.append(str(getattr(model, "__name__", model)))
+                _format_violations = _strict_violations(_to_text_format(model)["schema"])
+                if _format_violations:
+                    raise _strict_bad_request(
+                        f"response_format '{seen_formats[-1]}'",
+                        "text.format",
+                        _format_violations,
+                    )
             item = script.pop(0)
             if isinstance(item, BaseException):
                 raise item
@@ -1174,6 +1220,15 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
             assert rc == 0
             summary = json.loads(summary_out.read_text(encoding="utf-8"))
             assert len(sdk_calls) == 4
+            from culinary_copilot.tools.registry import strict_violations as _check_strict
+
+            assert len(seen_tools) == 4
+            for payload_tools in seen_tools:
+                assert payload_tools, "every model turn is sent the tool schemas"
+                for _tool in payload_tools:
+                    assert _tool["strict"] is True
+                    assert _check_strict(_tool["parameters"]) == []
+            assert seen_formats == ["AgentDirective"] * 4
             assert [s["key"] for s in summary["scenarios"]] == ["lp-recommend", "lp-empty"]
             assert summary["scenarios"][0]["stop_reason"] == "agent_sufficient_evidence"
             assert summary["scenarios"][1]["stop_reason"] == "agent_needs_user_input"
@@ -1234,6 +1289,8 @@ def test_setup_failure_leaves_no_session(engine, tmp_path: Path) -> None:
     )
     assert report["run_stop"]["reason"] == "runner-error"
     assert "context exploded" in report["run_stop"]["detail"]
+    assert report["status"] == "stopped: runner-error"
+    assert report["grades"] == {"graded": False, "reason": "runner-error"}
     assert report["sessions"] == []
     assert report["attempts"] == 1
     with engine.connect() as conn:
@@ -1273,5 +1330,212 @@ def test_scenario_exception_writes_summary(
     summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
     assert summary["stopped_early"]["reason"] == "runner-error"
     assert "driver exploded" in summary["stopped_early"]["detail"]
-    assert summary["scenarios"][0]["status"] == "runner-error"
+    assert summary["scenarios"][0]["status"] == "stopped: runner-error"
     assert summary["scenarios"][1]["status"] == "not_run: runner-error"
+
+
+# --- strict schemas, retries, error detail, honest statuses --------------------
+
+
+def test_effective_settings_zero_all_retry_paths() -> None:
+    from culinary_copilot.config import Settings
+
+    raw = Settings(_env_file=None, llm_app_max_retries=3, llm_rec_max_retries=2)
+    effective = live_run._effective_settings(raw)
+    assert effective.llm_app_max_retries == 0
+    assert effective.llm_rec_max_retries == 0
+    assert effective.embed_max_retries == 0
+    assert raw.llm_rec_max_retries == 2  # the copy, never .env
+
+
+def test_preflight_refuses_nonzero_rec_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    import argparse
+
+    from culinary_copilot.config import Settings
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    args = argparse.Namespace(
+        model="",
+        ceiling_usd=0.15,
+        expect_db_name="culinary_test_live",
+        expect_db_host="localhost",
+        database_url="",
+    )
+    settings = Settings(_env_file=None, llm_rec_max_retries=2, llm_recommendation_enabled=True)
+    ok, problems, _ = live_run.preflight(args, settings)
+    assert not ok
+    assert any("llm_rec_max_retries" in p for p in problems)
+
+
+def test_preflight_requires_recommendation_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    import argparse
+
+    from culinary_copilot.config import Settings
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    args = argparse.Namespace(
+        model="",
+        ceiling_usd=0.15,
+        expect_db_name="culinary_test_live",
+        expect_db_host="localhost",
+        database_url="",
+    )
+    settings = live_run._effective_settings(Settings(_env_file=None))
+    ok, problems, _ = live_run.preflight(args, settings)
+    assert not ok
+    assert any("LLM_RECOMMENDATION_ENABLED" in p for p in problems)
+
+
+def test_native_tool_turn_called_once_on_timeout() -> None:
+    import asyncio as _asyncio
+
+    import httpx
+    from openai import APITimeoutError
+
+    from culinary_copilot.config import Settings
+    from culinary_copilot.llm.client import (
+        OpenAIApplicationProvider,
+        ProviderTimeoutError,
+    )
+
+    calls = {"n": 0}
+
+    class _FakeResponses:
+        async def parse(self, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            raise APITimeoutError(
+                request=httpx.Request("POST", "https://api.openai.com/v1/responses")
+            )
+
+    class _FakeClient:
+        responses = _FakeResponses()
+
+    async def _run() -> None:
+        settings = live_run._effective_settings(
+            Settings(
+                _env_file=None,
+                llm_recommendation_enabled=True,
+                openai_api_key="test-key",
+            )
+        )
+        assert settings.llm_rec_max_retries == 0
+        provider = OpenAIApplicationProvider(settings)
+        await provider.start()
+        provider._client = _FakeClient()  # type: ignore[assignment]
+        try:
+            await provider.complete_native_tool_turn(
+                input_items=[],
+                tools=None,
+                tool_choice=None,
+                response_model=None,
+                max_output_tokens=50,
+            )
+        finally:
+            await provider.aclose()
+
+    with pytest.raises(ProviderTimeoutError):
+        _asyncio.run(_run())
+    assert calls["n"] == 1
+
+
+def test_ledger_records_http_status_on_ambiguous_failure() -> None:
+    import asyncio as _asyncio
+
+    from culinary_copilot.llm.client import ProviderBadRequestError
+
+    err = ProviderBadRequestError(
+        "provider rejected the request",
+        error_message="Invalid schema for function 'search_recipes'",
+        error_code="invalid_schema",
+        error_param="tools",
+        request_sent=True,
+        attempts=1,
+    )
+    err.attempt_details = [
+        {
+            "attempt": 1,
+            "latency_ms": 5,
+            "request_sent": True,
+            "sdk_error": "BadRequestError",
+            "http_status": 400,
+        }
+    ]
+
+    class _Raise:
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+            raise err
+
+    ledger = _ledger()
+    wrapped = live_run.LedgerModelProvider(_Raise(), ledger, max_output=200)
+    with pytest.raises(ProviderBadRequestError):
+        _asyncio.run(
+            wrapped.complete_native_tool_turn(
+                input_items=[], tools=None, tool_choice=None, response_model=None
+            )
+        )
+    entry = ledger.entries[-1]
+    assert entry["decision"] == "kept-ambiguous"  # conservative reservation kept
+    assert entry["http_status"] == 400
+
+
+def test_provider_error_before_output_is_stopped(engine, tmp_path: Path) -> None:
+    from culinary_copilot.config import Settings
+    from culinary_copilot.llm.client import ProviderBadRequestError
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    settings = Settings(_env_file=None)
+    store = PostgresSessionStore(engine)
+    ledger = _ledger()
+    err = ProviderBadRequestError(
+        "provider rejected the request",
+        error_message="Invalid schema for function 'search_recipes'",
+        error_code="invalid_schema",
+        error_param="tools",
+        request_sent=True,
+        attempts=1,
+    )
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=_live_scenario(),
+        ledger=ledger,
+        provider_factory=lambda s: _raising_provider(err),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=1,
+        recipe_resolver=None,
+    )
+    assert report["status"] == "stopped: provider-error"
+    assert report["stop_reason"] == "provider_bad_request"
+    assert report["grades"] == {"graded": False, "reason": "provider_bad_request"}
+    run = report["first_attempt"]["runs"][0]
+    assert run["provider_error"]["error_code"] == "invalid_schema"
+    assert run["provider_error"]["error_param"] == "tools"
+    assert "Invalid schema" in run["provider_error"]["error_message"]
+    assert "invalid_schema" in run["message"]
+
+
+def test_disabled_generation_is_stopped_config_error(engine, tmp_path: Path) -> None:
+    from culinary_copilot.config import Settings
+    from culinary_copilot.llm.client import ProviderDisabledError
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    settings = Settings(_env_file=None)
+    store = PostgresSessionStore(engine)
+    ledger = _ledger()
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=_live_scenario(),
+        ledger=ledger,
+        provider_factory=lambda s: _raising_provider(ProviderDisabledError("off")),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=1,
+        recipe_resolver=None,
+    )
+    assert report["status"] == "stopped: config-error"
+    assert report["stop_reason"] == "generation_disabled"
+    assert report["grades"] == {"graded": False, "reason": "generation_disabled"}

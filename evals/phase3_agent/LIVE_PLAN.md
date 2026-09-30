@@ -124,7 +124,7 @@ it.
 ## Exact live command (paste-safe: no comment lines)
 
 ```sh
-EMBEDDINGS_ENABLED=true HF_HUB_OFFLINE=1 uv run python evals/phase3_agent/live_run.py --live --yes --ceiling-usd 0.15 --expect-db-name culinary_copilot --expect-db-host localhost
+EMBEDDINGS_ENABLED=true HF_HUB_OFFLINE=1 LLM_RECOMMENDATION_ENABLED=true uv run python evals/phase3_agent/live_run.py --live --yes --ceiling-usd 0.15 --expect-db-name culinary_copilot --expect-db-host localhost
 ```
 
 This uses `DATABASE_URL` from `.env` (target the correct database per

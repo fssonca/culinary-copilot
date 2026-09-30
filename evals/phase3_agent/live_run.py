@@ -321,6 +321,21 @@ class LedgerModelProvider:
         try:
             result = await self._inner.complete_native_tool_turn(**kwargs)
         except Exception as exc:
+            # Conservative on ambiguous failures: the reservation stays
+            # spent (keep), unless nothing was sent (release). Either way
+            # the HTTP status is recorded when the failure carries one.
+            status: int | None = None
+            for det in list(getattr(exc, "attempt_details", None) or []):
+                if isinstance(det, dict) and isinstance(det.get("http_status"), int):
+                    status = det["http_status"]
+                    break
+            if status is None and isinstance(getattr(exc, "status_code", None), int):
+                status = int(exc.status_code)
+            if status is not None:
+                for entry in reversed(self._ledger.entries):
+                    if entry.get("label") == label and entry.get("decision") == "reserved":
+                        entry["http_status"] = status
+                        break
             if bool(getattr(exc, "request_sent", True)):
                 self._ledger.keep(label)
             else:
@@ -388,12 +403,22 @@ class LedgerEmbedProvider:
 def _effective_settings(settings: Any) -> Any:
     """Runner settings copy: provider-internal retries forced to zero.
 
-    One wrapped call then equals exactly one billed request (model turns
-    via ``llm_app_max_retries``, embeddings via ``embed_max_retries``);
-    retries happen only as runner-level scenario attempts, each reserved
-    separately. Never edits .env; the copy lives for the run only.
+    One wrapped call then equals exactly one billed request. The runner
+    only uses two billed paths: model turns via
+    ``complete_native_tool_turn`` (``llm_rec_max_retries``) and query
+    embeddings (``embed_max_retries``); ``llm_app_max_retries`` (the
+    planning path) is zeroed too so no path can retry internally.
+    Retries happen only as runner-level scenario attempts, each
+    reserved separately. Never edits .env; the copy lives for the run
+    only.
     """
-    return settings.model_copy(update={"llm_app_max_retries": 0, "embed_max_retries": 0})
+    return settings.model_copy(
+        update={
+            "llm_app_max_retries": 0,
+            "llm_rec_max_retries": 0,
+            "embed_max_retries": 0,
+        }
+    )
 
 
 def preflight(args: Any, settings: Any) -> tuple[bool, list[str], dict[str, Any]]:
@@ -413,10 +438,22 @@ def preflight(args: Any, settings: Any) -> tuple[bool, list[str], dict[str, Any]
             "llm_app_max_retries must be 0 (one wrapped call must equal one request; "
             "retries are runner-level attempts only)"
         )
+    if int(getattr(settings, "llm_rec_max_retries", 0)) != 0:
+        problems.append(
+            "llm_rec_max_retries must be 0 (model turns retry via "
+            "llm_rec_max_retries, not llm_app_max_retries; one wrapped "
+            "call must equal one request)"
+        )
     if int(getattr(settings, "embed_max_retries", 0)) != 0:
         problems.append(
             "embed_max_retries must be 0 (one wrapped call must equal one request; "
             "retries are runner-level attempts only)"
+        )
+    if not bool(getattr(settings, "llm_recommendation_enabled", False)):
+        problems.append(
+            "llm_recommendation_enabled must be true "
+            "(LLM_RECOMMENDATION_ENABLED=true: the native tool turn refuses "
+            "when recommendation generation is disabled)"
         )
     if float(args.ceiling_usd) > LIVE_CAP_USD:
         problems.append(f"ceiling ${float(args.ceiling_usd):.2f} exceeds ${LIVE_CAP_USD:.2f} cap")
@@ -891,6 +928,28 @@ def _classify_loop_error(exc: Any) -> str | None:
     return None
 
 
+# Terminal error reasons that stop (never complete) a scenario when no
+# final was produced. Provider-side failures (including auth/refusal/
+# filter: the request reached the provider stack) vs configuration
+# failures (disabled generation, runner setup).
+_PROVIDER_ERROR_STOPS = frozenset(
+    {
+        "provider_timeout",
+        "provider_rate_limited",
+        "provider_unavailable",
+        "truncated_incomplete_response",
+        "schema_failure",
+        "provider_auth",
+        "provider_not_found",
+        "provider_bad_request",
+        "provider_request_error",
+        "provider_refusal",
+        "provider_content_filter",
+    }
+)
+_CONFIG_ERROR_STOPS = frozenset({"generation_disabled"})
+
+
 def run_scenario_live(
     *,
     engine: Any,
@@ -1014,6 +1073,7 @@ def run_scenario_live(
                     "error": True,
                     "http_status": exc.http_status,
                     "message": exc.message,
+                    "provider_error": dict(getattr(exc, "detail", None) or {}),
                 }
             )
             last_final, last_stop = None, exc.reason
@@ -1039,17 +1099,33 @@ def run_scenario_live(
             break
     if run_stop is not None and run_stop.get("reason") == "budget":
         grades: dict[str, Any] = {"graded": False, "reason": "budget-exhausted"}
+        status = "not_completed: budget"
     elif not created:
         grades = {"graded": False, "reason": "runner-error"}
+        status = "stopped: runner-error"
+    elif last_final is None and last_stop == "runner-error":
+        # A crash, not a setup problem: its own status so it is never
+        # mistaken for a configuration error.
+        grades = {"graded": False, "reason": "runner-error"}
+        status = "stopped: runner-error"
+    elif last_final is None and last_stop in _PROVIDER_ERROR_STOPS:
+        # No final and no loop-stop reason: a provider error before any
+        # model output the grades could judge. Never "completed".
+        grades = {"graded": False, "reason": last_stop}
+        status = "stopped: provider-error"
+    elif last_final is None and last_stop in _CONFIG_ERROR_STOPS:
+        grades = {"graded": False, "reason": last_stop}
+        status = "stopped: config-error"
     else:
         grades = grade_attempt(scenario, last_final, last_stop, store, created[-1])
+        status = "completed"
     return {
         "key": scenario["key"],
         "first_attempt": attempts[0] if attempts else None,
         "final_attempt": attempts[-1] if attempts else None,
         "attempts": len(attempts),
         "stop_reason": last_stop,
-        "status": "not_completed: budget" if last_stop == "budget-exhausted" else "completed",
+        "status": status,
         "run_stop": run_stop,
         "grades": grades,
         "sessions": created,
@@ -1236,7 +1312,7 @@ def _run_all(
             # runner error, stop the run, keep the ledger and snapshots.
             report = {
                 "key": scenario["key"],
-                "status": "runner-error",
+                "status": "stopped: runner-error",
                 "run_stop": {
                     "reason": "runner-error",
                     "detail": f"scenario: {type(exc).__name__}: {str(exc)[:200]}",
@@ -1309,7 +1385,14 @@ def _run_all(
     raw_dir.mkdir(parents=True, exist_ok=True)
     summary_out.parent.mkdir(parents=True, exist_ok=True)
     summary_out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    print(f"scenarios: {len(scenario_reports)}; isolation ok: {isolated}")
+    done_statuses = [str(r.get("status", "")) for r in scenario_reports]
+    n_completed = sum(1 for s in done_statuses if s == "completed")
+    n_not_run = sum(1 for s in done_statuses if s.startswith("not_run"))
+    n_stopped = len(done_statuses) - n_completed - n_not_run
+    print(
+        f"scenarios: {n_completed} completed, {n_stopped} stopped, "
+        f"{n_not_run} not_run of {len(done_statuses)}; isolation ok: {isolated}"
+    )
     print(f"spent ${ledger.spent_usd:.4f} of ${ledger.ceiling_usd:.2f}")
     engine.dispose()
     return 0 if isolated else 1

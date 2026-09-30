@@ -58,6 +58,109 @@ def args_digest(args: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
+def _strict_nullable(node: dict[str, Any]) -> dict[str, Any]:
+    """Wrap an optional property schema so explicit null is accepted."""
+    any_of = node.get("anyOf")
+    if isinstance(any_of, list) and any(
+        isinstance(b, dict) and b.get("type") == "null" for b in any_of
+    ):
+        return node
+    return {"anyOf": [node, {"type": "null"}]}
+
+
+def _strict_node(node: Any) -> Any:
+    """Recursively convert one JSON Schema node to OpenAI strict mode.
+
+    Strict function-calling requires, for every object: all properties
+    listed in ``required``, ``additionalProperties: false``, and no
+    ``default`` keys anywhere. Pydantic's ``model_json_schema()`` keeps
+    defaults and leaves optional fields out of ``required``, so the
+    provider rejects those schemas with a 400 — hence this transform
+    (the pinned SDK's own strict helper keeps ``default`` keys, so it
+    cannot be used here).
+    """
+    if isinstance(node, list):
+        return [_strict_node(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    out = {k: _strict_node(v) for k, v in node.items() if k != "default"}
+    if "properties" in out and isinstance(out["properties"], dict):
+        props = out["properties"]
+        originally_required = set(node.get("required", []) or [])
+        out["properties"] = {
+            name: (_strict_nullable(sub) if name not in originally_required else sub)
+            for name, sub in props.items()
+        }
+        out["required"] = sorted(props.keys())
+        out["additionalProperties"] = False
+    return out
+
+
+def strict_parameters_schema(args_model: type[BaseModel]) -> dict[str, Any]:
+    """``args_model``'s JSON Schema converted for strict function calling.
+
+    Every property becomes required; properties that were optional in
+    the Pydantic model become nullable so the model may pass explicit
+    null (the registry drops nulls before validation, restoring the
+    Pydantic defaults — the argument models stay unchanged).     ``$defs``
+    are converted in place and ``$ref`` links kept.
+    """
+    converted: dict[str, Any] = _strict_node(args_model.model_json_schema())
+    return converted
+
+
+def strict_violations(schema: Any, path: str = "$") -> list[str]:
+    """Strict-mode violations in a parameter schema (empty means clean).
+
+    Checks the same rules the provider enforces: no ``default`` keys,
+    and every object with ``properties`` lists all of them in
+    ``required`` with ``additionalProperties: false``. Used by tests
+    and the live runner's offline self-check; never sent anywhere.
+    """
+    found: list[str] = []
+    if isinstance(schema, list):
+        for i, item in enumerate(schema):
+            found.extend(strict_violations(item, f"{path}[{i}]"))
+        return found
+    if not isinstance(schema, dict):
+        return found
+    if "default" in schema:
+        found.append(f"{path}: 'default' not allowed in strict mode")
+    props = schema.get("properties")
+    declared = schema.get("type")
+    is_object = (
+        declared == "object"
+        or (isinstance(declared, list) and "object" in declared)
+        or isinstance(props, dict)
+        or "additionalProperties" in schema
+    )
+    if is_object:
+        # Strict mode allows no open objects: additionalProperties must
+        # be exactly false — a schema there (e.g. dict[str, str]) is a
+        # 400, not just a missing flag.
+        if schema.get("additionalProperties") is not False:
+            found.append(f"{path}: additionalProperties must be false")
+    if isinstance(props, dict):
+        required = schema.get("required")
+        if not isinstance(required, list) or sorted(required) != sorted(props.keys()):
+            found.append(f"{path}: required must list all properties")
+        for name, sub in props.items():
+            found.extend(strict_violations(sub, f"{path}.{name}"))
+    for key in ("items", "additionalProperties", "contains"):
+        if isinstance(schema.get(key), (dict, list)):
+            found.extend(strict_violations(schema[key], f"{path}.{key}"))
+    for key in ("anyOf", "oneOf", "allOf", "prefixItems"):
+        branches = schema.get(key)
+        if isinstance(branches, list):
+            for i, branch in enumerate(branches):
+                found.extend(strict_violations(branch, f"{path}.{key}[{i}]"))
+    defs = schema.get("$defs")
+    if isinstance(defs, dict):
+        for name, sub in defs.items():
+            found.extend(strict_violations(sub, f"{path}.$defs.{name}"))
+    return found
+
+
 @dataclass(frozen=True)
 class ToolDefinition:
     """Static tool metadata (schemas live on the arg/result models)."""
@@ -237,6 +340,12 @@ async def run_tool(
     ``tool_internal_error`` (``contact_operator``), never raised.
     """
     cid = call_id or new_id("call")
+    if isinstance(raw_args, dict):
+        # Strict-mode schemas make every property required-but-nullable,
+        # so the model sends explicit nulls for omitted optionals. Drop
+        # them before validation so the Pydantic defaults apply; the
+        # argument models stay unchanged.
+        raw_args = {k: v for k, v in raw_args.items() if v is not None}
     try:
         parsed = tool.args_model.model_validate(raw_args)
         validated_args = parsed.model_dump()

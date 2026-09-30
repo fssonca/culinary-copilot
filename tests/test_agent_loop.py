@@ -36,6 +36,7 @@ from culinary_copilot.llm.client import (
     NativeToolCall,
     NativeTurnResult,
     ProviderAuthError,
+    ProviderBadRequestError,
     ProviderTimeoutError,
 )
 from culinary_copilot.recipes import import_data
@@ -640,6 +641,38 @@ def test_turn_estimate_covers_tools_and_schema() -> None:
     items = [{"role": "user", "content": "hi"}]
     combined = estimate_turn_input(items, tool_defs)
     assert combined >= estimate_tokens(tool_defs) + estimate_tokens(schema)
+
+
+def test_provider_bad_request_keeps_code_param_message(engine) -> None:
+    err = ProviderBadRequestError(
+        "provider rejected the request: 400",
+        error_message="Invalid schema for function 'search_recipes'",
+        error_code="invalid_schema",
+        error_param="tools.0.parameters",
+    )
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    async def _on_stage(stage: str, detail: dict[str, Any]) -> None:
+        events.append((stage, detail))
+
+    provider = ScriptedProvider([("raise", err)])
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    deps = _deps(store, provider)
+    deps.on_stage = _on_stage
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(run_agent(state.id, deps=deps))
+    assert excinfo.value.reason == "provider_bad_request"
+    assert "invalid_schema" in excinfo.value.message
+    assert "tools.0.parameters" in excinfo.value.message
+    assert "Invalid schema for function" in excinfo.value.message
+    payload = next(detail for stage, detail in events if stage == "provider_error")
+    assert payload["reason"] == "provider_bad_request"
+    assert payload["error_code"] == "invalid_schema"
+    assert payload["error_param"] == "tools.0.parameters"
+    assert payload["error_message"] == "Invalid schema for function 'search_recipes'"
+    assert payload["attempts"] == 0
+    assert payload["request_sent"] is False
 
 
 def test_output_cap_is_min_of_max_and_remaining(engine) -> None:
