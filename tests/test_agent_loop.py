@@ -2720,3 +2720,214 @@ def test_technique_answer_pairing_cue_refused(engine) -> None:
     assert excinfo.value.reason == "agent_validation_failed"
     rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
     assert any("simple_technique_question refused" in e for e in rejects[0].payload["errors"])
+
+
+def test_dropped_option_errors_are_readable(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    bad_lentil = _opt(
+        source_id="lentil-2",
+        title="Red Lentil Soup",
+        quantities=[{"ingredient": "red lentils", "amount": "999", "unit": "g"}],
+    )
+    ghost = _opt(dataset_id="evil", source_id="666", title="Ghost", quantities=[])
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", _finish_options([_opt(), ghost, bad_lentil], note="Two options for you")),
+            ("tools", [("c4", "find_balanced_pairings", {"ingredient": "chicken"})]),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt()],
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
+        ]
+    )
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True)))
+    )
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    errors = rejects[0].payload["errors"]
+    assert any(e.startswith("option 1 (") and "'Ghost'" in e and "evil/666" in e for e in errors), (
+        errors
+    )
+    assert any(e.startswith("option 2 (") and "lentil-2" in e for e in errors), errors
+    assert not any("option index:" in e for e in errors)
+
+
+def test_two_survivors_accepted_with_drops_reported(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    ghost = _opt(dataset_id="evil", source_id="666", title="Ghost", quantities=[])
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt(), _two_opts()[1], ghost],
+                    note="Two options for you",
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
+        ]
+    )
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    assert len(result.final["options"]) == 2
+    assert result.final.get("single_option_reason") is None
+    dropped = result.final["dropped_options"]
+    assert dropped == [
+        {
+            "index": 2,
+            "title": "Ghost",
+            "source_id": "666",
+            "error": "(evil, 666) not in corpus (unsourced ID)",
+        }
+    ]
+    assert (
+        result.final["note"] == "1 option(s) were removed because they failed source checks: Ghost."
+    )
+    assert result.final["epicure_lines"]
+    finished = [e for e in store.list_events(state.id) if e.event_type == "agent_finished"][0]
+    assert finished.payload["model_note"] == "Two options for you"
+    assert finished.payload["note"] == result.final["note"]
+
+
+def test_lone_survivor_among_two_drops_accepted(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    ghost = _opt(dataset_id="evil", source_id="666", title="Ghost", quantities=[])
+    bad_lentil = _opt(
+        source_id="lentil-2",
+        title="Red Lentil Soup",
+        quantities=[{"ingredient": "red lentils", "amount": "999", "unit": "g"}],
+    )
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt(), ghost, bad_lentil],
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
+        ]
+    )
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    assert result.final.get("single_option_reason") == "only_one_valid_candidate"
+    assert len(result.final["options"]) == 1
+    assert len(result.final["dropped_options"]) == 2
+    assert result.final["note"].startswith("2 option(s) were removed")
+
+
+def test_technique_final_carries_note_and_deduped_attribution(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    rows = [_tech_row(chunk_id=0), _tech_row(chunk_id=1)]
+    provider = ScriptedProvider(
+        [
+            ("tools", [("c1", "search_techniques", {"query": "how to boil an egg"})]),
+            (
+                "parsed",
+                _tech_answer(
+                    "Simmer eggs 6 minutes, then ice bath.",
+                    [
+                        {"doc_id": "tech-egg-1", "chunk_id": 0},
+                        {"doc_id": "tech-egg-1", "chunk_id": 1},
+                    ],
+                    epicure_skip_reason="simple_technique_question",
+                    note="model note here",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"search_techniques": _tech_search(rows)},
+        request_text="How do I boil an egg?",
+    )
+    by_chunk = {(r["doc_id"], r["chunk_id"]): r for r in rows}
+    deps.technique_resolver = lambda doc_id, chunk_id: dict(by_chunk[(doc_id, chunk_id)])
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    assert result.final.get("note") == "model note here"
+    answered = result.final["technique_answer"]
+    assert answered["technique_refs"] == [
+        {"doc_id": "tech-egg-1", "chunk_id": 0},
+        {"doc_id": "tech-egg-1", "chunk_id": 1},
+    ]
+    assert answered["attribution"] == [
+        {
+            "doc_id": "tech-egg-1",
+            "chunk_id": 0,
+            "attribution_text": "Egg corpus (CC BY-SA 4.0)",
+            "licence_url": "https://example.test/licence",
+        }
+    ]

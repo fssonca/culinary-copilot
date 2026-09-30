@@ -1929,6 +1929,32 @@ def _engine_technique_resolver(deps: AgentDeps) -> TechniqueResolver:
     return _resolve
 
 
+def _option_label(option: dict[str, Any]) -> str:
+    """Readable option label for feedback: title + dataset/source."""
+    title = str(option.get("title") or "").strip()
+    dataset_id = str(option.get("dataset_id") or "").strip()
+    source_id = str(option.get("source_id") or "").strip()
+    name = title or source_id or "?"
+    if dataset_id or source_id:
+        return f"{name!r} ({dataset_id}/{source_id})"
+    return f"{name!r}"
+
+
+def _option_title(option: dict[str, Any]) -> str:
+    """Short option title for server notes (title, else source_id)."""
+    return str(option.get("title") or option.get("source_id") or "?").strip()
+
+
+def _strip_option_prefix(index: int, error: str) -> str:
+    """Drop the validator's own ``option N:`` prefix (the feedback and
+    the drop summary already name the option with title and source)."""
+    text = str(error)
+    prefix = f"option {index}:"
+    if text.startswith(prefix):
+        return text[len(prefix) :].lstrip()
+    return text
+
+
 async def _handle_finish(
     deps: AgentDeps,
     store: PostgresSessionStore,
@@ -2120,12 +2146,14 @@ async def _handle_finish(
                             "Epicure consulted in this session: finish needs at "
                             "least 1 epicure_line naming a returned pairing"
                         )
-        # Per-option validation, then the single-answer rule (P3-A-02):
-        # one submitted option is accepted only with Epicure consulted
-        # in this session (direct dish request, Epicure still queried);
-        # of several submitted, a lone survivor is accepted with
-        # only_one_valid_candidate recorded (dropped ones are reported,
-        # never silently truncated).
+        # Per-option validation, then the survivor rule: invalid
+        # options are never shown and every drop is reported (in the
+        # feedback, the finish event, and the client final). One
+        # submitted option is accepted only with Epicure consulted in
+        # this session (direct dish request, Epicure still queried); of
+        # several submitted, every valid option is accepted and the
+        # dropped ones are reported (a lone survivor records
+        # only_one_valid_candidate).
         per_option = [
             (
                 option,
@@ -2153,14 +2181,23 @@ async def _handle_finish(
                     "single option needs Epicure consulted in this session "
                     "(submit 2+ options otherwise)"
                 )
-        elif len(valid) >= 2 and not dropped_options:
+        elif len(valid) >= 2:
             selections = valid
         elif len(valid) == 1 and not errors:
             selections = valid
             single_option_reason = "only_one_valid_candidate"
         else:
-            for index, errs in dropped_options:
-                errors.extend(f"option {index}: {e}" for e in errs)
+            for dropped in dropped_options:
+                index = int(dropped["index"])
+                label = (
+                    _option_label(submitted[index])
+                    if 0 <= index < len(submitted)
+                    else f"option {index}"
+                )
+                errors.extend(
+                    f"option {index} ({label}): {_strip_option_prefix(index, e)}"
+                    for e in dropped["errors"]
+                )
             if len(valid) == 1:
                 # A lone survivor with other blocking errors stays rejected.
                 errors.append("only one option validates; fix the blocking errors")
@@ -2261,12 +2298,27 @@ async def _handle_finish(
         )
 
     note = _truncate_note(directive.note)
+    model_note: str | None = None
     if wants_options:
         assert options_dump is not None
         model_lines = [line.model_dump() for line in directive.epicure_lines]
         used, lines = _epicure_use_lines(options_dump, pairing_lines, model_lines)
         outcome = f"consulted:{len(pairing_lines)} used:{used} rejected:{len(pairing_lines) - used}"
         selections = list(options_dump)
+        if dropped_options:
+            # A stale model note may describe a dropped option: the
+            # client sees a server note instead; the model note stays
+            # in the event for review.
+            dropped_titles = [
+                _option_title(submitted[int(d["index"])])
+                for d in dropped_options
+                if 0 <= int(d["index"]) < len(submitted)
+            ]
+            model_note = note
+            note = (
+                f"{len(dropped_options)} option(s) were removed because they "
+                f"failed source checks: {', '.join(dropped_titles)}."
+            )
 
         def _apply(snapshot: Any) -> Any:
             snapshot.suggestions = selections
@@ -2290,6 +2342,7 @@ async def _handle_finish(
 
         event_payload: dict[str, Any] = {
             "note": note,
+            "model_note": model_note,
             "options": len(selections),
             "epicure_lines": lines,
             "epicure_skip_reason": state_epicure_skip,
@@ -2303,15 +2356,23 @@ async def _handle_finish(
         # returned, with attribution per chunk (CC BY-SA condition).
         answer = result.technique_answer
         assert answer is not None
-        attribution = [
-            {
-                "doc_id": row.get("doc_id"),
-                "chunk_id": row.get("chunk_id"),
-                "attribution_text": row.get("attribution_text"),
-                "licence_url": row.get("licence_url"),
-            }
-            for row in technique_evidence
-        ]
+        # Attribution is per document (one entry per doc_id); every
+        # chunk ref is kept separately in the final.
+        attribution: list[dict[str, Any]] = []
+        seen_docs: set[str] = set()
+        for row in technique_evidence:
+            doc_id = str(row.get("doc_id") or "")
+            if not doc_id or doc_id in seen_docs:
+                continue
+            seen_docs.add(doc_id)
+            attribution.append(
+                {
+                    "doc_id": row.get("doc_id"),
+                    "chunk_id": row.get("chunk_id"),
+                    "attribution_text": row.get("attribution_text"),
+                    "licence_url": row.get("licence_url"),
+                }
+            )
 
         def _apply(snapshot: Any) -> Any:
             snapshot.evidence = list(snapshot.evidence) + [
@@ -2396,6 +2457,8 @@ async def _handle_finish(
     final: dict[str, Any]
     if wants_options:
         final = {"options": options_dump}
+        final["note"] = note
+        final["epicure_lines"] = lines
         if single_option_reason is not None:
             final["single_option_reason"] = single_option_reason
         if epicure_degraded:
@@ -2403,26 +2466,29 @@ async def _handle_finish(
         if state_epicure_skip is not None:
             final["epicure_skip_reason"] = state_epicure_skip
         final["constraints_honored"] = list(directive.constraints_honored or [])
+        final["dropped_options"] = [
+            {
+                "index": int(d["index"]),
+                "title": _option_title(submitted[int(d["index"])]),
+                "source_id": str(submitted[int(d["index"])].get("source_id") or ""),
+                "error": _strip_option_prefix(int(d["index"]), str((d["errors"] or [""])[0])),
+            }
+            for d in dropped_options
+            if 0 <= int(d["index"]) < len(submitted)
+        ]
     elif wants_answer:
         answer = result.technique_answer
         assert answer is not None
         final = {
+            "note": note,
             "technique_answer": {
                 "text": answer.text,
                 "technique_refs": [
                     {"doc_id": ref.doc_id, "chunk_id": ref.chunk_id}
                     for ref in answer.technique_refs
                 ],
-                "attribution": [
-                    {
-                        "doc_id": row.get("doc_id"),
-                        "chunk_id": row.get("chunk_id"),
-                        "attribution_text": row.get("attribution_text"),
-                        "licence_url": row.get("licence_url"),
-                    }
-                    for row in technique_evidence
-                ],
-            }
+                "attribution": list(attribution),
+            },
         }
         if state_epicure_skip is not None:
             final["epicure_skip_reason"] = state_epicure_skip

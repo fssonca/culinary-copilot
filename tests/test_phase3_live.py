@@ -2268,3 +2268,29 @@ def test_projection_carries_per_turn_tokens() -> None:
     assert bare is not None
     assert bare["input_tokens"] is None
     assert bare["output_tokens"] is None
+
+
+def test_projection_carries_finish_review_keys() -> None:
+    project = live_run._project_trajectory_event
+    finished = project(
+        "agent_finished",
+        {
+            "note": "1 option(s) were removed because they failed source checks: Ghost.",
+            "model_note": "Two options for you",
+            "options": 2,
+            "epicure_lines": ["used pork: crisp contrast"],
+            "dropped_options": [{"index": 2}],
+            "single_option_reason": None,
+            "stop_reason": "agent_sufficient_evidence",
+            "input_tokens": 500,
+            "output_tokens": 60,
+        },
+    )
+    assert finished is not None
+    assert finished["note"].startswith("1 option(s) were removed")
+    assert finished["model_note"] == "Two options for you"
+    assert finished["epicure_lines"] == ["used pork: crisp contrast"]
+    assert finished["dropped_options"] == [{"index": 2}]
+    assert finished["single_option_reason"] is None
+    assert finished["input_tokens"] == 500
+    assert finished["output_tokens"] == 60

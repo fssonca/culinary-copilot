@@ -1260,7 +1260,11 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
         return {
             "type": event_type,
             "note": payload.get("note"),
+            "model_note": payload.get("model_note"),
             "options": payload.get("options"),
+            "epicure_lines": payload.get("epicure_lines"),
+            "dropped_options": payload.get("dropped_options"),
+            "single_option_reason": payload.get("single_option_reason"),
             "stop_reason": payload.get("stop_reason"),
             "stop": stop,
             "reason": reason,

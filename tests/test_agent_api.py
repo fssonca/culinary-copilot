@@ -321,6 +321,11 @@ def test_stream_success_shape(engine) -> None:
     assert final["stop_reason"] == "agent_sufficient_evidence"
     assert final["result"]["options"][0]["source_id"] == "curry-1"
     assert "next_action" not in final  # finals carry no next_action
+    result = final["result"]
+    assert isinstance(result["note"], str) and result["note"]
+    assert isinstance(result["epicure_lines"], list)
+    assert result.get("dropped_options", []) == []
+    assert result.get("epicure_degraded") is True  # Epicure disabled in this fixture
     seqs = [p["seq"] for _, p in events]
     assert seqs == sorted(seqs)
     # Stage events carry outcomes, never recipe text.

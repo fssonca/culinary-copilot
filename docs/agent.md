@@ -161,7 +161,17 @@ removed), and the next run substitutes (labelled `adaptation`,
   with Epicure consulted in the session — recorded as
   `direct_dish_request` — or when several were submitted but just one
   validates — recorded as `only_one_valid_candidate` with the dropped
-  ones reported). Every option passes deterministic
+  ones reported). Of several submitted options every valid one is
+  accepted; invalid options are never shown and every drop is reported
+  (rejection feedback names `option <index> ('<title>'
+  (<dataset_id>/<source_id>)): <error>`; zero valid options stays
+  rejected). When any option is dropped the client sees a server note
+  (`<n> option(s) were removed because they failed source checks:
+  <titles>.`) instead of the model note; the model note stays in the
+  finish event for review. The options final carries `note`,
+  `epicure_lines`, `epicure_degraded` / `epicure_skip_reason` when set,
+  and a `dropped_options` summary (`index`, `title`, `source_id`,
+  first `error`). Every option passes deterministic
   validators: IDs resolve via exact `(dataset_id, source_id)` lookup,
   stated quantities match the source, adaptations carry
   `label: "adaptation"`, and every hard session constraint appears in
@@ -181,8 +191,10 @@ removed), and the next run substitutes (labelled `adaptation`,
 - `technique_answer`: a technique-only answer (`text` 1–1200 chars plus
   1–5 `technique_refs`), valid only with allowlisted
   `simple_technique_question` (no pairing cue) or consulted Epicure.
-  The final carries `attribution_text` and `licence_url` per chunk (CC
-  BY-SA condition); stop reason `agent_sufficient_evidence`.
+  The final carries the model `note` and one attribution entry per
+  referenced document (`attribution_text`, `licence_url`; every chunk
+  stays listed under `technique_refs`); stop reason
+  `agent_sufficient_evidence`.
 - `plan`: `cooking_plan` (mise en place, steps, plating) from the
   selected source, with `scale_recipe` / `convert_units` results where
   asked. The plan source must equal the selected dish **and** come from
