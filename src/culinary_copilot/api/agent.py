@@ -13,7 +13,7 @@ one final or one error, and the error carries ``next_action``.
 - ``POST /api/v1/sessions/{id}/agent/stream`` runs the bounded loop as
   ``text/event-stream``: ``stage`` events carry concise step and tool
   outcomes (never recipe text or reasoning), then exactly one ``final``
-  (options/plan/question with source IDs) or one ``error``. A
+  (options/plan/technique_answer/question with source IDs) or one ``error``. A
   concurrent run on the same session gets 409 ``stale_revision``.
 """
 

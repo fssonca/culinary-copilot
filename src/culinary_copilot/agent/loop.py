@@ -277,6 +277,15 @@ class TechniqueRef(BaseModel):
     chunk_id: int = Field(ge=0)
 
 
+class TechniqueAnswer(BaseModel):
+    """A technique-only answer: prose plus citations actually returned."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=1200)
+    technique_refs: list[TechniqueRef] = Field(min_length=1, max_length=5)
+
+
 class PlanSource(BaseModel):
     """Closed plan-source model (strict function calling forbids the
     open ``dict[str, str]`` shape: every object needs
@@ -307,6 +316,7 @@ class FinishResult(BaseModel):
 
     options: list[FinishOption] | None = None
     plan: PlanPayload | None = None
+    technique_answer: TechniqueAnswer | None = None
 
 
 class EpicureLine(BaseModel):
@@ -611,6 +621,45 @@ def epicure_evidence(
     return False
 
 
+def _normalize_line_name(name: str) -> str:
+    """Line-ingredient comparison form: lowercase, underscores to spaces."""
+    return " ".join(str(name or "").strip().lower().replace("_", " ").split())
+
+
+def session_pairing_names(
+    store: PostgresSessionStore, session_id: str, run_lines: list[str] | None = None
+) -> list[str]:
+    """Returned Epicure pairing names for the session (deduped, in order).
+
+    Run-level ``pairing_lines`` carry full names; session
+    ``tool_call`` events carry the top names per call in
+    ``result_facts`` (resumed runs count).
+    """
+    names: list[str] = []
+    for entry in run_lines or []:
+        ingredient = entry.split("candidate ", 1)[-1].split(" (", 1)[0].strip()
+        if ingredient and ingredient not in names:
+            names.append(ingredient)
+    try:
+        events = store.list_events(session_id)
+    except Exception:
+        return names
+    for event in events:
+        if getattr(event, "event_type", "") != "tool_call":
+            continue
+        payload = getattr(event, "payload", None) or {}
+        if payload.get("tool") not in _PAIRING_TOOLS or payload.get("outcome") != "ok":
+            continue
+        facts = payload.get("result_facts")
+        rows = facts.get("names") if isinstance(facts, dict) else None
+        if isinstance(rows, list):
+            for row in rows:
+                label = str(row or "").strip()
+                if label and label not in names:
+                    names.append(label)
+    return names
+
+
 # --- model input -----------------------------------------------------------------
 
 
@@ -626,13 +675,24 @@ _TASK_FRAMING = (
     "simple_technique_question (a technique-only question with no pairing "
     "cue) or epicure_not_configured (Epicure is unavailable, and the "
     'answer is marked degraded). "finish" means 2-3 recipe options, each '
-    "fetched with get_recipe in this session; technique and pairing "
-    "questions answer the same way, adding technique_refs or epicure_lines. "
-    "A plan comes only after the user selects a dish; never move to plan "
-    "from discover or research. The typical path is one search, get_recipe "
-    "on the top 2-3, one Epicure query on the main base ingredient, then "
-    "finish; do not repeat a query listed in the evidence digest. "
-    "Quantities are copied exactly from get_recipe, or omitted."
+    "fetched with get_recipe in this session, plus epicure_lines for "
+    "pairing questions. Technique-only questions answer with "
+    "technique_answer, citing the chunks returned; no recipe options are "
+    "needed. A plan comes only after the user selects a dish; never move "
+    "to plan from discover or research. When a dish is selected, finish "
+    "with the cooking plan for it, not options. The typical path is one "
+    "search, get_recipe on the top 2-3, one Epicure query on the main "
+    "base ingredient, then finish; do not repeat a query listed in the "
+    "evidence digest. Quantities are copied exactly from get_recipe, or "
+    "omitted. constraints_honored lists each hard-constraint key exactly "
+    "(e.g. dietary_constraints), and every option must satisfy it. When "
+    "Epicure was consulted, finish with at least 1 epicure_line naming a "
+    "returned pairing (at least 3, or all returned pairings if fewer, "
+    "when the request has a pairing cue); skipped or degraded Epicure is "
+    "exempt. If no retrieved recipe is the requested dish or a close "
+    "match, ask one question offering a concrete alternative that was "
+    "found (e.g. a similar frozen dessert) instead of finishing with a "
+    "loosely related recipe."
 )
 
 
@@ -663,6 +723,7 @@ def build_turn_input(
     snapshot = {
         "phase": state.current_phase,
         "constraints": state.constraints,
+        "hard_constraints": dict(state.constraints or {}),
         "confirmed_answers": state.confirmed_answers[-10:],
         "unresolved_questions": state.unresolved_questions,
         "steps_remaining": state.steps_remaining,
@@ -1908,14 +1969,33 @@ async def _handle_finish(
         )
     wants_plan = result.plan is not None
     wants_options = result.options is not None
-    if wants_plan == wants_options:
+    wants_answer = result.technique_answer is not None
+    if sum((wants_plan, wants_options, wants_answer)) != 1:
         return await _validation_feedback(
             deps,
             store,
             session_id,
             state,
             revision,
-            ["finish needs exactly one of options or plan"],
+            ["finish needs exactly one of options, plan or technique_answer"],
+            validation_retries,
+            [],
+            None,
+            turn_usage,
+            final_turn=final_turn,
+        )
+    selected = state.selected_dish or {}
+    if selected and wants_options:
+        return await _validation_feedback(
+            deps,
+            store,
+            session_id,
+            state,
+            revision,
+            [
+                f"A dish is selected ({selected.get('dataset_id')}/"
+                f"{selected.get('source_id')}): return the cooking plan for it."
+            ],
             validation_retries,
             [],
             None,
@@ -1990,10 +2070,56 @@ async def _handle_finish(
                     "tool outcome in this session confirms it is unavailable"
                 )
         hard_keys = hard_constraint_keys(state.constraints)
-        honored_set = {str(h) for h in directive.constraints_honored}
+        honored = [str(h) for h in (directive.constraints_honored or [])]
+        session_keys = set((state.constraints or {}).keys())
+        for name in honored:
+            if name not in session_keys:
+                errors.append(
+                    f"constraints_honored {name!r} is not a session constraint "
+                    f"(session keys: {sorted(session_keys)}); put free-text "
+                    "claims in note instead"
+                )
+        honored_set = set(honored)
         for key in sorted(hard_keys):
             if key not in honored_set:
-                errors.append(f"dropped hard constraint: {key}")
+                errors.append(
+                    f"dropped hard constraint: {key} (list {key!r} in "
+                    "constraints_honored, and every option must satisfy it)"
+                )
+        consulted = has_evidence and effective_skip is None
+        if consulted:
+            # Epicure evaluation must be visible: the finish evaluates
+            # returned pairings with model lines. Skipped or degraded
+            # Epicure is exempt; the check only runs when returned
+            # names are verifiable in this session.
+            returned_names = session_pairing_names(store, session_id, pairing_lines)
+            if returned_names:
+                known = {_normalize_line_name(n) for n in returned_names}
+                for line in directive.epicure_lines:
+                    if _normalize_line_name(line.ingredient) not in known:
+                        errors.append(
+                            f"epicure line {line.ingredient!r} was not returned "
+                            "by Epicure in this session; use a returned pairing name"
+                        )
+                cue = pairing_cue_in(
+                    effective_request_text(
+                        getattr(deps, "request_text", None),
+                        user_messages_from_events(store, session_id),
+                    )
+                )
+                minimum = min(3 if cue is not None else 1, len(returned_names))
+                if len(directive.epicure_lines) < minimum:
+                    if cue is not None:
+                        errors.append(
+                            "Epicure consulted and the request has a pairing cue "
+                            f"({cue!r}): finish needs at least {minimum} epicure_lines "
+                            "naming returned pairings"
+                        )
+                    else:
+                        errors.append(
+                            "Epicure consulted in this session: finish needs at "
+                            "least 1 epicure_line naming a returned pairing"
+                        )
         # Per-option validation, then the single-answer rule (P3-A-02):
         # one submitted option is accepted only with Epicure consulted
         # in this session (direct dish request, Epicure still queried);
@@ -2045,6 +2171,63 @@ async def _handle_finish(
             state_epicure_skip = None
             options_dump = None
         epicure_degraded = effective_skip == "epicure_not_configured" and not errors
+    elif wants_answer:
+        answer = result.technique_answer
+        assert answer is not None
+        auto_skip = skip_reason is None and (
+            not epicure_enabled or _all_pairing_excluded(store, session_id, deps)
+        )
+        effective_skip = skip_reason or ("epicure_not_configured" if auto_skip else None)
+        if effective_skip == "simple_technique_question":
+            cue = pairing_cue_in(
+                effective_request_text(
+                    getattr(deps, "request_text", None),
+                    user_messages_from_events(store, session_id),
+                )
+            )
+            if cue is not None:
+                errors.append(
+                    "simple_technique_question refused: the request asks for a "
+                    f"pairing ({cue!r}); query Epicure instead"
+                )
+        elif not (has_evidence and effective_skip is None):
+            errors.append(
+                "technique_answer needs Epicure consulted in this session or "
+                "allowlisted simple_technique_question (skipped or degraded "
+                "Epicure answers with options instead)"
+            )
+        else:
+            returned_names = session_pairing_names(store, session_id, pairing_lines)
+            if returned_names:
+                known = {_normalize_line_name(n) for n in returned_names}
+                for line in directive.epicure_lines:
+                    if _normalize_line_name(line.ingredient) not in known:
+                        errors.append(
+                            f"epicure line {line.ingredient!r} was not returned "
+                            "by Epicure in this session; use a returned pairing name"
+                        )
+                cue = pairing_cue_in(
+                    effective_request_text(
+                        getattr(deps, "request_text", None),
+                        user_messages_from_events(store, session_id),
+                    )
+                )
+                minimum = min(3 if cue is not None else 1, len(returned_names))
+                if len(directive.epicure_lines) < minimum:
+                    errors.append(
+                        "Epicure consulted in this session: technique_answer needs "
+                        f"at least {minimum} epicure_lines naming returned pairings"
+                    )
+        submitted_refs = [ref.model_dump() for ref in answer.technique_refs]
+        technique_resolver = deps.technique_resolver or _engine_technique_resolver(deps)
+        ref_errors, technique_evidence = validate_technique_refs(
+            submitted_refs,
+            resolve_technique=technique_resolver,
+            returned=returned_technique_chunks if returned_technique_chunks is not None else set(),
+        )
+        errors.extend(ref_errors)
+        state_epicure_skip = effective_skip
+        epicure_degraded = False
     else:
         plan_dump = result.plan.model_dump() if result.plan else {}
         errors.extend(
@@ -2115,6 +2298,43 @@ async def _handle_finish(
             "dropped_options": dropped_options,
             **(turn_usage or {}),
         }
+    elif wants_answer:
+        # A technique-only answer: prose plus citations actually
+        # returned, with attribution per chunk (CC BY-SA condition).
+        answer = result.technique_answer
+        assert answer is not None
+        attribution = [
+            {
+                "doc_id": row.get("doc_id"),
+                "chunk_id": row.get("chunk_id"),
+                "attribution_text": row.get("attribution_text"),
+                "licence_url": row.get("licence_url"),
+            }
+            for row in technique_evidence
+        ]
+
+        def _apply(snapshot: Any) -> Any:
+            snapshot.evidence = list(snapshot.evidence) + [
+                {
+                    "type": "technique_answer",
+                    "sources": list(attribution),
+                }
+            ]
+            if has_evidence:
+                snapshot.epicure_outcome = (
+                    f"consulted:{len(pairing_lines)} technique_answer:{len(attribution)}"
+                )
+            snapshot.epicure_skip_reason = state_epicure_skip
+            snapshot.current_phase = target
+            snapshot.steps_remaining = max(0, snapshot.steps_remaining - 1)
+            return snapshot
+
+        event_payload = {
+            "note": note,
+            "technique_refs": len(attribution),
+            "epicure_skip_reason": state_epicure_skip,
+            **(turn_usage or {}),
+        }
     else:
         assert result.plan is not None
         plan_dump = result.plan.model_dump()
@@ -2172,7 +2392,7 @@ async def _handle_finish(
         ) from exc
     await _emit(deps, "finished", {"stop_reason": REASON_AGENT_SUFFICIENT})
     plan_payload = result.plan
-    assert plan_payload is not None or wants_options
+    assert plan_payload is not None or wants_options or wants_answer
     final: dict[str, Any]
     if wants_options:
         final = {"options": options_dump}
@@ -2183,6 +2403,29 @@ async def _handle_finish(
         if state_epicure_skip is not None:
             final["epicure_skip_reason"] = state_epicure_skip
         final["constraints_honored"] = list(directive.constraints_honored or [])
+    elif wants_answer:
+        answer = result.technique_answer
+        assert answer is not None
+        final = {
+            "technique_answer": {
+                "text": answer.text,
+                "technique_refs": [
+                    {"doc_id": ref.doc_id, "chunk_id": ref.chunk_id}
+                    for ref in answer.technique_refs
+                ],
+                "attribution": [
+                    {
+                        "doc_id": row.get("doc_id"),
+                        "chunk_id": row.get("chunk_id"),
+                        "attribution_text": row.get("attribution_text"),
+                        "licence_url": row.get("licence_url"),
+                    }
+                    for row in technique_evidence
+                ],
+            }
+        }
+        if state_epicure_skip is not None:
+            final["epicure_skip_reason"] = state_epicure_skip
     else:
         final = {"plan": plan_payload.model_dump() if plan_payload else {}}
     return AgentRunResult(
@@ -2335,6 +2578,8 @@ __all__ = [
     "FinishResult",
     "PlanPayload",
     "QuantityClaim",
+    "TechniqueAnswer",
+    "TechniqueRef",
     "build_turn_input",
     "effective_request_text",
     "epicure_evidence",

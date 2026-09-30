@@ -129,7 +129,13 @@ is refused when the request contains a pairing cue ("goes with",
 tool outcome in the session confirms it, and is recorded as degraded
 mode (`epicure_degraded` in the final and the finish event). When
 Epicure is disabled or all pairing tools are not-configured, the loop
-records `epicure_not_configured` itself. Each suggestion gets one
+records `epicure_not_configured` itself. When the session has
+successful Epicure results, a finish with options needs at least 1
+model line naming a returned pairing (at least 3, or all returned
+pairings if fewer, when the request has a pairing cue); each line's
+ingredient must be a returned pairing name (compared lowercase,
+underscores as spaces). Skipped or degraded Epicure is exempt. Each
+suggestion gets one
 recorded line (`used …` / `rejected …`); the outcome
 (`consulted/used/rejected`) or skip reason is stored in
 `epicure_outcome` / `epicure_skip_reason`. The directive may carry one
@@ -159,7 +165,9 @@ removed), and the next run substitutes (labelled `adaptation`,
   validators: IDs resolve via exact `(dataset_id, source_id)` lookup,
   stated quantities match the source, adaptations carry
   `label: "adaptation"`, and every hard session constraint appears in
-  `constraints_honored`. Evidence rule (P3-A-01): every option's pair
+  `constraints_honored`. `constraints_honored` accepts only keys from
+  the session's constraints (e.g. `dietary_constraints`); free-text
+  claims go in `note`. Evidence rule (P3-A-01): every option's pair
   must have been returned by a successful `search_recipes` /
   `get_recipe` call in this session's events (resumed runs count;
   dataset-qualified; failures and other sessions do not count), and
@@ -167,7 +175,14 @@ removed), and the next run substitutes (labelled `adaptation`,
   Stored in `suggestions` (+ source refs in
   `evidence`).
 - `select`: `POST …/select` stores the user's pick from the offered
-  options (CAS to `selected_dish`, phase `select`).
+  options (CAS to `selected_dish`, phase `select`). Once a dish is
+  selected, a finish must be the cooking plan for it: options are
+  rejected with validation feedback.
+- `technique_answer`: a technique-only answer (`text` 1–1200 chars plus
+  1–5 `technique_refs`), valid only with allowlisted
+  `simple_technique_question` (no pairing cue) or consulted Epicure.
+  The final carries `attribution_text` and `licence_url` per chunk (CC
+  BY-SA condition); stop reason `agent_sufficient_evidence`.
 - `plan`: `cooking_plan` (mise en place, steps, plating) from the
   selected source, with `scale_recipe` / `convert_units` results where
   asked. The plan source must equal the selected dish **and** come from

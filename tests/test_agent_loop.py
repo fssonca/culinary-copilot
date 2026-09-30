@@ -575,13 +575,21 @@ def test_epicure_lines_derived_prefix(engine) -> None:
                     ),
                 ],
             ),
-            ("parsed", _finish_options(_two_opts())),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
         ]
     )
     _run(run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True))))
     finished = [e for e in store.list_events(state.id) if e.event_type == "agent_finished"][0]
     assert finished.payload["epicure_lines"]
-    assert all(line.startswith("derived:") for line in finished.payload["epicure_lines"])
+    assert any(line.startswith("derived:") for line in finished.payload["epicure_lines"])
 
 
 def test_single_option_survivor_recorded(engine) -> None:
@@ -781,7 +789,10 @@ def test_sufficient_evidence_flow(engine) -> None:
                                 }
                             ],
                         ),
-                    ]
+                    ],
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
                 ),
             ),
         ]
@@ -1212,7 +1223,15 @@ def test_epicure_required_when_enabled(engine) -> None:
                     ),
                 ],
             ),
-            ("parsed", _finish_options(_two_opts())),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
         ]
     )
     deps = _deps(store, provider, settings=_settings(epicure_enabled=True))
@@ -1409,7 +1428,15 @@ def test_prompt_framing_and_injection_ignored(engine) -> None:
                     epicure_skip_reason="simple_technique_question",
                 ),
             ),
-            ("parsed", _finish_options([_opt()])),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt()],
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
         ]
     )
     result = _run(
@@ -1441,7 +1468,15 @@ def test_plan_finish_after_select(engine) -> None:
                     ("c3", "find_balanced_pairings", {"ingredient": "chicken"}),
                 ],
             ),
-            ("parsed", _finish_options([_opt()])),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt()],
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
         ]
     )
     _run(run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True))))
@@ -1510,7 +1545,10 @@ def test_direct_dish_single_option_with_epicure(engine) -> None:
                                 {"ingredient": "red lentils", "amount": "200", "unit": "g"}
                             ],
                         )
-                    ]
+                    ],
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
                 ),
             ),
         ]
@@ -2313,3 +2351,372 @@ def test_evidence_digest_bounded_and_newest_first(engine) -> None:
     assert len(digest) <= 1500
     assert "dish number 119" in digest
     assert "dish number 000" not in digest
+
+
+def _tech_answer(text: str, refs: list[dict[str, Any]], **kw: Any) -> dict[str, Any]:
+    directive: dict[str, Any] = {
+        "decision": "finish",
+        "move_to": "recommend",
+        "result": {"technique_answer": {"text": text, "technique_refs": refs}},
+        "constraints_honored": [],
+        "note": "test technique answer",
+    }
+    directive.update(kw)
+    return directive
+
+
+def _tech_row(doc_id: str = "tech-egg-1", chunk_id: int = 0) -> dict[str, Any]:
+    return {
+        "doc_id": doc_id,
+        "chunk_id": chunk_id,
+        "title": "Boiled egg",
+        "url": "https://example.test/egg",
+        "licence": "CC-BY-SA-4.0",
+        "licence_url": "https://example.test/licence",
+        "attribution_text": "Egg corpus (CC BY-SA 4.0)",
+    }
+
+
+def _tech_search(rows: list[dict[str, Any]]):  # type: ignore[no-untyped-def]
+    def _impl(args: Any, context: Any) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "mode_ran": "fulltext",
+            "match": "all",
+            "cost_class": "free",
+            "results": list(rows),
+        }
+
+    return _impl
+
+
+def test_options_after_select_rejected_then_plan_accepted(engine) -> None:
+    from culinary_copilot.agent.loop import record_select
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    ("c3", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt()],
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
+        ]
+    )
+    _run(run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True))))
+    mid = store.get(state.id)
+    assert mid is not None
+    selected = record_select(
+        store,
+        state.id,
+        expected_revision=mid.revision,
+        dataset_id="odunola/foodie",
+        source_id="curry-1",
+    )
+    assert selected.current_phase == "select"
+    plan = {
+        "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+        "mise_en_place": ["chop chicken"],
+        "steps": ["cook curry", "serve"],
+        "plating": "in a bowl",
+    }
+    provider2 = ScriptedProvider(
+        [
+            ("parsed", _finish_options([_opt()])),
+            (
+                "parsed",
+                {
+                    "decision": "finish",
+                    "move_to": "plan",
+                    "result": {"plan": plan},
+                    "constraints_honored": [],
+                    "note": "plan from selected source",
+                },
+            ),
+        ]
+    )
+    result2 = _run(run_agent(state.id, deps=_deps(store, provider2)))
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert result2.phase == "plan"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert rejects[0].payload["errors"] == [
+        "A dish is selected (odunola/foodie/curry-1): return the cooking plan for it."
+    ]
+
+
+def test_constraints_honored_rejects_free_text_and_names_missing_key(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store, constraints={"dietary_constraints": ["vegetarian"]})
+    provider = ScriptedProvider(
+        [
+            _retrieval_turn(),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    constraints_honored=["Avoided yogurt-based chicken styles"],
+                ),
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(), constraints_honored=["dietary_constraints"]
+                ),
+            ),
+        ]
+    )
+    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    assert result.final.get("constraints_honored") == ["dietary_constraints"]
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    errors = rejects[0].payload["errors"]
+    assert any("not a session constraint" in e and "note instead" in e for e in errors)
+    assert any(
+        "dropped hard constraint: dietary_constraints" in e and "every option must satisfy it" in e
+        for e in errors
+    )
+
+
+def test_pairing_cue_requires_three_lines(engine) -> None:
+    class _ThreePairCore:
+        def __init__(self) -> None:
+            self.settings = _settings(epicure_enabled=True)
+
+        def find_balanced_pairings(self, ingredient: str, k: int = 5):  # type: ignore[no-untyped-def]
+            from culinary_copilot.tools.epicure import Pairing
+
+            pairs = [("pork", 0.5), ("beef", 0.4), ("garlic", 0.3)]
+            return [Pairing(ingredient=n, score=s) for n, s in pairs[:k]]
+
+    def _lines(*names: str) -> list[dict[str, Any]]:
+        return [{"ingredient": n, "decision": "used", "reason": "roast match"} for n in names]
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "roast chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(_two_opts_no_quantities(), epicure_lines=_lines("pork", "beef")),
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(), epicure_lines=_lines("pork", "beef", "garlic")
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        epicure_core=_ThreePairCore(),
+        request_text="Chicken pairings for a roast.",
+    )
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert any("at least 3 epicure_lines" in e for e in rejects[0].payload["errors"])
+
+
+def test_unknown_epicure_line_ingredient_rejected(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "roast chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "unicorn", "decision": "used", "reason": "mythic"}
+                    ],
+                ),
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                ),
+            ),
+        ]
+    )
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert any("unicorn" in e and "was not returned" in e for e in rejects[0].payload["errors"])
+
+
+def test_technique_answer_accepted_with_attribution(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            ("tools", [("c1", "search_techniques", {"query": "how to boil an egg"})]),
+            (
+                "parsed",
+                _tech_answer(
+                    "Simmer eggs 6 minutes, then ice bath.",
+                    [{"doc_id": "tech-egg-1", "chunk_id": 0}],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"search_techniques": _tech_search([_tech_row()])},
+        request_text="How do I boil an egg?",
+    )
+    deps.technique_resolver = lambda doc_id, chunk_id: dict(_tech_row(doc_id, chunk_id))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    answered = result.final.get("technique_answer")
+    assert answered is not None
+    assert answered["text"] == "Simmer eggs 6 minutes, then ice bath."
+    assert answered["technique_refs"] == [{"doc_id": "tech-egg-1", "chunk_id": 0}]
+    assert answered["attribution"] == [
+        {
+            "doc_id": "tech-egg-1",
+            "chunk_id": 0,
+            "attribution_text": "Egg corpus (CC BY-SA 4.0)",
+            "licence_url": "https://example.test/licence",
+        }
+    ]
+    assert result.final.get("epicure_skip_reason") == "simple_technique_question"
+    assert "options" not in result.final and "plan" not in result.final
+
+
+def test_technique_answer_unreturned_chunk_rejected(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            ("tools", [("c1", "search_techniques", {"query": "how to boil an egg"})]),
+            (
+                "parsed",
+                _tech_answer(
+                    "Mystery method.",
+                    [{"doc_id": "tech-other-9", "chunk_id": 3}],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+            (
+                "parsed",
+                _tech_answer(
+                    "Simmer eggs 6 minutes, then ice bath.",
+                    [{"doc_id": "tech-egg-1", "chunk_id": 0}],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"search_techniques": _tech_search([_tech_row()])},
+        request_text="How do I boil an egg?",
+    )
+    deps.technique_resolver = lambda doc_id, chunk_id: dict(_tech_row(doc_id, chunk_id))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert any("was not returned in this session" in e for e in rejects[0].payload["errors"])
+
+
+def test_technique_answer_pairing_cue_refused(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            ("tools", [("c1", "search_techniques", {"query": "egg sides"})]),
+            (
+                "parsed",
+                _tech_answer(
+                    "Serve with toast.",
+                    [{"doc_id": "tech-egg-1", "chunk_id": 0}],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+            ("parsed", _finish_options(_two_opts_no_quantities())),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"search_techniques": _tech_search([_tech_row()])},
+        request_text="What goes with roast chicken?",
+    )
+    deps.technique_resolver = lambda doc_id, chunk_id: dict(_tech_row(doc_id, chunk_id))
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(run_agent(state.id, deps=deps))
+    assert excinfo.value.reason == "agent_validation_failed"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert any("simple_technique_question refused" in e for e in rejects[0].payload["errors"])

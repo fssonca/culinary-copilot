@@ -1,0 +1,169 @@
+{
+  "version": "live-scenarios-v2-2026-09-30",
+  "note": "Owner-approved 2026-09-30: self-contained scripted answers, technique_answer kind, roast min_epicure_lines 3; question_contains removed.",
+  "scenarios": [
+    {
+      "key": "live-chicken-dinner",
+      "title": "Chicken dinner, full flow to plan",
+      "request": "I want a chicken dinner for tonight, about 30 minutes.",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [],
+      "flow": [
+        "recommend",
+        "select-first",
+        "plan"
+      ],
+      "fake_flow": "full",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "epicure": "consulted",
+        "min_options": 2,
+        "plan": true
+      }
+    },
+    {
+      "key": "live-yogurt-ask",
+      "title": "Yogurt ask-and-resume",
+      "request": "Something with chicken; I might have yogurt.",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [
+        {
+          "question_id": "q-yogurt",
+          "answer": "No, I don't have yogurt."
+        }
+      ],
+      "flow": [
+        "recommend-ask",
+        "resume"
+      ],
+      "fake_flow": "ask",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "epicure": "consulted",
+        "min_options": 2,
+        "plan": false
+      }
+    },
+    {
+      "key": "live-direct-lentil",
+      "title": "Direct lentil request, Epicure consulted",
+      "request": "Give me the red lentil soup recipe.",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [],
+      "flow": [
+        "recommend"
+      ],
+      "fake_flow": "direct",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "epicure": "consulted",
+        "min_options": 1,
+        "plan": false
+      }
+    },
+    {
+      "key": "live-vegetarian-conflict",
+      "title": "Vegetarian constraint honored",
+      "request": "Vegetarian dinner, something hearty.",
+      "session": {
+        "constraints": {
+          "dietary_constraints": [
+            "vegetarian"
+          ]
+        }
+      },
+      "settings": {},
+      "scripted_answers": [],
+      "flow": [
+        "recommend"
+      ],
+      "fake_flow": "direct",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "epicure": "consulted",
+        "min_options": 1,
+        "plan": false
+      }
+    },
+    {
+      "key": "live-empty-retrieval",
+      "title": "Empty retrieval asks with a concrete choice",
+      "request": "Dragonfruit souffl\u00e9 glac\u00e9.",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [],
+      "flow": [
+        "recommend-ask"
+      ],
+      "fake_flow": "empty",
+      "expected": {
+        "stop_reason": "agent_needs_user_input",
+        "epicure": "consulted",
+        "min_options": 0,
+        "plan": false
+      }
+    },
+    {
+      "key": "live-epicure-unavailable",
+      "title": "Epicure unavailable is degraded, not silent",
+      "request": "Chicken pairings for a roast.",
+      "session": {},
+      "settings": {
+        "epicure_enabled": false
+      },
+      "scripted_answers": [],
+      "flow": [
+        "recommend"
+      ],
+      "fake_flow": "degraded",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "epicure": "degraded",
+        "min_options": 2,
+        "plan": false
+      }
+    },
+    {
+      "key": "live-technique-question",
+      "title": "Pure technique question skips Epicure",
+      "request": "How do I boil an egg?",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [],
+      "flow": [
+        "recommend"
+      ],
+      "fake_flow": "technique",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "epicure": "skip:simple_technique_question",
+        "kind": "technique_answer",
+        "min_options": 0,
+        "plan": false
+      }
+    },
+    {
+      "key": "live-roast-pairing",
+      "title": "Pairing request consults Epicure",
+      "request": "Chicken pairings for a roast.",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [],
+      "flow": [
+        "recommend"
+      ],
+      "fake_flow": "direct",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "epicure": "consulted",
+        "min_options": 1,
+        "plan": false,
+        "min_epicure_lines": 3
+      }
+    }
+  ],
+  "freeze_sha256": "dedb374368aa5b4a70e773fb27344c50ac6ea911343937f08ff7e1004146e289"
+}

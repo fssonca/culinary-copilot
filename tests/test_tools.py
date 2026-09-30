@@ -1183,6 +1183,7 @@ def test_epicure_normalization_order_and_queried_as() -> None:
         "roast chicken": "chicken",
         "lentil": "lentil",
         "olive oil": "olive_oil",
+        "extra virgin olive oil": "olive_oil",
     }
     for name in (
         "find_balanced_pairings",

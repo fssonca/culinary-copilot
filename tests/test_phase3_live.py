@@ -535,6 +535,9 @@ def test_first_attempt_vs_after_retry_reported(engine, tmp_path: Path) -> None:
                             }
                         ]
                     },
+                    "epicure_lines": [
+                        {"ingredient": "pork", "decision": "used", "reason": "fake match"}
+                    ],
                     "constraints_honored": [],
                     "note": "good attempt",
                 },
@@ -1655,6 +1658,7 @@ def _invented_ask_turns() -> list[Any]:
             ]
         },
         "constraints_honored": [],
+        "epicure_lines": [{"ingredient": "pork", "decision": "used", "reason": "fake match"}],
         "note": "good finish",
     }
     ask = {
@@ -2132,6 +2136,18 @@ def test_scenario_filter_and_attempts_recorded(
     assert [s["key"] for s in summary["scenarios"]] == ["live-direct-lentil"]
     assert summary["scenario_keys"] == ["live-direct-lentil"]
     assert summary["max_attempts"] == 1
+    assert summary["scenarios_file"].endswith("live_scenarios_v2.json")
+    assert (
+        summary["scenarios_sha256"]
+        == (
+            live_run.load_scenarios(
+                Path(__file__).resolve().parents[1]
+                / "evals"
+                / "phase3_agent"
+                / "live_scenarios_v2.json"
+            )["freeze_sha256"]
+        )
+    )
     entry = summary["scenarios"][0]
     assert entry["stop_reason"] == "agent_sufficient_evidence"
     assert entry["expected_stop_matched"] is True
@@ -2152,3 +2168,103 @@ def test_max_attempts_rejects_three(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as excinfo:
         live_run.main(["--fake", "--max-attempts", "3"])
     assert excinfo.value.code == 2
+
+
+def test_grader_requires_plan_when_expected(engine) -> None:
+    from culinary_copilot.domain.sessions import SessionState
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    store = PostgresSessionStore(engine)
+    state = store.create(SessionState(id="ses-grade-plan"))
+    # Attempt-7 chicken shape: options final, plan expected.
+    scenario = _live_scenario(
+        expected={
+            "stop_reason": "agent_sufficient_evidence",
+            "epicure": "consulted",
+            "min_options": 2,
+            "plan": True,
+        }
+    )
+    options_final = {
+        "options": [
+            {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+            {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+        ]
+    }
+    grades = live_run.grade_attempt(
+        scenario, options_final, "agent_sufficient_evidence", store, state.id
+    )
+    assert grades["termination"] is True
+    assert grades["task_completion"] is False
+    plan_final = {"plan": {"source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"}}}
+    free = _live_scenario(
+        expected={"stop_reason": "agent_sufficient_evidence", "min_options": 0, "plan": True}
+    )
+    grades = live_run.grade_attempt(free, plan_final, "agent_sufficient_evidence", store, state.id)
+    assert grades["task_completion"] is True
+
+
+def test_grader_requires_technique_answer_kind(engine) -> None:
+    from culinary_copilot.domain.sessions import SessionState
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    store = PostgresSessionStore(engine)
+    state = store.create(SessionState(id="ses-grade-kind"))
+    scenario = _live_scenario(
+        expected={
+            "stop_reason": "agent_sufficient_evidence",
+            "epicure": "skip:simple_technique_question",
+            "kind": "technique_answer",
+            "min_options": 0,
+            "plan": False,
+        }
+    )
+    answered = {"technique_answer": {"text": "Simmer.", "technique_refs": [], "attribution": []}}
+    grades = live_run.grade_attempt(
+        scenario, answered, "agent_sufficient_evidence", store, state.id
+    )
+    assert grades["task_completion"] is True
+    options_only = {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1"}]}
+    grades = live_run.grade_attempt(
+        scenario, options_only, "agent_sufficient_evidence", store, state.id
+    )
+    assert grades["task_completion"] is False
+
+
+def test_grader_enforces_epicure_lines_minimum(engine) -> None:
+    from culinary_copilot.domain.sessions import SessionState
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    store = PostgresSessionStore(engine)
+    state = store.create(SessionState(id="ses-grade-lines"))
+    scenario = _live_scenario(
+        expected={
+            "stop_reason": "agent_sufficient_evidence",
+            "epicure": "consulted",
+            "min_options": 0,
+            "plan": False,
+            "min_epicure_lines": 3,
+        }
+    )
+    final: dict[str, Any] = {"options": []}
+    store.append_event(state.id, "agent_finished", {"note": "n", "epicure_lines": ["a", "b"]})
+    grades = live_run.grade_attempt(scenario, final, "agent_sufficient_evidence", store, state.id)
+    assert grades["task_completion"] is False
+    store.append_event(state.id, "agent_finished", {"note": "n", "epicure_lines": ["a", "b", "c"]})
+    grades = live_run.grade_attempt(scenario, final, "agent_sufficient_evidence", store, state.id)
+    assert grades["task_completion"] is True
+
+
+def test_projection_carries_per_turn_tokens() -> None:
+    project = live_run._project_trajectory_event
+    tool = project(
+        "tool_call",
+        {"tool": "search_recipes", "outcome": "ok", "input_tokens": 120, "output_tokens": 8},
+    )
+    assert tool is not None
+    assert tool["input_tokens"] == 120
+    assert tool["output_tokens"] == 8
+    bare = project("agent_step", {"note": "n"})
+    assert bare is not None
+    assert bare["input_tokens"] is None
+    assert bare["output_tokens"] is None

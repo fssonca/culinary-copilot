@@ -107,14 +107,20 @@ def ingredient_candidates(ingredient: str) -> list[str]:
     """Ordered normalization candidates for one raw ingredient string.
 
     a. lowercase/trim with spaces and hyphens as underscores; b. the
-    simple singular form; c. the last token, then the first token,
-    each singularized. Duplicates dropped, order kept.
+    simple singular form; c. the last two tokens joined (then
+    singularized); d. the last token, then the first token, each
+    singularized. Duplicates dropped, order kept.
     """
     basic = _basic_form(ingredient)
     out: list[str] = []
     forms = [basic, "_".join(_singularize(t) for t in basic.split("_"))]
     tokens = basic.split("_")
-    if tokens:
+    if len(tokens) >= 2:
+        last_two = tokens[-2:]
+        forms.append("_".join(last_two))
+        forms.append("_".join(_singularize(t) for t in last_two))
+        forms.extend([_singularize(tokens[-1]), _singularize(tokens[0])])
+    elif tokens:
         forms.extend([_singularize(tokens[-1]), _singularize(tokens[0])])
     for form in forms:
         if form and form not in out:

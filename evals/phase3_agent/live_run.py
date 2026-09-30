@@ -51,7 +51,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 EVALS_DIR = REPO_ROOT / "evals" / "phase3_agent"
-DEFAULT_SCENARIOS = EVALS_DIR / "live_scenarios.json"
+DEFAULT_SCENARIOS = EVALS_DIR / "live_scenarios_v2.json"
 DEFAULT_RAW_DIR = REPO_ROOT / "data" / "phase3-live"
 LIVE_SUMMARY = EVALS_DIR / "live-summary.json"
 SPEND_HISTORY = DEFAULT_RAW_DIR / "spend-history.json"
@@ -744,6 +744,22 @@ def preflight(
 # --- grading -------------------------------------------------------------------
 
 
+def _finish_epicure_lines(store: Any, session_id: str) -> int:
+    """Epicure lines recorded on the last finish event (0 when none)."""
+    try:
+        events = store.list_events(session_id)
+    except Exception:
+        return 0
+    count = 0
+    for event in events:
+        if getattr(event, "event_type", "") == "agent_finished":
+            payload = getattr(event, "payload", None) or {}
+            lines = payload.get("epicure_lines")
+            if isinstance(lines, list):
+                count = len(lines)
+    return count
+
+
 def grade_attempt(
     scenario: dict[str, Any],
     final: dict[str, Any] | None,
@@ -774,10 +790,23 @@ def grade_attempt(
             options = []
     plan = (final or {}).get("plan")
     question = (final or {}).get("question") or {}
-    empty_run = not options and not plan and not question
-    grades["task_completion"] = stop_reason == expected.get("stop_reason") and (
-        len(options) >= int(expected.get("min_options", 0))
-    )
+    technique_answer = (final or {}).get("technique_answer") or {}
+    empty_run = not options and not plan and not question and not technique_answer
+    termination_ok = stop_reason == expected.get("stop_reason")
+    options_ok = len(options) >= int(expected.get("min_options", 0))
+    plan_ok = True
+    if expected.get("plan"):
+        # A plan run that ends on options (e.g. attempt-7 chicken)
+        # answered without the requested cooking plan.
+        plan_ok = bool(plan)
+    answer_ok = True
+    if expected.get("kind") == "technique_answer":
+        answer_ok = bool(technique_answer)
+    lines_ok = True
+    min_lines = int(expected.get("min_epicure_lines", 0) or 0)
+    if min_lines:
+        lines_ok = _finish_epicure_lines(store, session_id) >= min_lines
+    grades["task_completion"] = termination_ok and options_ok and plan_ok and answer_ok and lines_ok
     grades["termination"] = stop_reason == expected.get("stop_reason")
     hard = set((scenario.get("session", {}).get("constraints") or {}).keys())
     honored = set((final or {}).get("constraints_honored") or [])
@@ -930,6 +959,11 @@ class FakeRunProvider:
             "adaptations": [],
         }
 
+    def _lines(self) -> list[dict[str, Any]]:
+        # The fake Epicure core always returns pork: consulted fake
+        # finishes evaluate it, like a real model would have to.
+        return [{"ingredient": "pork", "decision": "used", "reason": "fake roast match"}]
+
     async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
         self.calls += 1
         flow = self.scenario.get("fake_flow", "direct")
@@ -955,7 +989,8 @@ class FakeRunProvider:
                             "Red Lentil Soup",
                             [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
                         ),
-                    ]
+                    ],
+                    epicure_lines=self._lines(),
                 )
             return self._parsed(
                 {
@@ -1010,7 +1045,8 @@ class FakeRunProvider:
                         "Red Lentil Soup",
                         [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
                     ),
-                ]
+                ],
+                epicure_lines=self._lines(),
             )
         if flow == "empty":
             if self.calls == 1:
@@ -1077,7 +1113,8 @@ class FakeRunProvider:
                     "Red Lentil Soup",
                     [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
                 )
-            ]
+            ],
+            epicure_lines=self._lines(),
         )
 
 
@@ -1167,32 +1204,47 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
     """One session event, trimmed for review (no prompts or secrets).
 
     Every projected event carries ``stop``/``reason`` (the payload's
-    ``stop_reason``/``reason`` when present, else None); validation
-    rejects carry their error list bounded to 5 x 300 characters.
+    ``stop_reason``/``reason`` when present, else None) plus the
+    per-turn ``input_tokens``/``output_tokens`` (None when the event
+    carries no usage); validation rejects carry their error list
+    bounded to 5 x 300 characters.
     """
     stop = payload.get("stop_reason")
     reason = payload.get("reason")
+    usage = {
+        "input_tokens": payload.get("input_tokens"),
+        "output_tokens": payload.get("output_tokens"),
+    }
     if event_type == "tool_call":
         projected = {
             "type": event_type,
             **{k: payload.get(k) for k in _TRAJECTORY_TOOL_KEYS},
         }
         projected.setdefault("stop", stop)
+        projected.update(usage)
         return projected
     if event_type == "provider_error":
         return {
             "type": event_type,
             **{k: payload.get(k) for k in _TRAJECTORY_ERROR_KEYS},
             "stop": stop,
+            **usage,
         }
     if event_type == "agent_step":
-        return {"type": event_type, "note": payload.get("note"), "stop": stop, "reason": reason}
+        return {
+            "type": event_type,
+            "note": payload.get("note"),
+            "stop": stop,
+            "reason": reason,
+            **usage,
+        }
     if event_type == "agent_validation_reject":
         return {
             "type": event_type,
             "errors": [str(e)[:300] for e in (payload.get("errors") or [])[:5]],
             "stop": stop,
             "reason": reason,
+            **usage,
         }
     if event_type == "agent_question":
         return {
@@ -1202,6 +1254,7 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
             "question_options": payload.get("question_options"),
             "stop": stop,
             "reason": reason,
+            **usage,
         }
     if event_type == "agent_finished":
         return {
@@ -1211,6 +1264,7 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
             "stop_reason": payload.get("stop_reason"),
             "stop": stop,
             "reason": reason,
+            **usage,
         }
     if event_type in ("agent_answer", "agent_select"):
         return {
@@ -1218,6 +1272,7 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
             **{k: v for k, v in payload.items() if k != "answer"},
             "stop": stop,
             "reason": reason,
+            **usage,
         }
     return None
 
@@ -1321,11 +1376,12 @@ _CONFIG_ERROR_STOPS = frozenset({"generation_disabled"})
 
 
 def _final_answered(final: dict[str, Any] | None) -> bool:
-    """True when the run produced an answer: options, a plan, or an
-    accepted final (a clarifying question the owner can answer)."""
+    """True when the run produced an answer: options, a plan, a
+    technique answer, or an accepted final (a clarifying question the
+    owner can answer)."""
     if not isinstance(final, dict):
         return False
-    if final.get("options") or final.get("plan"):
+    if final.get("options") or final.get("plan") or final.get("technique_answer"):
         return True
     return bool(final.get("question"))
 
@@ -1723,6 +1779,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     settings = _effective_settings(Settings())
     ok, problems, record = preflight(args, settings, scenarios, history_path=SPEND_HISTORY)
+    record["scenarios_file"] = str(args.scenarios_file)
     if not ok:
         for problem in problems:
             print(f"preflight: {problem}", file=sys.stderr)
@@ -1872,6 +1929,7 @@ def _run_all(
     summary = {
         "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "fake": fake,
+        "scenarios_file": str(getattr(args, "scenarios_file", "") or ""),
         "scenarios_sha256": scenarios["freeze_sha256"],
         "model": model,
         "scenario_keys": [str(r.get("key", "")) for r in scenario_reports],

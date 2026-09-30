@@ -14,7 +14,7 @@ has been made for Phase 3, and none is authorized by this plan alone.
 Each live run still needs its own explicit go-ahead with its share and
 stop conditions (Checkpoint 0, budget item).
 
-## 8 live scenarios (`evals/phase3_agent/live_scenarios.json`, frozen)
+## 8 live scenarios (`evals/phase3_agent/live_scenarios_v2.json`, frozen; v1 kept byte-identical)
 
 Chicken dinner to plan, yogurt ask-and-resume (frozen answer),
 direct lentil request, vegetarian conflict, empty retrieval (asks
@@ -25,6 +25,20 @@ Epicure policy: the direct request consults Epicure and may return
 one recipe (`direct_dish_request`). no-progress is deliberately
 absent: it may not trigger with a real model, and its coverage stays
 with the offline failure-injection tests.
+
+### v1 -> v2 diff (owner-approved 2026-09-30)
+
+The runner defaults to v2 (`--scenarios-file` selects v1); both files
+are hash-frozen and the summary records the file and its sha256. v2
+changes only:
+- scripted answers are self-contained sentences (yogurt: "No, I don't
+  have yogurt."), sent as the answer to whatever question is pending;
+- the fake-only `question_contains` ("lemon dessert") is removed;
+- technique-question expects kind `technique_answer` with
+  `epicure: skip:simple_technique_question` and `min_options` 0;
+- roast-pairing expects `min_epicure_lines` 3;
+- everything else is unchanged (v1 sha
+  `2c9b067c45ba019800e2a7c1398a1e99d3338cf33fa28fb7b6b1c5a732cab302`).
 
 ## Model and pricing (repo-recorded, re-verify before running)
 
