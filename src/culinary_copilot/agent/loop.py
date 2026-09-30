@@ -382,13 +382,21 @@ def _timeout_s(deps: AgentDeps) -> float:
         return 10.0
 
 
-def offered_tools(*, state: Any, excluded: set[str], timeout_s: float) -> list[ToolDefinition]:
+def offered_tools(
+    *,
+    state: Any,
+    excluded: set[str],
+    timeout_s: float,
+    epicure_enabled: bool = True,
+) -> list[ToolDefinition]:
     """Registry tools offered to the model for this step.
 
     ``search_web`` is included only when the session's
     ``internet_search_allowed`` is true (the tool re-checks on every
     call); tools that returned ``tool_not_configured`` in this session
-    are not offered again.
+    are not offered again. The four Epicure pairing tools share one
+    backend, so when ``epicure_enabled`` is false none of them is
+    offered at all.
     """
     out: list[ToolDefinition] = []
     for definition in all_tool_definitions(timeout_s=timeout_s):
@@ -397,6 +405,8 @@ def offered_tools(*, state: Any, excluded: set[str], timeout_s: float) -> list[T
         if definition.name == "search_web" and not bool(
             getattr(state, "internet_search_allowed", False)
         ):
+            continue
+        if definition.name in _PAIRING_TOOLS and not epicure_enabled:
             continue
         out.append(definition)
     return out
@@ -427,7 +437,12 @@ def function_defs_for(definitions: list[ToolDefinition]) -> list[dict[str, Any]]
 
 
 def seed_excluded_from_events(store: PostgresSessionStore, session_id: str) -> set[str]:
-    """Tools already ``tool_not_configured`` in this session's event log."""
+    """Tools already ``tool_not_configured`` in this session's event log.
+
+    One backend serves all four pairing tools, so a single
+    ``tool_not_configured`` among them excludes the whole family (a
+    resumed run sees the same exclusion as the run that observed it).
+    """
     excluded: set[str] = set()
     try:
         events = store.list_events(session_id)
@@ -442,6 +457,8 @@ def seed_excluded_from_events(store: PostgresSessionStore, session_id: str) -> s
             tool = payload.get("tool")
             if isinstance(tool, str) and tool:
                 excluded.add(tool)
+    if excluded & _PAIRING_TOOLS:
+        excluded |= set(_PAIRING_TOOLS)
     return excluded
 
 
@@ -515,7 +532,10 @@ _TASK_FRAMING = (
     "facts. Call tools via function calls, or return a directive "
     "(ask_user/finish). Ask only when the answer would materially change "
     "the recommendation. Epicure pairings are queried by default before "
-    "recommend; skipping needs an allowlisted reason."
+    "recommend; skipping needs an allowlisted reason: "
+    "simple_technique_question (a technique-only question with no pairing "
+    "cue) or epicure_not_configured (Epicure is unavailable, and the "
+    "answer is marked degraded)."
 )
 
 
@@ -525,6 +545,7 @@ def build_turn_input(
     history: list[dict[str, Any]],
     last_outcome: str | None,
     user_messages: list[str] | None = None,
+    epicure_available: bool = True,
 ) -> list[dict[str, Any]]:
     """Model input: user messages + history + task framing snapshot.
 
@@ -532,6 +553,10 @@ def build_turn_input(
     "user"`` items so the request actually reaches the model; the tool
     history follows; the task framing + session snapshot item stays
     last. Confirmed answers stay in the snapshot, not here.
+    ``epicure_available`` tells the model whether Epicure can be
+    queried at all (disabled, or the whole pairing family excluded
+    after a ``tool_not_configured``): when false, a finish must carry
+    the ``epicure_not_configured`` skip reason.
     """
     snapshot = {
         "phase": state.current_phase,
@@ -541,6 +566,7 @@ def build_turn_input(
         "steps_remaining": state.steps_remaining,
         "tool_calls_remaining": state.tool_calls_remaining,
         "internet_search_allowed": state.internet_search_allowed,
+        "epicure_available": bool(epicure_available),
         "epicure_outcome": state.epicure_outcome,
         "epicure_skip_reason": state.epicure_skip_reason,
         "has_suggestions": bool(state.suggestions),
@@ -976,7 +1002,12 @@ async def run_agent(
         # next turn could cross either ceiling. The input estimate counts
         # everything the provider is sent (items, offered tool defs, the
         # directive schema); output is capped per turn (see below).
-        offered = offered_tools(state=state, excluded=excluded, timeout_s=timeout_s)
+        offered = offered_tools(
+            state=state,
+            excluded=excluded,
+            timeout_s=timeout_s,
+            epicure_enabled=bool(getattr(settings, "epicure_enabled", False)),
+        )
         offered_by_name = {d.name: d for d in offered}
         tool_defs = function_defs_for(offered)
         turn_input = build_turn_input(
@@ -984,6 +1015,8 @@ async def run_agent(
             history=history,
             last_outcome=last_outcome,
             user_messages=user_messages,
+            epicure_available=bool(getattr(settings, "epicure_enabled", False))
+            and not all(tool in excluded for tool in _PAIRING_TOOLS),
         )
         est_in = estimate_turn_input(turn_input, tool_defs, response_schema=directive_schema)
         if used_in + est_in >= in_ceiling or used_out >= out_ceiling:
@@ -1215,9 +1248,17 @@ async def run_agent(
             consecutive_errors = consecutive_errors + 1 if step_failed else 0
             newly_excluded: list[str] = []
             # Track exclusions + epicure evidence from executed results.
+            # One backend serves all four pairing tools: a single
+            # tool_not_configured excludes the whole family for the
+            # session, so the model stops spending turns on siblings
+            # that would fail the same way.
             for call, result in zip(runnable, ran_results):
                 if result.get("reason") == REASON_TOOL_NOT_CONFIGURED:
-                    if call["name"] not in excluded:
+                    if call["name"] in _PAIRING_TOOLS:
+                        for tool_name in sorted(_PAIRING_TOOLS - excluded):
+                            excluded.add(tool_name)
+                            newly_excluded.append(tool_name)
+                    elif call["name"] not in excluded:
                         excluded.add(call["name"])
                         newly_excluded.append(call["name"])
                 if result.get("ok") and call["name"] in _PAIRING_TOOLS:
@@ -2012,11 +2053,13 @@ def _epicure_use_lines(
 
 
 def _all_pairing_excluded(store: PostgresSessionStore, session_id: str, deps: AgentDeps) -> bool:
+    """True when the whole pairing family is excluded this session.
+
+    All four tools share one backend (see ``_PAIRING_TOOLS``), so the
+    family counts as excluded only when every member is.
+    """
     excluded = seed_excluded_from_events(store, session_id)
-    return all(
-        t in excluded
-        for t in ("find_balanced_pairings", "find_conventional_pairings", "find_flavor_pairings")
-    )
+    return all(t in excluded for t in _PAIRING_TOOLS)
 
 
 async def _validation_feedback(

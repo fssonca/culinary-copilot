@@ -12,8 +12,10 @@ Safety (all enforced, all tested with fakes on disposable databases):
   ``--expect-db-name/--expect-db-host``; ``--fake`` runs the whole
   pipeline against the fake provider on a disposable database;
 - preflight refuses on: unknown model / pricing, ceiling breach,
-  DB-guard mismatch, ``HF_HUB_OFFLINE != 1``, missing technique
-  tables, or an unverifiable snapshot;
+  DB-guard mismatch, ``HF_HUB_OFFLINE != 1``, disabled Epicure (except
+  the unavailable scenario's own override), a failing Epicure
+  cache-only probe, missing technique tables, or an unverifiable
+  snapshot;
 - every paid call (model turns, query embeddings, retries) is
   reserved before the call from a conservative local input bound
   (UTF-8 bytes/3 over the full payload, never below chars/4) plus
@@ -56,8 +58,15 @@ SPEND_HISTORY = DEFAULT_RAW_DIR / "spend-history.json"
 
 
 def recorded_entry_usd(entry: dict[str, Any]) -> float:
-    """Recorded cost of one ledger entry: reconciled usage, or the
-    reserved cost for kept-ambiguous failures (conservative)."""
+    """Recorded cost of one entry.
+
+    Stored history entries carry the settled ``usd`` amount (written by
+    ``append_spend_history``); the live ledger path (reserve →
+    reconcile/keep) reads ``used_usd``/``reserved_usd`` instead and is
+    unchanged.
+    """
+    if "usd" in entry:
+        return float(entry.get("usd") or 0.0)
     decision = entry.get("decision")
     if decision == "reconciled":
         return float(entry.get("used_usd") or 0.0)
@@ -87,9 +96,19 @@ def recorded_spend_total(path: Path) -> float:
 
 
 def append_spend_history(
-    path: Path, *, model: str, entries: list[dict[str, Any]], ceiling_usd: float
+    path: Path,
+    *,
+    model: str,
+    entries: list[dict[str, Any]],
+    ceiling_usd: float,
+    attempt: int | None = None,
 ) -> float:
-    """Append this run's entries with a timestamp; returns the new total."""
+    """Append this run's entries with a timestamp; returns the new total.
+
+    ``attempt`` (the live attempt number) is stored when given;
+    otherwise it defaults to one past the highest stored attempt, so
+    new runs keep a monotonic attempt sequence.
+    """
     try:
         body = json.loads(Path(path).read_text(encoding="utf-8"))
         if not isinstance(body, dict):
@@ -100,10 +119,16 @@ def append_spend_history(
     if not isinstance(runs, list):
         runs = []
         body["runs"] = runs
+    if attempt is None:
+        try:
+            attempt = max(int(r.get("attempt") or 0) for r in runs) + 1
+        except ValueError:
+            attempt = 1
     body["ceiling_usd"] = float(ceiling_usd)
     runs.append(
         {
             "run_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "attempt": attempt,
             "model": model,
             "entries": [
                 {
@@ -471,6 +496,47 @@ class LedgerEmbedProvider:
 # --- preflight -----------------------------------------------------------------
 
 
+EPICURE_UNAVAILABLE_SCENARIO = "live-epicure-unavailable"
+
+
+def _epicure_probe(settings: Any) -> dict[str, dict[str, Any]]:
+    """Cache-only Epicure probe (no network): one chicken query per backend.
+
+    Builds the same ``cache_only=True`` variants the tool path uses
+    (missing files fail fast, never download) and calls
+    ``find_balanced_pairings("chicken", 1)`` on core/cooc/chem plus the
+    substitutions backend (the core adapter). Returns
+    ``{backend: {"ok": bool, "pairs": n, "error"?: str}}``.
+    """
+    backends = ("core", "cooc", "chem", "substitutions")
+    try:
+        from culinary_copilot.tools.epicure_tools import build_epicure_variants
+
+        variants = build_epicure_variants(settings)
+    except Exception as exc:
+        failure = f"{type(exc).__name__}: {str(exc)[:200]}"
+        return {name: {"ok": False, "pairs": 0, "error": failure} for name in backends}
+    results: dict[str, dict[str, Any]] = {}
+    for name in backends:
+        core = variants.get("core" if name == "substitutions" else name)
+        try:
+            pairs = core.find_balanced_pairings("chicken", 1)
+            results[name] = {"ok": True, "pairs": len(pairs) if pairs is not None else 0}
+        except Exception as exc:
+            results[name] = {
+                "ok": False,
+                "pairs": 0,
+                "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+            }
+    return results
+
+
+def _scenario_epicure_enabled(global_enabled: bool, scenario: dict[str, Any]) -> bool:
+    """Effective Epicure flag for one scenario (scenario override wins)."""
+    override = (scenario.get("settings") or {}).get("epicure_enabled")
+    return bool(override) if override is not None else bool(global_enabled)
+
+
 def _effective_settings(settings: Any) -> Any:
     """Runner settings copy: provider-internal retries forced to zero.
 
@@ -493,13 +559,21 @@ def _effective_settings(settings: Any) -> Any:
 
 
 def preflight(
-    args: Any, settings: Any, history_path: Path | str | None = None
+    args: Any,
+    settings: Any,
+    scenarios: dict[str, Any] | None = None,
+    history_path: Path | str | None = None,
+    *,
+    probe: Any | None = None,
 ) -> tuple[bool, list[str], dict[str, Any]]:
     """Refuse (False) on any failed check; records versions and corpus state.
 
     ``history_path`` enables the cumulative budget: prior recorded spend
     is subtracted from the ceiling, and the run is refused when not even
-    a small first turn fits the remainder.
+    a small first turn fits the remainder. ``scenarios`` enables the
+    per-scenario Epicure check (every scenario except
+    ``live-epicure-unavailable`` must inherit an enabled Epicure);
+    ``probe`` overrides the cache-only Epicure probe (tests only).
     """
     problems: list[str] = []
     record: dict[str, Any] = {}
@@ -533,6 +607,54 @@ def preflight(
             "(LLM_RECOMMENDATION_ENABLED=true: the native tool turn refuses "
             "when recommendation generation is disabled)"
         )
+    global_epicure = bool(getattr(settings, "epicure_enabled", False))
+    record["epicure"] = {"enabled": global_epicure, "probe": {}, "scenarios": {}}
+    if scenarios is not None:
+        # Every scenario except the unavailable one must inherit an
+        # enabled Epicure (scenario overrides may only disable it for
+        # live-epicure-unavailable, never enable it elsewhere).
+        for item in scenarios.get("scenarios", []) or []:
+            key = str(item.get("key", ""))
+            effective_flag = _scenario_epicure_enabled(global_epicure, item)
+            record["epicure"]["scenarios"][key] = effective_flag
+            if key == EPICURE_UNAVAILABLE_SCENARIO:
+                if effective_flag:
+                    problems.append(
+                        f"{key} must keep its epicure_enabled=false override "
+                        "(the unavailable scenario probes degraded Epicure)"
+                    )
+            elif not effective_flag:
+                problems.append(
+                    f"epicure_enabled must be true for scenario {key!r} "
+                    "(EPICURE_ENABLED=true; only "
+                    f"{EPICURE_UNAVAILABLE_SCENARIO} may disable it)"
+                )
+    elif not global_epicure:
+        problems.append(
+            "epicure_enabled must be true "
+            "(EPICURE_ENABLED=true: every live scenario except "
+            f"{EPICURE_UNAVAILABLE_SCENARIO} expects Epicure)"
+        )
+    if global_epicure:
+        # Cache-only probe, no network: one chicken query per backend
+        # through the same cache-only variants the tool path uses.
+        try:
+            probe_results = (probe or _epicure_probe)(settings)
+        except Exception as exc:
+            failure = f"{type(exc).__name__}: {str(exc)[:200]}"
+            probe_results = {
+                name: {"ok": False, "pairs": 0, "error": failure}
+                for name in ("core", "cooc", "chem", "substitutions")
+            }
+        record["epicure"]["probe"] = probe_results
+        for name, result in (probe_results or {}).items():
+            if not isinstance(result, dict) or not result.get("ok"):
+                error = (
+                    result.get("error", "unknown probe failure")
+                    if isinstance(result, dict)
+                    else "unknown probe failure"
+                )
+                problems.append(f"Epicure cache probe failed for {name}: {error}")
     if float(args.ceiling_usd) > LIVE_CAP_USD:
         problems.append(f"ceiling ${float(args.ceiling_usd):.2f} exceeds ${LIVE_CAP_USD:.2f} cap")
     prior_spend = recorded_spend_total(Path(history_path)) if history_path else 0.0
@@ -1022,6 +1144,7 @@ _TRAJECTORY_TOOL_KEYS = (
     "args_digest",
     "args",
     "returned_identities",
+    "result_count",
     "outcome",
     "error_type",
     "reason",
@@ -1037,19 +1160,44 @@ _TRAJECTORY_ERROR_KEYS = (
 
 
 def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[str, Any] | None:
-    """One session event, trimmed for review (no prompts or secrets)."""
+    """One session event, trimmed for review (no prompts or secrets).
+
+    Every projected event carries ``stop``/``reason`` (the payload's
+    ``stop_reason``/``reason`` when present, else None); validation
+    rejects carry their error list bounded to 5 x 300 characters.
+    """
+    stop = payload.get("stop_reason")
+    reason = payload.get("reason")
     if event_type == "tool_call":
-        return {"type": event_type, **{k: payload.get(k) for k in _TRAJECTORY_TOOL_KEYS}}
+        projected = {
+            "type": event_type,
+            **{k: payload.get(k) for k in _TRAJECTORY_TOOL_KEYS},
+        }
+        projected.setdefault("stop", stop)
+        return projected
     if event_type == "provider_error":
-        return {"type": event_type, **{k: payload.get(k) for k in _TRAJECTORY_ERROR_KEYS}}
-    if event_type in ("agent_step", "agent_validation_reject"):
-        return {"type": event_type, "note": payload.get("note")}
+        return {
+            "type": event_type,
+            **{k: payload.get(k) for k in _TRAJECTORY_ERROR_KEYS},
+            "stop": stop,
+        }
+    if event_type == "agent_step":
+        return {"type": event_type, "note": payload.get("note"), "stop": stop, "reason": reason}
+    if event_type == "agent_validation_reject":
+        return {
+            "type": event_type,
+            "errors": [str(e)[:300] for e in (payload.get("errors") or [])[:5]],
+            "stop": stop,
+            "reason": reason,
+        }
     if event_type == "agent_question":
         return {
             "type": event_type,
             "question_id": payload.get("question_id"),
             "question_text": payload.get("question_text"),
             "question_options": payload.get("question_options"),
+            "stop": stop,
+            "reason": reason,
         }
     if event_type == "agent_finished":
         return {
@@ -1057,9 +1205,16 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
             "note": payload.get("note"),
             "options": payload.get("options"),
             "stop_reason": payload.get("stop_reason"),
+            "stop": stop,
+            "reason": reason,
         }
     if event_type in ("agent_answer", "agent_select"):
-        return {"type": event_type, **{k: v for k, v in payload.items() if k != "answer"}}
+        return {
+            "type": event_type,
+            **{k: v for k, v in payload.items() if k != "answer"},
+            "stop": stop,
+            "reason": reason,
+        }
     return None
 
 
@@ -1159,6 +1314,16 @@ _PROVIDER_ERROR_STOPS = frozenset(
     }
 )
 _CONFIG_ERROR_STOPS = frozenset({"generation_disabled"})
+
+
+def _final_answered(final: dict[str, Any] | None) -> bool:
+    """True when the run produced an answer: options, a plan, or an
+    accepted final (a clarifying question the owner can answer)."""
+    if not isinstance(final, dict):
+        return False
+    if final.get("options") or final.get("plan"):
+        return True
+    return bool(final.get("question"))
 
 
 def run_scenario_live(
@@ -1405,7 +1570,13 @@ def run_scenario_live(
         grades = grade_attempt(
             scenario, last_final, last_stop, store, created[-1], manual_review=manual_review
         )
-        status = "completed"
+        # "completed" alone hid runs that ended without an answer:
+        # answered means options, a plan, or an accepted final.
+        status = (
+            "completed: answered"
+            if _final_answered(last_final)
+            else f"completed: no-answer ({last_stop})"
+        )
     return {
         "key": scenario["key"],
         "first_attempt": attempts[0] if attempts else None,
@@ -1531,7 +1702,7 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --expect-db-name and --expect-db-host are required", file=sys.stderr)
         return 2
     settings = _effective_settings(Settings())
-    ok, problems, record = preflight(args, settings, history_path=SPEND_HISTORY)
+    ok, problems, record = preflight(args, settings, scenarios, history_path=SPEND_HISTORY)
     if not ok:
         for problem in problems:
             print(f"preflight: {problem}", file=sys.stderr)
@@ -1596,7 +1767,7 @@ def _run_all(
         try:
             if fake:
                 report = _run_fake_scenario(
-                    engine, store, settings, scenario, ledger, raw_dir, args.max_attempts
+                    engine, store, effective, scenario, ledger, raw_dir, args.max_attempts
                 )
             else:
                 scenario_settings = _scenario_settings(effective, scenario)
@@ -1693,12 +1864,14 @@ def _run_all(
     summary_out.parent.mkdir(parents=True, exist_ok=True)
     summary_out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     done_statuses = [str(r.get("status", "")) for r in scenario_reports]
-    n_completed = sum(1 for s in done_statuses if s == "completed")
+    n_answered = sum(1 for s in done_statuses if s == "completed: answered" or s == "completed")
+    n_no_answer = sum(1 for s in done_statuses if s.startswith("completed: no-answer"))
     n_not_run = sum(1 for s in done_statuses if s.startswith("not_run"))
-    n_stopped = len(done_statuses) - n_completed - n_not_run
+    n_stopped = len(done_statuses) - n_answered - n_no_answer - n_not_run
     print(
-        f"scenarios: {n_completed} completed, {n_stopped} stopped, "
-        f"{n_not_run} not_run of {len(done_statuses)}; isolation ok: {isolated}"
+        f"scenarios: {n_answered} answered, {n_no_answer} no-answer, "
+        f"{n_stopped} stopped, {n_not_run} not_run of {len(done_statuses)}; "
+        f"isolation ok: {isolated}"
     )
     this_run_spend = float(ledger.spent_usd)
     if history_path:
@@ -1810,12 +1983,11 @@ def _run_fake_scenario(
     raw_dir: Path,
     max_attempts: int,
 ) -> dict[str, Any]:
-    from culinary_copilot.config import Settings
-
-    scenario_settings = Settings(
-        _env_file=None,
-        epicure_enabled=bool(scenario.get("settings", {}).get("epicure_enabled", True)),
-    )
+    # The fake path takes Epicure enablement through the same
+    # effective-settings code as the live path: a disabled environment
+    # fails offline too (scenario overrides still win, so the
+    # unavailable scenario keeps its false override).
+    scenario_settings = _scenario_settings(settings, scenario)
 
     def _provider_factory(current: dict[str, Any]) -> Any:
         return FakeRunProvider(current)

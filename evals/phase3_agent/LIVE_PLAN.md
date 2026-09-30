@@ -112,11 +112,12 @@ it.
 - **$0.15** fits inside the **$1.00 total Milestone 3 ceiling**
   (Checkpoint 0) and leaves **$0.85 for Phases 4, 5 and 7**.
 - Cumulative ledger (`data/phase3-live/spend-history.json`, gitignored):
-  every run appends its entries and preflight refuses when the remainder
-  cannot fit a first turn. Seeded with conservative recorded amounts —
-  attempt 3 $0.0034661 (kept-ambiguous 400) and attempt 4 $0.0059122
-  (reconciled usage plus one kept-ambiguous 400) — leaving **$0.1406**
-  for the next attempt.
+  every run appends its entries (with the attempt number) and preflight
+  refuses when the remainder cannot fit a first turn. Seeded with
+  conservative recorded amounts — attempt 3 $0.0034661 (kept-ambiguous
+  400), attempt 4 $0.0059122 (reconciled usage plus one kept-ambiguous
+  400) and attempt 5 $0.0239167 — totalling **$0.033295** and leaving
+  **$0.1167** of the $0.15 ceiling.
 
 ## Target database (owner decision)
 
@@ -130,17 +131,24 @@ it.
 ## Exact live command (paste-safe: no comment lines)
 
 ```sh
-EMBEDDINGS_ENABLED=true HF_HUB_OFFLINE=1 LLM_RECOMMENDATION_ENABLED=true uv run python evals/phase3_agent/live_run.py --live --yes --ceiling-usd 0.15 --expect-db-name culinary_copilot --expect-db-host localhost
+EPICURE_ENABLED=true EMBEDDINGS_ENABLED=true HF_HUB_OFFLINE=1 LLM_RECOMMENDATION_ENABLED=true uv run python evals/phase3_agent/live_run.py --live --yes --ceiling-usd 0.15 --expect-db-name culinary_copilot --expect-db-host localhost
 ```
 
 This uses `DATABASE_URL` from `.env` (target the correct database per
 the owner conditions before running). `EMBEDDINGS_ENABLED=true` is on
 the command line because Checkpoint 0 lets the agent choose fulltext
-or vector per call, which needs query embeddings. The runner refuses
+or vector per call, which needs query embeddings. `EPICURE_ENABLED=true`
+is on the command line because every live scenario except
+`live-epicure-unavailable` expects Epicure (attempt 5 ran with the
+`.env` default `false`, so every Epicure call failed). The runner refuses
 without `--live --yes --ceiling-usd` (any ceiling above $0.15
 refused), without the DB guards, when `HF_HUB_OFFLINE` is not `1`,
 when the model or pricing is unknown, when retry settings are not
-zero, when embeddings are enabled but no query-embedding provider
+zero, when Epicure is disabled for any scenario but
+`live-epicure-unavailable`, when the Epicure cache-only probe fails
+(one `find_balanced_pairings("chicken", k=1)` per backend —
+core, cooc, chem, plus substitutions — recorded in the preflight
+JSON), when embeddings are enabled but no query-embedding provider
 can be built, or when the technique snapshot is unverifiable (use
 option B then). Preflight records vector availability (recipe and
 technique embedding counts). `--fake` runs the full 8-scenario

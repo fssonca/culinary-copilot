@@ -541,7 +541,11 @@ def test_epicure_lines_from_model_recorded(engine) -> None:
             ),
         ]
     )
-    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    # Consulted-Epicure behavior needs Epicure enabled (disabled
+    # settings no longer offer the pairing tools at all).
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True)))
+    )
     assert result.stop_reason == "agent_sufficient_evidence"
     finished = [e for e in store.list_events(state.id) if e.event_type == "agent_finished"][0]
     assert "used pork: crisp contrast for the curry" in finished.payload["epicure_lines"]
@@ -574,7 +578,7 @@ def test_epicure_lines_derived_prefix(engine) -> None:
             ("parsed", _finish_options(_two_opts())),
         ]
     )
-    _run(run_agent(state.id, deps=_deps(store, provider)))
+    _run(run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True))))
     finished = [e for e in store.list_events(state.id) if e.event_type == "agent_finished"][0]
     assert finished.payload["epicure_lines"]
     assert all(line.startswith("derived:") for line in finished.payload["epicure_lines"])
@@ -782,7 +786,9 @@ def test_sufficient_evidence_flow(engine) -> None:
             ),
         ]
     )
-    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True)))
+    )
     assert isinstance(result, AgentRunResult)
     assert result.stop_reason == "agent_sufficient_evidence"
     assert result.next_action is None
@@ -1945,3 +1951,157 @@ def test_duplicate_call_id_fails_locally_without_sending(engine) -> None:
         _run(run_agent(state.id, deps=_deps(store, provider)))
     assert excinfo.value.reason == "history_pairing_error"
     assert sent["n"] == 2  # the paired first two turns sent; the third never was
+
+
+def test_one_not_configured_excludes_whole_pairing_family(engine) -> None:
+    from culinary_copilot.agent.loop import _PAIRING_TOOLS
+    from culinary_copilot.domain.recommendations import REASON_TOOL_NOT_CONFIGURED
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+
+    class _MissingAssetCore:
+        def __init__(self) -> None:
+            self.settings = _settings(epicure_enabled=True)
+            self.calls = 0
+
+        def find_balanced_pairings(self, ingredient: str, k: int = 5):  # type: ignore[no-untyped-def]
+            self.calls += 1
+            raise OSError("missing asset")
+
+    core = _MissingAssetCore()
+    provider = ScriptedProvider(
+        [
+            ("tools", [("c1", "find_balanced_pairings", {"ingredient": "chicken"})]),
+            (
+                "tools",
+                [
+                    ("c2", "find_conventional_pairings", {"ingredient": "chicken"}),
+                    ("c3", "search_recipes", {"query": "hearty vegetarian"}),
+                ],
+            ),
+            (
+                "tools",
+                [
+                    ("c4", "find_flavor_pairings", {"ingredient": "chicken"}),
+                    (
+                        "c5",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                ],
+            ),
+            (
+                "tools",
+                [
+                    ("c6", "find_substitutions", {"ingredient": "chicken"}),
+                    (
+                        "c7",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", _finish_options(_two_opts())),
+        ]
+    )
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True), epicure_core=core)
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    # Exactly one tool_not_configured: the first pairing call reaches the
+    # backend; the siblings are unoffered from the next turn on.
+    not_configured = [
+        e
+        for e in store.list_events(state.id)
+        if e.event_type == "tool_call" and e.payload.get("reason") == REASON_TOOL_NOT_CONFIGURED
+    ]
+    assert len(not_configured) == 1
+    assert not_configured[0].payload["tool"] == "find_balanced_pairings"
+    assert core.calls == 1
+    for seen in provider.seen_tools[1:5]:
+        assert not (set(seen) & set(_PAIRING_TOOLS)), f"pairing tools re-offered: {seen}"
+
+
+def test_disabled_epicure_offers_no_pairing_tools_and_degrades(engine) -> None:
+    from culinary_copilot.agent.loop import _PAIRING_TOOLS, offered_tools
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c0", "search_recipes", {"query": "hearty vegetarian"}),
+                    (
+                        "c1",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", _finish_options(_two_opts())),
+        ]
+    )
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=False))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    for seen in provider.seen_tools:
+        assert not (set(seen) & set(_PAIRING_TOOLS)), f"pairing tools offered: {seen}"
+    assert (
+        offered_tools(
+            state=store.get(state.id), excluded=set(), timeout_s=10.0, epicure_enabled=False
+        )
+        is not None
+    )
+    assert not (
+        set(
+            d.name
+            for d in offered_tools(
+                state=store.get(state.id),
+                excluded=set(),
+                timeout_s=10.0,
+                epicure_enabled=False,
+            )
+        )
+        & set(_PAIRING_TOOLS)
+    )
+    stored = store.get(state.id)
+    assert stored is not None
+    assert stored.epicure_skip_reason == "epicure_not_configured"
+    assert result.final is not None and result.final.get("epicure_degraded") is True
+
+
+def test_enabled_epicure_offers_pairing_tools_and_marks_available(engine) -> None:
+    from culinary_copilot.agent.loop import (
+        _PAIRING_TOOLS,
+        _TASK_FRAMING,
+        build_turn_input,
+        offered_tools,
+    )
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    names = {
+        d.name
+        for d in offered_tools(state=state, excluded=set(), timeout_s=10.0, epicure_enabled=True)
+    }
+    assert set(_PAIRING_TOOLS) <= names
+    items = build_turn_input(state=state, history=[], last_outcome=None, epicure_available=True)
+    assert items[-1]["content"] and "epicure_available" in items[-1]["content"]
+    assert '"epicure_available": true' in items[-1]["content"]
+    items_down = build_turn_input(
+        state=state, history=[], last_outcome=None, epicure_available=False
+    )
+    assert '"epicure_available": false' in items_down[-1]["content"]
+    assert "simple_technique_question (a technique-only question with no pairing cue)" in (
+        _TASK_FRAMING
+    )
+    assert "epicure_not_configured (Epicure is unavailable, and the answer is marked degraded)" in (
+        _TASK_FRAMING
+    )

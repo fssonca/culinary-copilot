@@ -1057,3 +1057,75 @@ def test_tool_call_event_opt_in_records_bounded_args() -> None:
     import json as _json
 
     assert _json.loads(str(payload["args"])) == {"query": "soup", "limit": 5, "mode": None}
+
+
+def test_search_techniques_event_records_technique_identities_and_count() -> None:
+    from culinary_copilot.tools.registry import ToolContext
+
+    store = _FakeSessionStore(allowed=True)
+    rows = [
+        {"doc_id": "tech-egg-boil-18", "chunk_id": 0, "title": "Boiled egg"},
+        {"doc_id": "tech-egg-boil-18", "chunk_id": 2, "title": "Boiled egg"},
+        {"dataset_id": "odunola/foodie", "source_id": "x"},  # not a technique hit
+    ]
+
+    def _tech(args: Any, context: Any) -> dict[str, Any]:
+        return {"ok": True, "mode_ran": "fulltext", "match": "all", "results": list(rows)}
+
+    ctx = ToolContext(
+        settings=_settings(),
+        engine=None,
+        session_store=store,
+        impl_overrides={"search_techniques": _tech},
+    )
+    result = _run(
+        run_tool(
+            _defs()["search_techniques"],
+            _impls()["search_techniques"],
+            {"query": "eggs"},
+            ctx,
+            session_id="ses-tech",
+            call_id="call-tech-1",
+        )
+    )
+    assert result["ok"] is True
+    payload = store.events[0]["payload"]
+    assert payload["result_count"] == 3
+    assert payload["returned_identities"] == [
+        {"doc_id": "tech-egg-boil-18", "chunk_id": 0, "via": "technique"},
+        {"doc_id": "tech-egg-boil-18", "chunk_id": 2, "via": "technique"},
+    ]
+
+
+def test_zero_hit_search_records_result_count_zero() -> None:
+    from culinary_copilot.tools.registry import ToolContext
+
+    store = _FakeSessionStore(allowed=True)
+
+    def _empty(args: Any, context: Any) -> dict[str, Any]:
+        return {"ok": True, "mode_ran": "fulltext", "match": "all", "results": []}
+
+    for tool_name in ("search_recipes", "search_techniques"):
+        ctx = ToolContext(
+            settings=_settings(),
+            engine=None,
+            session_store=store,
+            impl_overrides={tool_name: _empty},
+        )
+        result = _run(
+            run_tool(
+                _defs()[tool_name],
+                _impls()[tool_name],
+                {"query": "nothing matches this"},
+                ctx,
+                session_id="ses-zero",
+                call_id=f"call-{tool_name}-0",
+            )
+        )
+        assert result["ok"] is True
+    payloads = [e["payload"] for e in store.events]
+    assert len(payloads) == 2
+    for payload in payloads:
+        assert payload["outcome"] == "ok"
+        assert payload["result_count"] == 0
+        assert "returned_identities" not in payload

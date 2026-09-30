@@ -393,6 +393,11 @@ def test_foreign_session_evidence_does_not_count(engine) -> None:
 
 def test_full_fake_run_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    # The end-to-end fake run exercises the Epicure-consulted path, so
+    # it opts into Epicure explicitly (a disabled environment fails the
+    # pairing flows offline instead; see
+    # test_fake_path_uses_effective_epicure_settings).
+    monkeypatch.setenv("EPICURE_ENABLED", "true")
     default_summary_before = _default_summary_bytes()
     from culinary_copilot.config import Settings
 
@@ -1709,7 +1714,7 @@ def test_runner_answers_pending_question(engine, tmp_path: Path) -> None:
         max_attempts=1,
         recipe_resolver=lambda ds, sid: dict(live_run._FAKE_DOCS.get((ds, sid)) or {}) or None,
     )
-    assert report["status"] == "completed"
+    assert report["status"] == "completed: answered"
     assert report["stop_reason"] == "agent_sufficient_evidence"
     answered = report["first_attempt"]["answered_question"]
     assert answered["question_id"] == "model-made-7"  # actual, not q-yogurt
@@ -1896,3 +1901,200 @@ def test_trajectory_recorded_in_raw_report(engine, tmp_path: Path) -> None:
     assert first["args_digest"] and first["args"]
     assert first["outcome"] in ("ok", "error")
     assert session_traj["option_titles"], "model option titles are recorded"
+
+
+def test_preflight_refuses_disabled_epicure(monkeypatch: pytest.MonkeyPatch) -> None:
+    import argparse
+
+    from culinary_copilot.config import Settings
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    args = argparse.Namespace(
+        model="",
+        ceiling_usd=0.15,
+        expect_db_name="culinary_test_live",
+        expect_db_host="localhost",
+        database_url="",
+    )
+    settings = live_run._effective_settings(Settings(_env_file=None))
+    assert bool(settings.epicure_enabled) is False
+    ok, problems, _ = live_run.preflight(args, settings)
+    assert not ok
+    assert any("epicure_enabled must be true" in p for p in problems)
+    scenarios = load_scenarios(
+        Path(__file__).resolve().parents[1] / "evals" / "phase3_agent" / "live_scenarios.json"
+    )
+    ok, problems, record = live_run.preflight(args, settings, scenarios)
+    assert not ok
+    assert any("live-chicken-dinner" in p for p in problems)
+    assert record["epicure"]["scenarios"]["live-chicken-dinner"] is False
+    assert record["epicure"]["scenarios"]["live-epicure-unavailable"] is False
+
+
+def test_preflight_refuses_failing_epicure_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    import argparse
+
+    from culinary_copilot.config import Settings
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    args = argparse.Namespace(
+        model="",
+        ceiling_usd=0.15,
+        expect_db_name="culinary_test_live",
+        expect_db_host="localhost",
+        database_url="",
+    )
+    settings = live_run._effective_settings(
+        Settings(_env_file=None, epicure_enabled=True, llm_recommendation_enabled=True)
+    )
+    failing = {"core": {"ok": False, "pairs": 0, "error": "LocalEntryNotFoundError: no cache"}}
+    ok, problems, record = live_run.preflight(args, settings, probe=lambda s: dict(failing))
+    assert not ok
+    assert any("Epicure cache probe failed for core" in p for p in problems)
+    assert record["epicure"]["probe"]["core"]["ok"] is False
+
+
+def test_unavailable_scenario_keeps_false_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    import argparse
+
+    from culinary_copilot.config import Settings
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    args = argparse.Namespace(
+        model="",
+        ceiling_usd=0.15,
+        expect_db_name="culinary_test_live",
+        expect_db_host="localhost",
+        database_url="",
+    )
+    settings = live_run._effective_settings(
+        Settings(_env_file=None, epicure_enabled=True, llm_recommendation_enabled=True)
+    )
+    scenarios = load_scenarios(
+        Path(__file__).resolve().parents[1] / "evals" / "phase3_agent" / "live_scenarios.json"
+    )
+    unavailable = [s for s in scenarios["scenarios"] if s["key"] == "live-epicure-unavailable"][0]
+    assert live_run._scenario_epicure_enabled(True, unavailable) is False
+    assert live_run._scenario_settings(settings, unavailable).epicure_enabled is False
+    passing = {n: {"ok": True, "pairs": 1} for n in ("core", "cooc", "chem", "substitutions")}
+    ok, problems, record = live_run.preflight(
+        args, settings, scenarios, probe=lambda s: dict(passing)
+    )
+    assert not any("epicure" in p.lower() for p in problems)
+    assert record["epicure"]["scenarios"]["live-epicure-unavailable"] is False
+    assert record["epicure"]["scenarios"]["live-chicken-dinner"] is True
+    assert record["epicure"]["probe"] == passing
+
+
+def test_spend_history_append_totals_stored_usd(tmp_path: Path) -> None:
+    import json as _json
+
+    history = tmp_path / "spend-history.json"
+    history.write_text(
+        _json.dumps(
+            {
+                "ceiling_usd": 0.15,
+                "runs": [
+                    {
+                        "run_utc": "2026-09-30T01:05:26Z",
+                        "attempt": 3,
+                        "model": "gpt-6-luna",
+                        "entries": [{"label": "t1", "decision": "reconciled", "usd": 0.001}],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    ledger = SpendLedger(model="gpt-6-luna", ceiling_usd=0.15)
+    assert ledger.reserve("t2", input_tokens=1000, max_output=500) is True
+    ledger.reconcile("t2", reported_in=100, reported_out=50)
+    total = live_run.append_spend_history(
+        history, model="gpt-6-luna", entries=list(ledger.entries), ceiling_usd=0.15
+    )
+    body = _json.loads(history.read_text(encoding="utf-8"))
+    stored = sum(e.get("usd", 0.0) for r in body["runs"] for e in r["entries"])
+    assert total == stored
+    assert body["runs"][-1]["attempt"] == 4  # one past the highest stored attempt
+
+
+def test_projection_carries_errors_stop_reason(tmp_path: Path) -> None:
+    project = live_run._project_trajectory_event
+    long_errors = [f"e{i}:" + "x" * 500 for i in range(6)]
+    reject = project("agent_validation_reject", {"errors": long_errors})
+    assert reject is not None
+    assert len(reject["errors"]) == 5
+    assert all(len(e) == 300 for e in reject["errors"])
+    assert "stop" in reject and "reason" in reject
+    for event_type, payload in [
+        ("tool_call", {"tool": "search_recipes", "outcome": "ok", "reason": None}),
+        ("provider_error", {"reason": "provider_timeout"}),
+        ("agent_step", {"note": "n"}),
+        ("agent_question", {"question_id": "q", "question_text": "t", "question_options": []}),
+        ("agent_finished", {"note": "n", "options": [], "stop_reason": "agent_max_steps"}),
+        ("agent_answer", {"question_id": "q"}),
+    ]:
+        projected = project(event_type, dict(payload))
+        assert projected is not None
+        assert "stop" in projected and "reason" in projected
+    finished = project("agent_finished", {"note": "n", "stop_reason": "agent_max_steps"})
+    assert finished is not None and finished["stop"] == "agent_max_steps"
+
+
+def test_no_answer_run_reports_no_answer_status(engine, tmp_path: Path) -> None:
+    from culinary_copilot.config import Settings
+    from culinary_copilot.llm.client import NativeTurnResult
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    assert live_run._final_answered({"options": [{"title": "x"}]}) is True
+    assert live_run._final_answered({"plan": {"steps": []}}) is True
+    assert live_run._final_answered({"question": {"question_id": "q"}}) is True
+    assert live_run._final_answered(None) is False
+    assert live_run._final_answered({}) is False
+
+    settings = Settings(_env_file=None, epicure_enabled=True)
+    store = PostgresSessionStore(engine)
+
+    class _Empty:
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+            return NativeTurnResult(
+                tool_calls=[], parsed=None, chain_items=[], input_tokens=5, output_tokens=5
+            )
+
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=_live_scenario(),
+        ledger=_ledger(),
+        provider_factory=lambda s: _Empty(),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=1,
+        recipe_resolver=None,
+    )
+    assert report["stop_reason"] == "agent_no_progress"
+    assert report["status"] == "completed: no-answer (agent_no_progress)"
+
+
+def test_fake_path_uses_effective_epicure_settings(engine, tmp_path: Path) -> None:
+    from culinary_copilot.config import Settings
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    store = PostgresSessionStore(engine)
+    scenario = _live_scenario(fake_flow="direct")
+    disabled = live_run._run_fake_scenario(
+        engine, store, Settings(_env_file=None), scenario, _ledger(), tmp_path, 1
+    )
+    assert disabled["status"] == "completed: no-answer (agent_validation_failed)"
+    enabled = live_run._run_fake_scenario(
+        engine,
+        store,
+        Settings(_env_file=None, epicure_enabled=True),
+        scenario,
+        _ledger(),
+        tmp_path,
+        1,
+    )
+    assert enabled["status"] == "completed: answered"
+    assert enabled["stop_reason"] == "agent_sufficient_evidence"

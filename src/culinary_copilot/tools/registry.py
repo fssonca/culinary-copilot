@@ -251,14 +251,16 @@ def _event_cost(tool: ToolDefinition, result: dict[str, Any]) -> CostClass:
 
 def _returned_identities(
     tool_name: str, parsed: Any, result: dict[str, Any]
-) -> list[dict[str, str]] | None:
-    """Recipe identities a successful retrieval establishes (P3-A-01).
+) -> list[dict[str, Any]] | None:
+    """Retrieval identities a successful call establishes (P3-A-01).
 
     Read from one place (the registry) so every implementation — real,
     fake, or override — records the same evidence. ``search_recipes``
     rows establish dataset-qualified identity only (``via: search``);
-    ``get_recipe`` establishes the full document (``via: full``).
-    Failed lookups (``ok`` False) establish nothing. Bounded to 20.
+    ``get_recipe`` establishes the full document (``via: full``);
+    ``search_techniques`` rows establish technique identity
+    (``via: technique``). Failed lookups (``ok`` False) establish
+    nothing. Bounded to 20.
     """
     if not result.get("ok"):
         return None
@@ -266,7 +268,7 @@ def _returned_identities(
         rows = result.get("results")
         if not isinstance(rows, list):
             return None
-        out: list[dict[str, str]] = []
+        out: list[dict[str, Any]] = []
         for row in rows[:20]:
             if not isinstance(row, dict):
                 continue
@@ -280,7 +282,35 @@ def _returned_identities(
         if isinstance(dataset_id, str) and isinstance(source_id, str):
             return [{"dataset_id": dataset_id, "source_id": source_id, "via": "full"}]
         return None
+    if tool_name == "search_techniques":
+        rows = result.get("results")
+        if not isinstance(rows, list):
+            return None
+        out = []
+        for row in rows[:20]:
+            if not isinstance(row, dict):
+                continue
+            doc_id, chunk_id = row.get("doc_id"), row.get("chunk_id")
+            if (
+                isinstance(doc_id, str)
+                and isinstance(chunk_id, int)
+                and not isinstance(chunk_id, bool)
+            ):
+                out.append({"doc_id": doc_id, "chunk_id": chunk_id, "via": "technique"})
+        return out or None
     return None
+
+
+def _result_count(tool_name: str, result: dict[str, Any]) -> int | None:
+    """Row count for the two search tools (None for every other tool).
+
+    Zero-hit searches record 0; a missing/non-list ``results`` on a
+    search tool also records 0 so every search event carries the key.
+    """
+    if tool_name not in ("search_recipes", "search_techniques"):
+        return None
+    rows = result.get("results")
+    return len(rows) if isinstance(rows, list) else 0
 
 
 def _record_event(
@@ -297,7 +327,8 @@ def _record_event(
     cost_class: CostClass,
     mode_ran: str | None = None,
     match: str | None = None,
-    returned_identities: list[dict[str, str]] | None = None,
+    returned_identities: list[dict[str, Any]] | None = None,
+    result_count: int | None = None,
     args: dict[str, Any] | None = None,
 ) -> None:
     payload: dict[str, Any] = {
@@ -316,6 +347,8 @@ def _record_event(
         payload["match"] = match
     if returned_identities is not None:
         payload["returned_identities"] = returned_identities
+    if result_count is not None:
+        payload["result_count"] = result_count
     if session_id and getattr(context, "session_store", None) is not None:
         # Bounded args travel in the session event only when the caller
         # opts in (reviewable raw trajectories); the process log and the
@@ -385,6 +418,7 @@ async def run_tool(
             reason=reason,
             latency_ms=0.0,
             cost_class=tool.cost_class,
+            result_count=_result_count(tool.name, result),
             args=dict(raw_args) if isinstance(raw_args, dict) else None,
         )
         return result
@@ -429,6 +463,7 @@ async def run_tool(
             mode_ran=_as_opt_str(result.get("mode_ran")),
             match=_as_opt_str(result.get("match")),
             returned_identities=_returned_identities(tool.name, parsed, result),
+            result_count=_result_count(tool.name, result),
             args=dict(validated_args),
         )
         return result
@@ -453,6 +488,7 @@ async def run_tool(
             reason=reason,
             latency_ms=latency_ms,
             cost_class=tool.cost_class,
+            result_count=_result_count(tool.name, result),
         )
         return result
     except Exception as exc:
@@ -480,6 +516,7 @@ async def run_tool(
             reason=reason,
             latency_ms=latency_ms,
             cost_class=tool.cost_class,
+            result_count=_result_count(tool.name, result),
         )
         return result
 
