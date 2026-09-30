@@ -920,21 +920,37 @@ def run_scenario_live(
     run_stop: dict[str, str] | None = None
     for attempt in range(1, max_attempts + 1):
         sid = _new_session_id(scenario["key"], attempt)
+        attempt_record: dict[str, Any] = {"attempt": attempt, "session_id": sid, "runs": []}
+        try:
+            # Build before any write: a setup failure leaves no session row.
+            provider = provider_factory(scenario)
+            tool_context = context_factory(store, scenario)
+        except Exception as exc:
+            attempt_record["setup_error"] = {
+                "type": type(exc).__name__,
+                "message": str(exc)[:200],
+            }
+            last_final, last_stop = None, "runner-error"
+            run_stop = {
+                "reason": "runner-error",
+                "detail": f"setup: {type(exc).__name__}: {str(exc)[:200]}",
+            }
+            attempts.append(attempt_record)
+            break
         created.append(sid)
         session_seed = dict(scenario.get("session", {}))
         from culinary_copilot.domain.sessions import SessionState
 
-        store.create(SessionState(id=sid, **session_seed))
-        deps = AgentDeps(
-            settings=settings,
-            session_store=store,
-            provider=provider_factory(scenario),
-            tool_context=context_factory(store, scenario),
-            recipe_resolver=recipe_resolver,
-            request_text=scenario.get("request"),
-        )
-        attempt_record: dict[str, Any] = {"attempt": attempt, "session_id": sid, "runs": []}
         try:
+            store.create(SessionState(id=sid, **session_seed))
+            deps = AgentDeps(
+                settings=settings,
+                session_store=store,
+                provider=provider,
+                tool_context=tool_context,
+                recipe_resolver=recipe_resolver,
+                request_text=scenario.get("request"),
+            )
             result = asyncio.run(run_agent(sid, deps=deps))
             attempt_record["runs"].append(
                 {"stop_reason": result.stop_reason, "phase": result.phase, "final": result.final}
@@ -1010,7 +1026,10 @@ def run_scenario_live(
                 {"stop_reason": "runner-error", "error": True, "message": str(exc)[:200]}
             )
             last_final, last_stop = None, "runner-error"
-            run_stop = {"reason": "runner-error"}
+            run_stop = {
+                "reason": "runner-error",
+                "detail": f"run: {type(exc).__name__}: {str(exc)[:200]}",
+            }
             attempts.append(attempt_record)
             break
         attempts.append(attempt_record)
@@ -1020,6 +1039,8 @@ def run_scenario_live(
             break
     if run_stop is not None and run_stop.get("reason") == "budget":
         grades: dict[str, Any] = {"graded": False, "reason": "budget-exhausted"}
+    elif not created:
+        grades = {"graded": False, "reason": "runner-error"}
     else:
         grades = grade_attempt(scenario, last_final, last_stop, store, created[-1])
     return {
@@ -1191,24 +1212,41 @@ def _run_all(
         _context_factory = _live_context_factory(effective, engine, ledger)
 
     for scenario in scenarios["scenarios"]:
-        if fake:
-            report = _run_fake_scenario(
-                engine, store, settings, scenario, ledger, raw_dir, args.max_attempts
-            )
-        else:
-            scenario_settings = _scenario_settings(effective, scenario)
-            report = run_scenario_live(
-                engine=engine,
-                store=store,
-                settings=scenario_settings,
-                scenario=scenario,
-                ledger=ledger,
-                provider_factory=_provider_factory,
-                context_factory=_context_factory,
-                raw_dir=raw_dir,
-                max_attempts=args.max_attempts,
-                recipe_resolver=None,
-            )
+        try:
+            if fake:
+                report = _run_fake_scenario(
+                    engine, store, settings, scenario, ledger, raw_dir, args.max_attempts
+                )
+            else:
+                scenario_settings = _scenario_settings(effective, scenario)
+                report = run_scenario_live(
+                    engine=engine,
+                    store=store,
+                    settings=scenario_settings,
+                    scenario=scenario,
+                    ledger=ledger,
+                    provider_factory=_provider_factory,
+                    context_factory=_context_factory,
+                    raw_dir=raw_dir,
+                    max_attempts=args.max_attempts,
+                    recipe_resolver=None,
+                )
+        except Exception as exc:
+            # Never die with a traceback and no summary: record the
+            # runner error, stop the run, keep the ledger and snapshots.
+            report = {
+                "key": scenario["key"],
+                "status": "runner-error",
+                "run_stop": {
+                    "reason": "runner-error",
+                    "detail": f"scenario: {type(exc).__name__}: {str(exc)[:200]}",
+                },
+                "sessions": [],
+                "attempts": 0,
+                "stop_reason": "runner-error",
+                "grades": {"graded": False, "reason": "runner-error"},
+                "first_attempt": None,
+            }
         created_all.extend(report["sessions"])
         scenario_reports.append(report)
         (raw_dir / f"{scenario['key']}.json").write_text(
@@ -1219,6 +1257,8 @@ def _run_all(
                 "reason": str(report["run_stop"].get("reason")),
                 "after_scenario": scenario["key"],
             }
+            if report["run_stop"].get("detail"):
+                stopped_early["detail"] = str(report["run_stop"]["detail"])
             break
         if report.get("stop_reason") in ("agent_no_progress", "agent_validation_failed"):
             streak += 1
@@ -1271,6 +1311,7 @@ def _run_all(
     summary_out.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(f"scenarios: {len(scenario_reports)}; isolation ok: {isolated}")
     print(f"spent ${ledger.spent_usd:.4f} of ${ledger.ceiling_usd:.2f}")
+    engine.dispose()
     return 0 if isolated else 1
 
 
@@ -1343,7 +1384,9 @@ def _live_context_factory(settings: Any, engine: Any, ledger: SpendLedger) -> An
         from culinary_copilot.tools import build_tool_context
 
         return _wrap_context_embed_provider(
-            build_tool_context(settings, engine, current_store), ledger, settings
+            build_tool_context(settings=settings, engine=engine, session_store=current_store),
+            ledger,
+            settings,
         )
 
     return _factory

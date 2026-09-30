@@ -93,6 +93,19 @@ dropped from the live cases. The remaining packet cases go live:
 
 Each session may be retried once (same ceilings): at most 2 attempts.
 
+## Known orphan session (2026-09-29, recorded not removed)
+
+The first live attempt crashed before any model call
+(`build_tool_context` called with positional args; fixed since, and
+the runner now builds the provider and context before creating any
+session row). Its first scenario session,
+`ses-live-live-chicken-a1-` plus 6 random hex chars, exists in the
+app DB with no model call and no spend. It is left in place
+(`session_events` are append-only, enforced by a trigger), and the
+next run's isolation baseline includes it: pre/post snapshots compare
+counts, so a pre-existing row is neutral as long as nothing writes to
+it.
+
 ## Retry-inclusive dollar bound
 
 - Bound: `8 sessions x 2 attempts x $0.009 = $0.144`, rounded to **$0.15**.

@@ -904,3 +904,374 @@ def test_preflight_refuses_unbuildable_embed_provider(monkeypatch: pytest.Monkey
     ok, problems, _ = live_run.preflight(args, live_run._effective_settings(settings))
     assert not ok
     assert any("query-embedding provider" in p for p in problems)
+
+
+# --- live path with only the SDK faked -------------------------------------------------
+# Drives _run_all(..., fake=False) through the REAL live factories, provider,
+# build_tool_context and tools on a disposable pgvector DB. Only the SDK
+# clients are fake; a socket tripwire fails any real network access.
+
+
+def _sdk_response(calls=None, parsed=None, in_tok=1000, out_tok=200):
+    from types import SimpleNamespace
+
+    items = []
+    for i, (call_id, name, args) in enumerate(calls or []):
+        items.append(
+            SimpleNamespace(
+                type="function_call",
+                id=f"fc-{i}",
+                call_id=call_id,
+                name=name,
+                arguments=json.dumps(args),
+            )
+        )
+    return SimpleNamespace(
+        id="resp-fake",
+        status="completed",
+        output=items,
+        output_parsed=parsed,
+        usage=SimpleNamespace(input_tokens=in_tok, output_tokens=out_tok),
+    )
+
+
+def _seed_livepath_db(engine) -> None:
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO recipe_imports (id, dataset_id, revision, checksum, "
+                "normalizer_version, vocabulary_checksum, dataset_url, report) "
+                "VALUES ('live-test-1', 'odunola/foodie', 'r1', 'c', 'n', 'v', 'u', '{}')"
+            )
+        )
+        for source_id, title, ingredient, amount, unit, search_text in (
+            ("soup-1", "Simple Tomato Soup", "tomato", "400", "g", "tomato soup simple dinner"),
+            ("curry-1", "Chicken Curry", "chicken", "500", "g", "chicken curry dinner"),
+        ):
+            conn.execute(
+                text(
+                    "INSERT INTO recipes (dataset_id, source_id, import_id, title, "
+                    "servings, ingredient_names, document, search_text) "
+                    "VALUES ('odunola/foodie', :sid, 'live-test-1', :title, 4.0, "
+                    "ARRAY[:ingredient], "
+                    "(:doc)::jsonb, :search_text)"
+                ),
+                {
+                    "sid": source_id,
+                    "title": title,
+                    "ingredient": ingredient,
+                    "doc": json.dumps(
+                        {
+                            "ingredients": [
+                                {
+                                    "canonical": ingredient,
+                                    "amount": amount,
+                                    "unit": unit,
+                                    "quantity_text": f"{amount} {unit}",
+                                }
+                            ]
+                        }
+                    ),
+                    "search_text": search_text,
+                },
+            )
+
+
+def _livepath_scenarios():
+    import hashlib as _hashlib
+
+    scenarios = [
+        {
+            "key": "lp-recommend",
+            "title": "recommend two",
+            "request": "soup for dinner",
+            "session": {},
+            "settings": {},
+            "scripted_answers": [],
+            "flow": ["recommend"],
+            "fake_flow": "direct",
+            "expected": {"stop_reason": "agent_sufficient_evidence", "min_options": 2},
+        },
+        {
+            "key": "lp-empty",
+            "title": "empty ask",
+            "request": "dragonfruit dessert",
+            "session": {},
+            "settings": {},
+            "scripted_answers": [],
+            "flow": ["recommend-ask"],
+            "fake_flow": "empty",
+            "expected": {
+                "stop_reason": "agent_needs_user_input",
+                "min_options": 0,
+                "question_contains": "lemon dessert",
+            },
+        },
+    ]
+    body = {"version": "livepath-test-v1", "scenarios": scenarios}
+    body["freeze_sha256"] = _hashlib.sha256(
+        json.dumps(
+            {k: v for k, v in body.items() if k != "freeze_sha256"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return body
+
+
+def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket as _socket
+
+    import openai as _openai_module
+
+    from culinary_copilot.config import Settings
+    from culinary_copilot.recipes import import_data
+
+    finish_a = {
+        "decision": "finish",
+        "move_to": "recommend",
+        "result": {
+            "options": [
+                {
+                    "dataset_id": "odunola/foodie",
+                    "source_id": "soup-1",
+                    "title": "Simple Tomato Soup",
+                    "quantities": [{"ingredient": "tomato", "amount": "400", "unit": "g"}],
+                    "adaptations": [],
+                },
+                {
+                    "dataset_id": "odunola/foodie",
+                    "source_id": "curry-1",
+                    "title": "Chicken Curry",
+                    "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                    "adaptations": [],
+                },
+            ]
+        },
+        "constraints_honored": [],
+        "note": "live-path finish",
+    }
+    ask_b = {
+        "decision": "ask_user",
+        "question": {
+            "question_id": "q-live",
+            "question_text": (
+                "I found no recipes for dragonfruit dessert. "
+                "Want me to look for a lemon dessert instead?"
+            ),
+            "options": ["yes, look", "no"],
+        },
+        "note": "live-path ask",
+    }
+    script = [
+        _sdk_response(
+            calls=[
+                ("c1", "search_recipes", {"query": "soup for dinner"}),
+                ("c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "soup-1"}),
+                ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+            ]
+        ),
+        _sdk_response(parsed=finish_a),
+        _sdk_response(calls=[("c1", "search_recipes", {"query": "dragonfruit"})]),
+        _sdk_response(parsed=ask_b),
+    ]
+    sdk_calls: list[dict[str, Any]] = []
+
+    class _FakeResponses:
+        async def parse(self, **kwargs: Any) -> Any:
+            sdk_calls.append(kwargs)
+            item = script.pop(0)
+            if isinstance(item, BaseException):
+                raise item
+            return item
+
+    class _FakeAsyncOpenAI:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.responses = _FakeResponses()
+
+    openai_inits: list[str] = []
+
+    class _FakeOpenAI:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            openai_inits.append("sync-client")
+
+            class _Embeddings:
+                async def create(self, **kwargs: Any) -> Any:
+                    raise AssertionError("embeddings client must not be called")
+
+            self.embeddings = _Embeddings()
+
+    monkeypatch.setattr(_openai_module, "AsyncOpenAI", _FakeAsyncOpenAI)
+    monkeypatch.setattr(_openai_module, "OpenAI", _FakeOpenAI)
+
+    real_connect = _socket.socket.connect
+
+    def _guarded_connect(self, address):  # type: ignore[no-untyped-def]
+        host = address[0] if isinstance(address, tuple) else ""
+        if host in ("127.0.0.1", "::1", "localhost", ""):
+            return real_connect(self, address)
+        raise AssertionError(f"non-local network access attempted: {host!r}")
+
+    monkeypatch.setattr(_socket.socket, "connect", _guarded_connect)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+
+    base = Settings().database_url.get_secret_value()
+    head, _, _ = base.rpartition("/")
+    db_name = "culinary_test_livepath"
+    db_url = f"{head}/{db_name}"
+    maint = create_engine(f"{head}/postgres", isolation_level="AUTOCOMMIT")
+    try:
+        with maint.connect() as conn:
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+            conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+        eng = create_engine(db_url)
+        try:
+            with eng.begin() as conn:
+                import_data.apply_migrations(conn)
+            _seed_livepath_db(eng)
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "techniques"))
+            import load as _technique_loader
+
+            assert (
+                _technique_loader.main(
+                    [
+                        "--database-url",
+                        db_url,
+                        "--expect-db-name",
+                        db_name,
+                        "--expect-db-host",
+                        "localhost",
+                    ]
+                )
+                == 0
+            )
+            settings = live_run._effective_settings(
+                Settings(
+                    _env_file=None,
+                    epicure_enabled=False,
+                    embeddings_enabled=True,
+                    openai_api_key="test-key",
+                    llm_enabled=True,
+                    llm_recommendation_enabled=True,
+                )
+            )
+            import argparse as _argparse
+
+            args = _argparse.Namespace(model="", max_attempts=1, ceiling_usd=0.15)
+            raw_dir = tmp_path / "raw"
+            summary_out = tmp_path / "live-summary.json"
+            rc = live_run._run_all(
+                args,
+                settings,
+                _livepath_scenarios(),
+                db_url,
+                raw_dir,
+                summary_out,
+                fake=False,
+            )
+            assert rc == 0
+            summary = json.loads(summary_out.read_text(encoding="utf-8"))
+            assert len(sdk_calls) == 4
+            assert [s["key"] for s in summary["scenarios"]] == ["lp-recommend", "lp-empty"]
+            assert summary["scenarios"][0]["stop_reason"] == "agent_sufficient_evidence"
+            assert summary["scenarios"][1]["stop_reason"] == "agent_needs_user_input"
+            assert summary["isolation"]["ok"] is True
+            assert summary["stopped_early"] is None
+            spend = summary["spend"]
+            assert spend["spent_usd"] > 0.0
+            reconciled = [e for e in spend["entries"] if e.get("decision") == "reconciled"]
+            assert len(reconciled) == 4
+            assert all(e["used_in"] == 1000 and e["used_out"] == 200 for e in reconciled)
+            assert live_run.LIVE_SUMMARY == Path(__file__).resolve().parents[1] / (
+                "evals/phase3_agent/live-summary.json"
+            )
+            assert not live_run.LIVE_SUMMARY.exists()
+        finally:
+            eng.dispose()
+            for path in list(sys.path):
+                if path.endswith("scripts/techniques"):
+                    sys.path.remove(path)
+    finally:
+        with maint.connect() as conn:
+            conn.execute(
+                text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    f"WHERE datname='{db_name}' AND pid <> pg_backend_pid()"
+                )
+            )
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+        maint.dispose()
+
+
+def test_setup_failure_leaves_no_session(engine, tmp_path: Path) -> None:
+    from sqlalchemy import text as _text
+
+    from culinary_copilot.config import Settings
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    settings = Settings(_env_file=None)
+    store = PostgresSessionStore(engine)
+    with engine.connect() as conn:
+        before = conn.execute(_text("SELECT count(*) FROM sessions")).scalar()
+
+    def _boom_factory(scenario: dict[str, Any]) -> Any:
+        raise RuntimeError("context exploded")
+
+    ledger = SpendLedger(model="gpt-6-luna", ceiling_usd=0.15)
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=_live_scenario(),
+        ledger=ledger,
+        provider_factory=lambda s: None,
+        context_factory=lambda s, sc: _boom_factory(sc),
+        raw_dir=tmp_path,
+        max_attempts=2,
+        recipe_resolver=None,
+    )
+    assert report["run_stop"]["reason"] == "runner-error"
+    assert "context exploded" in report["run_stop"]["detail"]
+    assert report["sessions"] == []
+    assert report["attempts"] == 1
+    with engine.connect() as conn:
+        after = conn.execute(_text("SELECT count(*) FROM sessions")).scalar()
+    assert after == before
+
+
+def test_scenario_exception_writes_summary(
+    engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import argparse
+
+    from culinary_copilot.config import Settings
+
+    def _raise(**kwargs: Any) -> Any:
+        raise RuntimeError("driver exploded")
+
+    monkeypatch.setattr(live_run, "run_scenario_live", _raise)
+    args = argparse.Namespace(model="", max_attempts=1, ceiling_usd=0.15)
+    settings = Settings(_env_file=None)
+    _, test_url = _urls()
+
+    eng = create_engine(test_url)
+    try:
+        rc = live_run._run_all(
+            args,
+            settings,
+            {"freeze_sha256": "x", "scenarios": [{"key": "s1"}, {"key": "s2"}]},
+            test_url,
+            tmp_path,
+            tmp_path / "summary.json",
+            fake=False,
+        )
+    finally:
+        eng.dispose()
+    assert rc == 0
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["stopped_early"]["reason"] == "runner-error"
+    assert "driver exploded" in summary["stopped_early"]["detail"]
+    assert summary["scenarios"][0]["status"] == "runner-error"
+    assert summary["scenarios"][1]["status"] == "not_run: runner-error"
