@@ -1207,3 +1207,19 @@ def test_epicure_miss_lists_suggestions() -> None:
     assert result["reason"] == REASON_TOOL_INVALID_ARGUMENTS
     assert "chicken" in result["message"]
     assert "queried_as" not in result
+
+
+def test_bounded_args_json_stays_valid_json() -> None:
+    import json as _json
+
+    from culinary_copilot.tools.registry import bounded_args_json
+
+    small = {"query": "soup", "limit": 5}
+    assert _json.loads(bounded_args_json(small)) == small
+    big = {"query": "x" * 5000, "limit": 5}
+    out = bounded_args_json(big)
+    assert len(out) <= 2000
+    parsed = _json.loads(out)
+    assert parsed["_truncated"] is True
+    assert parsed["limit"] == 5  # whole small keys survive
+    assert _json.loads(bounded_args_json({"query": "y" * 5000})) == {"_truncated": True}

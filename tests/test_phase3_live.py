@@ -23,7 +23,13 @@ from sqlalchemy.exc import SQLAlchemyError
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "evals" / "phase3_agent"))
 
 import live_run
-from live_run import SpendLedger, estimate_input_tokens, load_scenarios, verify_isolation
+from live_run import (
+    SpendLedger,
+    estimate_embedding_request_tokens,
+    estimate_request_tokens,
+    load_scenarios,
+    verify_isolation,
+)
 
 TEST_DB = "culinary_test_live"
 
@@ -152,12 +158,318 @@ def test_preflight_refuses_without_hf_offline(
 # --- ledger math -------------------------------------------------------------------
 
 
-def test_input_bound_dominates_chars_per_4() -> None:
-    payload = {"input_items": [{"role": "user", "content": "hi" * 500}], "tools": [], "schema": {}}
-    bound = estimate_input_tokens(payload)
-    flat = json.dumps(payload, sort_keys=True, default=str)
-    assert bound >= len(flat) // 4
-    assert bound == max(len(flat.encode()) // 3, len(flat) // 4)
+def _turn5_shaped_payload() -> dict[str, Any]:
+    """Synthetic attempt-7-turn-5-shaped request: tool history plus tools.
+
+    Sized so the old bytes/3 bound lands near the observed 2203 while
+    the provider reported 2452 input tokens (1.11x over reservation).
+    """
+    history = [
+        {
+            "type": "function_call",
+            "call_id": f"c{i}",
+            "name": "search_recipes",
+            "arguments": json.dumps({"query": "roast chicken " + "x" * 40}),
+        }
+        for i in range(3)
+    ]
+    history += [
+        {
+            "type": "function_call_output",
+            "call_id": f"c{i}",
+            "output": json.dumps(
+                {
+                    "tool": "search_recipes",
+                    "ok": True,
+                    "results": [{"title": "Roast Chicken " + "y" * 60}],
+                }
+            ),
+        }
+        for i in range(3)
+    ]
+    filler = "z" * 4200
+    return {
+        "input_items": [
+            {"role": "user", "content": "roast chicken request"},
+            *history,
+            {"role": "user", "content": "framing snapshot " + filler},
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "name": f"tool_{i}",
+                "description": "d" * 30,
+                "parameters": {"type": "object"},
+            }
+            for i in range(12)
+        ],
+    }
+
+
+def test_request_bound_is_byte_length_plus_overhead() -> None:
+    from culinary_copilot.agent.loop import AgentDirective
+
+    payload = _turn5_shaped_payload()
+    bound = estimate_request_tokens(
+        input_items=payload["input_items"],
+        tools=payload["tools"],
+        response_model=AgentDirective,
+    )
+    raw = json.dumps(
+        {
+            "input_items": payload["input_items"],
+            "tools": payload["tools"],
+            "text_format": AgentDirective.model_json_schema(),
+            "tool_choice": None,
+            "max_output_tokens": None,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    assert (
+        bound
+        == len(raw.encode("utf-8"))
+        + live_run._RESERVE_PER_ITEM_TOKENS * len(payload["input_items"])
+        + live_run._RESERVE_REQUEST_OVERHEAD_TOKENS
+    )
+    assert bound >= len(raw.encode("utf-8"))
+
+
+def test_request_bound_covers_all_turn_shapes() -> None:
+    from culinary_copilot.agent.loop import AgentDirective
+
+    first = estimate_request_tokens(
+        input_items=[
+            {"role": "user", "content": "request"},
+            {"role": "user", "content": "framing"},
+        ],
+        tools=[{"type": "function", "name": "search_recipes"}],
+        response_model=AgentDirective,
+    )
+    history_turn = estimate_request_tokens(
+        input_items=_turn5_shaped_payload()["input_items"],
+        tools=_turn5_shaped_payload()["tools"],
+        response_model=AgentDirective,
+    )
+    final_turn = estimate_request_tokens(
+        input_items=[{"role": "user", "content": "request"}],
+        tools=[],
+        response_model=AgentDirective,
+    )
+    for bound in (first, history_turn, final_turn):
+        assert bound > 0
+    assert history_turn > first > final_turn
+    # Regression on attempts 6-9: the old bound reserved 2203 for a
+    # turn-5-shaped request while the provider reported 2452. The new
+    # bound covers the reported usage.
+    assert history_turn >= 2452
+
+
+def test_large_tool_and_schema_payloads_covered_by_bound() -> None:
+    from culinary_copilot.agent.loop import AgentDirective
+
+    small = estimate_request_tokens(input_items=[], tools=[], response_model=None)
+    big_tools = [
+        {
+            "type": "function",
+            "name": f"tool_{i}",
+            "description": "d" * 500,
+            "parameters": {
+                "type": "object",
+                "properties": {f"p{j}": {"type": "string"} for j in range(20)},
+            },
+        }
+        for i in range(12)
+    ]
+    big = estimate_request_tokens(input_items=[], tools=big_tools, response_model=AgentDirective)
+    assert big > small
+    raw = json.dumps(
+        {
+            "input_items": [],
+            "tools": big_tools,
+            "text_format": AgentDirective.model_json_schema(),
+            "tool_choice": None,
+            "max_output_tokens": None,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    assert big >= len(raw.encode("utf-8"))
+
+
+def test_embedding_bound_is_byte_length_plus_overhead() -> None:
+    texts = ["roast chicken query", "lentil soup query"]
+    bound = estimate_embedding_request_tokens(texts)
+    raw = json.dumps({"texts": texts}, sort_keys=True, default=str)
+    assert bound == len(raw.encode("utf-8")) + live_run._RESERVE_PER_ITEM_TOKENS * 2 + (
+        live_run._RESERVE_REQUEST_OVERHEAD_TOKENS
+    )
+    assert estimate_embedding_request_tokens(texts, attempts=3) == bound * 3
+
+
+def test_reconcile_excess_input_raises_breach() -> None:
+    ledger = _ledger()
+    assert ledger.reserve("t1", input_tokens=1000, max_output=500) is True
+    with pytest.raises(live_run.ReservationBreach):
+        ledger.reconcile("t1", reported_in=1001, reported_out=50)
+    entry = [e for e in ledger.entries if e.get("label") == "t1"][0]
+    assert entry["decision"] == "reservation_breach"
+    assert entry["used_in"] == 1001 and entry["used_out"] == 50
+    assert entry["used_usd"] > 0.0
+    assert "input 1001 > reserved 1000" in entry["breach"]
+
+
+def test_reconcile_excess_output_raises_breach() -> None:
+    ledger = _ledger()
+    assert ledger.reserve("t1", input_tokens=1000, max_output=500) is True
+    with pytest.raises(live_run.ReservationBreach):
+        ledger.reconcile("t1", reported_in=100, reported_out=501)
+    entry = [e for e in ledger.entries if e.get("label") == "t1"][0]
+    assert entry["decision"] == "reservation_breach"
+    assert "output 501 > reserved 500" in entry["breach"]
+
+
+def test_wrapper_breach_on_excess_usage() -> None:
+    inner = _ScriptedModel([{"in": 10**9, "out": 5}])
+    ledger = _ledger()
+    wrapped = live_run.LedgerModelProvider(inner, ledger, max_output=100)
+    with pytest.raises(live_run.ReservationBreach):
+        asyncio.run(
+            wrapped.complete_native_tool_turn(input_items=[], tools=[], response_model=None)
+        )
+    assert ledger.entries[-1]["decision"] == "reservation_breach"
+
+
+def test_embed_wrapper_breach_on_excess_usage() -> None:
+    class _ScriptedEmbed:
+        async def embed_texts(self, texts: list[str]) -> Any:
+            from types import SimpleNamespace
+
+            return SimpleNamespace(usage=SimpleNamespace(prompt_tokens=10**9))
+
+    ledger = _ledger()
+    wrapped = live_run.LedgerEmbedProvider(_ScriptedEmbed(), ledger, retries=0)
+    with pytest.raises(live_run.ReservationBreach):
+        asyncio.run(wrapped.embed_texts(["hi"]))
+    assert ledger.entries[-1]["decision"] == "reservation_breach"
+
+
+def test_breach_stop_marks_contact_operator(engine, tmp_path: Path) -> None:
+    from culinary_copilot.config import Settings
+    from culinary_copilot.services.session_store import PostgresSessionStore
+
+    settings = Settings(_env_file=None)
+    store = PostgresSessionStore(engine)
+    ledger = _ledger()
+    breach = live_run.ReservationBreach("reservation breach on model-turn-1", label="model-turn-1")
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=_live_scenario(),
+        ledger=ledger,
+        provider_factory=lambda s: _raising_provider(breach),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=2,
+        recipe_resolver=lambda ds, sid: dict(live_run._FAKE_DOCS.get((ds, sid)) or {}) or None,
+    )
+    assert report["status"] == "stopped: contact-operator"
+    assert report["attempts"] == 1  # no further calls after the breach
+    assert report["run_stop"] is not None and report["run_stop"]["reason"] == "contact-operator"
+    assert report["grades"] == {"graded": False, "reason": "reservation-breach"}
+    assert report["stop_reason"] == "reservation-breach"
+
+
+def test_preflight_refuses_unacknowledged_breach(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import argparse
+    import json as _json
+
+    from culinary_copilot.config import Settings
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    history = tmp_path / "spend-history.json"
+    history.write_text(
+        _json.dumps(
+            {
+                "ceiling_usd": 0.15,
+                "runs": [
+                    {
+                        "run_utc": "2026-09-30T12:00:00Z",
+                        "attempt": 9,
+                        "model": "gpt-6-luna",
+                        "entries": [
+                            {
+                                "label": "model-turn-5",
+                                "decision": "reservation_breach",
+                                "usd": 0.001,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert live_run.recorded_spend_total(history) == pytest.approx(0.001)
+    assert live_run.find_unacknowledged_breach(history) == {
+        "run_utc": "2026-09-30T12:00:00Z",
+        "label": "model-turn-5",
+    }
+    args = argparse.Namespace(
+        model="",
+        ceiling_usd=0.15,
+        expect_db_name="culinary_test_live",
+        expect_db_host="localhost",
+        database_url="",
+    )
+    settings = live_run._effective_settings(
+        Settings(_env_file=None, llm_recommendation_enabled=True)
+    )
+    ok, problems, _record = live_run.preflight(args, settings, history_path=history)
+    assert ok is False
+    assert any("unacknowledged reservation breach" in p for p in problems)
+
+
+def test_preflight_accepts_acknowledged_breach(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import json as _json
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    history = tmp_path / "spend-history.json"
+    history.write_text(
+        _json.dumps(
+            {
+                "ceiling_usd": 0.15,
+                "breach_acknowledgments": [
+                    {
+                        "run_utc": "2026-09-30T12:00:00Z",
+                        "label": "model-turn-5",
+                        "by": "owner",
+                    }
+                ],
+                "runs": [
+                    {
+                        "run_utc": "2026-09-30T12:00:00Z",
+                        "attempt": 9,
+                        "model": "gpt-6-luna",
+                        "entries": [
+                            {
+                                "label": "model-turn-5",
+                                "decision": "reservation_breach",
+                                "usd": 0.001,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert live_run.find_unacknowledged_breach(history) is None
 
 
 def test_reserve_reconcile_release() -> None:
@@ -2281,6 +2593,8 @@ def test_projection_carries_finish_review_keys() -> None:
             "epicure_lines": ["used pork: crisp contrast"],
             "dropped_options": [{"index": 2}],
             "single_option_reason": None,
+            "plan_source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+            "steps_source": "source",
             "stop_reason": "agent_sufficient_evidence",
             "input_tokens": 500,
             "output_tokens": 60,
@@ -2292,5 +2606,6 @@ def test_projection_carries_finish_review_keys() -> None:
     assert finished["epicure_lines"] == ["used pork: crisp contrast"]
     assert finished["dropped_options"] == [{"index": 2}]
     assert finished["single_option_reason"] is None
+    assert finished["steps_source"] == "source"
     assert finished["input_tokens"] == 500
     assert finished["output_tokens"] == 60

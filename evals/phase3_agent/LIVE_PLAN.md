@@ -187,13 +187,39 @@ reserves input tokens plus the maximum permitted output against the
 $0.15 run ceiling, and refuses any call that does not fit (finishing
 fewer scenarios is acceptable).
 
-Input counting: conservative local bound — UTF-8 bytes/3 over the
-full payload (input items, tools, schema), never below chars/4. A
+Input counting: a true-upper-bound local count — the UTF-8 byte
+length of the full serialized request the SDK will send (input
+items, the tools array and the text.format JSON schema), plus a
+fixed per-item and per-request overhead for Responses-envelope
+framing. Assumption (documented in `live_run.py`): one token spans
+at least one UTF-8 byte of the serialized request, so the byte
+length strictly dominates any chars-per-token heuristic. Query
+embeddings use the same approach over the serialized texts. A
 Responses input-token endpoint exists and the installed SDK exposes
 `client.responses.input_tokens.count`, but the official docs do not
 confirm it is unbilled, so a counting call could itself cost money
 and break the ledger. The local bound is deterministic, offline, and
-testable; bytes/3 strictly dominates chars/4 for any UTF-8 text.
+testable.
+
+Breach behaviour: after every paid call the runner compares the
+reported usage with the reservation (input tokens, output tokens
+and USD). Any excess is recorded in the ledger as
+`reservation_breach` (the call was billed; the bound, not the money,
+is what failed) and the run stops at once with
+`contact-operator`: the scenario is marked
+`stopped: contact-operator` with no grade, and no further calls are
+made — every remaining scenario is listed as
+`not_run: contact-operator`.
+
+Unacknowledged-breach preflight: preflight refuses when
+`spend-history.json` contains a `reservation_breach` entry with no
+matching acknowledgment. Acknowledging is a manual owner step: add
+an object with the run's `run_utc`, the entry's `label`, and the
+owner's name to the history file's top-level
+`breach_acknowledgments` list, e.g.
+`{"run_utc": "2026-09-30T12:00:00Z", "label": "model-turn-5",
+"by": "owner", "note": "bound fixed in P3-L-14"}`. Never acknowledge
+a breach to retry the same bound — fix the bound first.
 
 Ledger: `SpendLedger` records reserve → reconcile (reported usage
 replaces the reservation, remainder released) or keep (ambiguous
@@ -216,14 +242,16 @@ internally by default, so it gets the same treatment (reserve and
 keep per single attempt).
 
 Worst-case reservation math (luna $0.10 in / $0.50 out per 1M):
-per turn at most ~40,000 input tokens (a payload at the 30k
-chars/4-token ceiling is ~120k chars ≈ 40k at bytes/3) plus at most
-6,500 output tokens: $0.004 + $0.00325 = $0.00725. Per session at
-most 8 steps: $0.058. So $0.15 guarantees at least 2 full
-worst-case sessions with headroom; typical sessions (~11.2k input +
-~0.35k output ≈ $0.0013) put the planned 8 scenarios × 2 attempts
-(16 sessions ≈ $0.021) comfortably inside the cap, with query
-embeddings negligible (~$0.00002 for 16 queries).
+per turn at most ~121,000 input tokens (a payload at the 30k
+chars/4-token ceiling is ~120k chars, and the byte-length bound
+counts every byte plus overhead) plus at most 6,500 output tokens:
+$0.0121 + $0.00325 ≈ $0.0154. The bound is deliberately loose — it
+is reconciled down to reported usage after each call — so a full 8
+step worst-case session reserves up to ~$0.123 against the $0.15
+ceiling; typical sessions (~11.2k input + ~0.35k output ≈ $0.0013)
+put the planned 8 scenarios × 2 attempts (16 sessions ≈ $0.021)
+comfortably inside the cap, with query embeddings negligible
+(~$0.00002 for 16 queries).
 
 Trial isolation: a fresh session per attempt (a retry never inherits
 answers or evidence); ask-and-resume stays inside one session with

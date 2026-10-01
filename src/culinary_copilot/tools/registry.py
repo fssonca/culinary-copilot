@@ -61,6 +61,47 @@ def args_digest(args: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
+#: Review-trajectory args bound (P3-L-10): whole top-level keys while
+#: they fit, so the stored copy stays valid JSON (a string slice can
+#: break ``json.loads`` downstream in the evidence digest).
+_BOUNDED_ARGS_LIMIT = 2000
+
+
+def bounded_args_json(args: dict[str, Any], limit: int = _BOUNDED_ARGS_LIMIT) -> str:
+    """Valid-JSON bounded args: whole keys in sorted order plus a flag.
+
+    Keeps top-level keys (sorted, deterministic) while the serialized
+    preview plus a ``_truncated`` flag fits; drops the last-kept key
+    while it does not. The result always parses: ``{"_truncated":
+    true}`` when no key fits, the full dump when everything fits.
+    """
+    try:
+        full = json.dumps(args, default=str)
+    except (TypeError, ValueError):
+        return json.dumps({"_unserializable": True, "_truncated": True})
+    if len(full) <= limit:
+        return full
+    kept: dict[str, Any] = {}
+    for key in sorted(args):
+        kept[key] = args[key]
+        kept["_truncated"] = True
+        try:
+            text = json.dumps(kept, default=str)
+        except (TypeError, ValueError):
+            del kept[key]
+            continue
+        if len(text) > limit:
+            del kept[key]
+    kept["_truncated"] = True
+    try:
+        text = json.dumps(kept, default=str)
+    except (TypeError, ValueError):
+        return json.dumps({"_unserializable": True, "_truncated": True})
+    if len(text) > limit:
+        return json.dumps({"_truncated": True})
+    return text
+
+
 def _strict_nullable(node: dict[str, Any]) -> dict[str, Any]:
     """Wrap an optional property schema so explicit null is accepted."""
     any_of = node.get("anyOf")
@@ -417,7 +458,7 @@ def _record_event(
         # default event keep the digest only.
         if args is not None and bool(getattr(context, "record_tool_args", False)):
             try:
-                payload["args"] = json.dumps(args, default=str)[:2000]
+                payload["args"] = bounded_args_json(args)
             except (TypeError, ValueError):
                 payload["args"] = str(args)[:2000]
         try:

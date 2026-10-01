@@ -36,6 +36,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from culinary_copilot.agent.validate import (
     RecipeResolver,
     TechniqueResolver,
+    check_dietary_option,
+    check_plan_evidence,
+    dietary_values,
+    doc_text,
     hard_constraint_keys,
     validate_one_option,
     validate_plan,
@@ -136,7 +140,11 @@ _HISTORY_KEEP = 13
 USER_MESSAGE_EVENT = "user_message"
 USER_MESSAGE_KEEP = 5
 USER_MESSAGE_CHARS = 2000
-_NOTE_LIMIT = 280
+#: Client-note bound (P3-L-10): aligned with the AgentDirective.note
+#: schema max_length below so the model knows the limit. Enforced by
+#: the schema, not by silent truncation; the server-side safety net
+#: (word boundary plus marker) only binds on server-written text.
+_NOTE_LIMIT = 600
 
 
 def estimate_tokens(value: Any) -> int:
@@ -341,7 +349,7 @@ class AgentDirective(BaseModel):
     epicure_skip_reason: str | None = Field(default=None, max_length=200)
     epicure_lines: list[EpicureLine] = Field(default_factory=list, max_length=20)
     constraints_honored: list[str] = Field(default_factory=list, max_length=20)
-    note: str = Field(max_length=2000)
+    note: str = Field(max_length=600)
 
 
 # --- dependencies and results -------------------------------------------------
@@ -626,6 +634,83 @@ def _normalize_line_name(name: str) -> str:
     return " ".join(str(name or "").strip().lower().replace("_", " ").split())
 
 
+def _session_vocabulary(deps: AgentDeps) -> set[str] | None:
+    """Epicure vocabulary names for grounding checks (None when unavailable).
+
+    Unions every pairing core on the tool context; test fakes without
+    a vocabulary hook yield None and the pairing-claim check is
+    skipped (documented limitation).
+    """
+    from culinary_copilot.tools.epicure_tools import _core_vocabulary
+
+    names: set[str] = set()
+    context = getattr(deps, "tool_context", None)
+    for attr in ("epicure_core", "epicure_cooc", "epicure_chem"):
+        try:
+            vocab = _core_vocabulary(getattr(context, attr, None))
+        except Exception:
+            vocab = None
+        if vocab:
+            names |= set(vocab)
+    return names or None
+
+
+def _extract_vocab_terms(text: str, vocabulary: set[str]) -> list[str]:
+    """Vocabulary ingredients named in prose (longest names first).
+
+    Word-boundary matching over normalized names (underscores read as
+    spaces); matched spans are blanked so "olive oil" does not also
+    report "oil". Deterministic, no model judge.
+    """
+    lowered = str(text or "").lower()
+    found: list[str] = []
+    chars = list(lowered)
+    for name in sorted(vocabulary, key=len, reverse=True):
+        normalized = _normalize_line_name(name)
+        if not normalized:
+            continue
+        pattern = re.compile(r"\b" + re.escape(normalized) + r"\b")
+        match = pattern.search("".join(chars))
+        if match is not None:
+            found.append(normalized)
+            for pos in range(match.start(), match.end()):
+                chars[pos] = " "
+    return sorted(found)
+
+
+#: Numeric time/temperature claims: a number (or range) with a time or
+#: temperature unit (P3-L-08). Narrow and deterministic.
+_TIME_TEMP_RE = re.compile(
+    r"\d+\s*(?:[–—\-/]|to)?\s*\d*\s*"
+    r"(?:minutes?|mins?|hours?|hrs?|°\s*[FC]|degrees?(?:\s*(?:fahrenheit|celsius|[FC]))?)",
+    re.IGNORECASE,
+)
+
+
+def _extract_time_temp_claims(text: str) -> list[str]:
+    """Numeric time/temperature claim spans in prose, in order, deduped."""
+    claims: list[str] = []
+    for match in _TIME_TEMP_RE.finditer(str(text or "")):
+        claim = " ".join(match.group(0).split())
+        if claim and claim not in claims:
+            claims.append(claim)
+    return claims
+
+
+def _normalize_claim(text: str) -> str:
+    """Claim comparison form: lowercase, dashes unified, spaces collapsed."""
+    lowered = str(text or "").lower()
+    for dash in ("–", "—", "−"):
+        lowered = lowered.replace(dash, "-")
+    return " ".join(lowered.split())
+
+
+def _term_in_text(term: str, text: str) -> bool:
+    """Word-boundary term match with an optional plural s ("lentil" hits
+    "red lentils")."""
+    return re.search(r"\b" + re.escape(term) + r"s?\b", str(text or "").lower()) is not None
+
+
 def session_pairing_names(
     store: PostgresSessionStore, session_id: str, run_lines: list[str] | None = None
 ) -> list[str]:
@@ -692,7 +777,18 @@ _TASK_FRAMING = (
     "exempt. If no retrieved recipe is the requested dish or a close "
     "match, ask one question offering a concrete alternative that was "
     "found (e.g. a similar frozen dessert) instead of finishing with a "
-    "loosely related recipe."
+    "loosely related recipe. When the session has a dietary constraint, "
+    "every option's source ingredients must satisfy it: clear violations "
+    "drop the option, while broth-, stock-, bouillon- or "
+    "Worcestershire-based items without vegetable or vegan stay "
+    "unverified, never verified. Name only pairings, companions, times "
+    "and temperatures found in this session's evidence (returned Epicure "
+    "pairings, the options' source ingredients, cited chunks or the "
+    "selected recipe); anything else is rejected. A plan from a source "
+    "without directions is marked model_adaptation with an adaptation "
+    "saying so, and a plan with raw meat, poultry, fish or eggs needs a "
+    "technique_ref to a food-safety chunk: search_techniques for safe "
+    "internal temperatures."
 )
 
 
@@ -1012,8 +1108,90 @@ def record_select(
 
 
 def _truncate_note(note: str) -> str:
+    """User-visible server-side note bound (word boundary + marker).
+
+    The model note is schema-bound to ``_NOTE_LIMIT`` already, so this
+    only binds on server-written text (step notes, drop summaries);
+    nothing is ever cut silently mid-word.
+    """
     text = " ".join(str(note or "").split())
-    return text[:_NOTE_LIMIT] if len(text) > _NOTE_LIMIT else text
+    if len(text) <= _NOTE_LIMIT:
+        return text
+    cut = text[:_NOTE_LIMIT].rsplit(" ", 1)[0] or text[:_NOTE_LIMIT]
+    return cut + "…"
+
+
+#: Model-visible tool-output bound (P3-L-10): structural truncation
+#: below, never a string slice (a slice can yield invalid JSON).
+_TOOL_OUTPUT_LIMIT = 4000
+
+
+def _shorten_text(value: str, budget: int) -> str:
+    """User/model-visible string shortening: word boundary + marker."""
+    if len(value) <= budget:
+        return value
+    head = value[:budget]
+    cut = head.rsplit(" ", 1)[0] if " " in head else head
+    return (cut or head) + "…"
+
+
+def _shorten_strings(node: Any, budget: int) -> bool:
+    """Shorten every long string in a JSON tree (fixed key order)."""
+    changed = False
+    if isinstance(node, dict):
+        for key in sorted(node):
+            value = node[key]
+            if isinstance(value, str) and len(value) > budget:
+                node[key] = _shorten_text(value, budget)
+                changed = True
+            elif isinstance(value, (dict, list)):
+                changed = _shorten_strings(value, budget) or changed
+    elif isinstance(node, list):
+        for value in node:
+            if isinstance(value, (dict, list)):
+                changed = _shorten_strings(value, budget) or changed
+    return changed
+
+
+def truncate_tool_output(
+    summary: dict[str, Any], limit: int = _TOOL_OUTPUT_LIMIT
+) -> dict[str, Any]:
+    """Structurally truncate a tool summary to valid JSON within limit.
+
+    Drops tail items from result lists first (fixed field order, with
+    counts), then shortens long strings; marks the result
+    ``truncated: true`` with ``dropped_items``. Always returns valid
+    JSON: the last resort keeps only identity plus the marker.
+    """
+    import copy
+
+    if len(json.dumps(summary, default=str)) <= limit:
+        return summary
+    out = copy.deepcopy(summary)
+    dropped_items = 0
+    for key in ("results", "ingredients", "pairings", "candidates"):
+        rows = out.get(key)
+        while isinstance(rows, list) and rows and len(json.dumps(out, default=str)) > limit:
+            rows.pop()
+            dropped_items += 1
+    budget = 200
+    while len(json.dumps(out, default=str)) > limit and budget >= 20:
+        if not _shorten_strings(out, budget):
+            break
+        budget //= 2
+    out["truncated"] = True
+    out["dropped_items"] = dropped_items
+    if len(json.dumps(out, default=str)) > limit:
+        out = {
+            "tool": summary.get("tool"),
+            "ok": summary.get("ok"),
+            "truncated": True,
+            "dropped_items": dropped_items,
+            "note": "output too large; see the tool_call event",
+        }
+        if len(json.dumps(out, default=str)) > limit:  # pragma: no cover
+            return {"truncated": True}
+    return out
 
 
 async def _emit(deps: AgentDeps, stage: str, detail: dict[str, Any]) -> None:
@@ -1262,6 +1440,12 @@ async def run_agent(
         except Exception as exc:
             from culinary_copilot.llm.client import ProviderIncompleteError
 
+            if bool(getattr(exc, "reservation_breach", False)):
+                # Live-runner spend guard: reported usage exceeded the
+                # reservation. Never mapped to a provider error — the
+                # run must stop with contact-operator, no further
+                # calls.
+                raise
             exc_in = getattr(exc, "input_tokens", None) or 0
             exc_out = getattr(exc, "output_tokens", None) or 0
             used_in += exc_in
@@ -1517,9 +1701,10 @@ async def run_agent(
                 {
                     "type": "function_call_output",
                     "call_id": (c.get("call_id") or ""),
-                    "output": json.dumps(_summarize_result(c.get("name", ""), r), default=str)[
-                        :4000
-                    ],
+                    "output": json.dumps(
+                        truncate_tool_output(_summarize_result(c.get("name", ""), r)),
+                        default=str,
+                    ),
                 }
                 for c, r in zip(parsed_calls, results)
             )
@@ -2058,6 +2243,10 @@ async def _handle_finish(
     single_option_reason: str | None = None
     dropped_options: list[dict[str, Any]] = []
     technique_evidence: list[dict[str, Any]] = []
+    grounding_errors: list[str] = []
+    checkable_claims = 0
+    constraint_checks: list[dict[str, Any]] = []
+    steps_source = "source"
     retrieved_pairs, full_pairs = recipe_session_evidence(store=store, session_id=session_id)
     if wants_options:
         submitted = [o.model_dump() for o in (result.options or [])]
@@ -2163,6 +2352,37 @@ async def _handle_finish(
             )
             for index, option in enumerate(submitted)
         ]
+        # Minimum hard-constraint control (P3-L-07): each option's
+        # get_recipe ingredient lines against the conservative term
+        # lists. A clear violation extends the per-option errors, so
+        # the option drops through the survivor rule below with a
+        # readable reason; ambiguous terms only mark the option
+        # unverified in the client final.
+        diet_vals = dietary_values(state.constraints)
+        if diet_vals:
+            checked_options: list[tuple[dict[str, Any], list[str]]] = []
+            for index, (option, errs) in enumerate(per_option):
+                option_errs = list(errs)
+                try:
+                    diet_doc = resolve(
+                        str(option.get("dataset_id") or ""),
+                        str(option.get("source_id") or ""),
+                    )
+                except Exception:
+                    diet_doc = None
+                if isinstance(option, dict) and isinstance(diet_doc, dict):
+                    for value in diet_vals:
+                        diet_errs, entry = check_dietary_option(index, option, diet_doc, value)
+                        option_errs.extend(diet_errs)
+                        constraint_checks.append(
+                            {
+                                "index": index,
+                                "source_id": str(option.get("source_id") or ""),
+                                **entry,
+                            }
+                        )
+                checked_options.append((option, option_errs))
+            per_option = checked_options
         valid = [option for option, errs in per_option if not errs]
         dropped_options = [
             {"index": index, "errors": errs} for index, (_, errs) in enumerate(per_option) if errs
@@ -2208,6 +2428,57 @@ async def _handle_finish(
             state_epicure_skip = None
             options_dump = None
         epicure_degraded = effective_skip == "epicure_not_configured" and not errors
+        # Minimum claim grounding for the model note (P3-L-08): named
+        # pairings/companions from the Epicure vocabulary must appear
+        # in session evidence (returned pairings, the options' source
+        # ingredient lines, or cited chunks); numeric time/temperature
+        # claims must appear in a selected recipe document. Narrow and
+        # deterministic, no model judge.
+        if selections:
+            model_note_text = _truncate_note(directive.note)
+            pairing_names = {
+                _normalize_line_name(n)
+                for n in session_pairing_names(store, session_id, pairing_lines)
+            }
+            selection_texts: list[str] = []
+            for option in selections:
+                try:
+                    selection_doc = resolve(
+                        str(option.get("dataset_id") or ""),
+                        str(option.get("source_id") or ""),
+                    )
+                except Exception:
+                    selection_doc = None
+                if isinstance(selection_doc, dict):
+                    selection_texts.append(doc_text(selection_doc))
+            vocabulary = _session_vocabulary(deps)
+            if vocabulary:
+                for term in _extract_vocab_terms(model_note_text, vocabulary):
+                    checkable_claims += 1
+                    if not (
+                        any(_term_in_text(term, name) for name in pairing_names)
+                        or any(_term_in_text(term, text) for text in selection_texts)
+                    ):
+                        grounding_errors.append(
+                            f"note names unsupported pairing {term!r} (not in Epicure "
+                            "pairings, option ingredients, or cited chunks)"
+                        )
+            recipe_blob = _normalize_claim("\n".join(selection_texts))
+            for claim in _extract_time_temp_claims(model_note_text):
+                checkable_claims += 1
+                if _normalize_claim(claim) not in recipe_blob:
+                    grounding_errors.append(
+                        f"note makes an unsupported time/temperature claim: {claim!r} "
+                        "(not in the selected recipe documents)"
+                    )
+            if re.search(r"\bverif\w*\b", model_note_text, re.IGNORECASE) and any(
+                entry.get("status") == "unverified" for entry in constraint_checks
+            ):
+                grounding_errors.append(
+                    "note claims the options are verified but some ingredients are "
+                    "unverified for the dietary constraint; remove the claim"
+                )
+        errors.extend(grounding_errors)
     elif wants_answer:
         answer = result.technique_answer
         assert answer is not None
@@ -2263,6 +2534,40 @@ async def _handle_finish(
             returned=returned_technique_chunks if returned_technique_chunks is not None else set(),
         )
         errors.extend(ref_errors)
+        # Minimum claim grounding for technique-answer text (P3-L-08):
+        # named vocabulary pairings must appear in returned pairings
+        # or the cited chunks; numeric claims must appear in a cited
+        # chunk.
+        answer_text = str(answer.text or "")
+        chunk_texts = [
+            str(row.get("chunk_text") or row.get("excerpt") or "")
+            for row in technique_evidence
+            if isinstance(row, dict)
+        ]
+        answer_pairing_names = {
+            _normalize_line_name(n) for n in session_pairing_names(store, session_id, pairing_lines)
+        }
+        answer_vocabulary = _session_vocabulary(deps)
+        if answer_vocabulary:
+            for term in _extract_vocab_terms(answer_text, answer_vocabulary):
+                checkable_claims += 1
+                if not (
+                    any(_term_in_text(term, name) for name in answer_pairing_names)
+                    or any(_term_in_text(term, text) for text in chunk_texts)
+                ):
+                    grounding_errors.append(
+                        f"technique answer names unsupported pairing {term!r} "
+                        "(not in Epicure pairings or the cited chunks)"
+                    )
+        chunk_blob = _normalize_claim("\n".join(chunk_texts))
+        for claim in _extract_time_temp_claims(answer_text):
+            checkable_claims += 1
+            if _normalize_claim(claim) not in chunk_blob:
+                grounding_errors.append(
+                    f"technique answer makes an unsupported time/temperature claim: "
+                    f"{claim!r} (not in the cited chunks)"
+                )
+        errors.extend(grounding_errors)
         state_epicure_skip = effective_skip
         epicure_degraded = False
     else:
@@ -2279,6 +2584,26 @@ async def _handle_finish(
             returned=returned_technique_chunks if returned_technique_chunks is not None else set(),
         )
         errors.extend(ref_errors)
+        # Minimum plan evidence (P3-L-09): ingredient-only sources set
+        # steps_source to model_adaptation (needs an adaptation saying
+        # so); raw meat/poultry/fish/eggs need a food-safety ref.
+        plan_source = plan_dump.get("source") if isinstance(plan_dump, dict) else {}
+        if isinstance(plan_source, dict):
+            try:
+                plan_doc = resolve(
+                    str(plan_source.get("dataset_id") or ""),
+                    str(plan_source.get("source_id") or ""),
+                )
+            except Exception:
+                plan_doc = None
+        else:
+            plan_doc = None
+        plan_evidence_errors, steps_source = check_plan_evidence(
+            plan_dump if isinstance(plan_dump, dict) else {},
+            plan_doc if isinstance(plan_doc, dict) else {},
+            [row for row in technique_evidence if isinstance(row, dict)],
+        )
+        errors.extend(plan_evidence_errors)
         state_epicure_skip = None
         effective_skip = None
 
@@ -2426,6 +2751,7 @@ async def _handle_finish(
         event_payload = {
             "note": note,
             "plan_source": plan_dump.get("source"),
+            "steps_source": steps_source,
             **(turn_usage or {}),
         }
 
@@ -2458,6 +2784,11 @@ async def _handle_finish(
     if wants_options:
         final = {"options": options_dump}
         final["note"] = note
+        final["note_source"] = "server" if dropped_options else "model"
+        if final["note_source"] == "model":
+            # The model note passed grounding with (verified) or
+            # without (unverified) checkable claims.
+            final["note_claims"] = "verified" if checkable_claims else "unverified"
         final["epicure_lines"] = lines
         if single_option_reason is not None:
             final["single_option_reason"] = single_option_reason
@@ -2466,6 +2797,8 @@ async def _handle_finish(
         if state_epicure_skip is not None:
             final["epicure_skip_reason"] = state_epicure_skip
         final["constraints_honored"] = list(directive.constraints_honored or [])
+        if constraint_checks:
+            final["constraint_check"] = list(constraint_checks)
         final["dropped_options"] = [
             {
                 "index": int(d["index"]),
@@ -2481,6 +2814,8 @@ async def _handle_finish(
         assert answer is not None
         final = {
             "note": note,
+            "note_source": "model",
+            "note_claims": "verified" if checkable_claims else "unverified",
             "technique_answer": {
                 "text": answer.text,
                 "technique_refs": [
@@ -2493,7 +2828,9 @@ async def _handle_finish(
         if state_epicure_skip is not None:
             final["epicure_skip_reason"] = state_epicure_skip
     else:
-        final = {"plan": plan_payload.model_dump() if plan_payload else {}}
+        plan_final = dict(plan_payload.model_dump() if plan_payload else {})
+        plan_final["steps_source"] = steps_source
+        final = {"plan": plan_final, "note_source": "model"}
     return AgentRunResult(
         stop_reason=REASON_AGENT_SUFFICIENT,
         phase=updated.current_phase,

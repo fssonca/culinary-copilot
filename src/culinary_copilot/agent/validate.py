@@ -15,8 +15,15 @@ The model proposes; these functions dispose, without a model call:
 - hard constraints kept: every non-empty hard-constraint target
   (``domain/clarification.py::HARD_CONSTRAINT_TARGETS``) present in the
   session must appear in the finish's ``constraints_honored``;
+- minimum dietary check (P3-L-07): each option's ``get_recipe``
+  ingredient lines against conservative vegetarian/vegan term lists
+  (word boundaries; ambiguous broth/stock/bouillon/Worcestershire
+  without vegetable/vegan stays unverified, never verified);
 - plan integrity: the plan source equals the selected dish and the plan
-  sections are non-empty.
+  sections are non-empty;
+- minimum plan evidence (P3-L-09): ingredient-only sources set
+  ``steps_source`` to ``model_adaptation`` (needs an adaptation saying
+  so); raw meat/poultry/fish/eggs need a food-safety technique_ref.
 
 A model claim alone never establishes compliance; these checks compare
 against stored data only. Failures return short error strings the loop
@@ -25,6 +32,7 @@ feeds back to the model once as a tool-style error, then stops.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 from culinary_copilot.domain.clarification import HARD_CONSTRAINT_TARGETS
@@ -48,6 +56,227 @@ def hard_constraint_keys(constraints: dict[str, Any]) -> set[str]:
         elif isinstance(value, dict) and value:
             out.add(key)
     return out
+
+
+def dietary_values(constraints: dict[str, Any]) -> list[str]:
+    """Raw dietary-constraint values (list or single string)."""
+    raw = (constraints or {}).get("dietary_constraints")
+    if isinstance(raw, str):
+        return [raw] if raw.strip() else []
+    if isinstance(raw, list):
+        return [str(v) for v in raw if str(v).strip()]
+    if isinstance(raw, dict):
+        return [str(v) for v in raw.values() if str(v).strip()]
+    return []
+
+
+#: Conservative dietary violation terms (P3-L-07), matched with word
+#: boundaries so "eggplant" never flags "egg" and "vegetable broth"
+#: never flags "broth" (see the ambiguous handling below). Vegetarian
+#: excludes meat, poultry, fish/seafood, gelatin and similar
+#: animal-derived ingredients; vegan adds dairy, eggs and honey.
+VEGETARIAN_VIOLATION_TERMS = frozenset(
+    {
+        # meat
+        "beef",
+        "pork",
+        "lamb",
+        "veal",
+        "venison",
+        "goat",
+        "mutton",
+        "rabbit",
+        "bacon",
+        "ham",
+        "sausage",
+        "salami",
+        "pepperoni",
+        "chorizo",
+        "prosciutto",
+        "pancetta",
+        "meatball",
+        "meatballs",
+        "jerky",
+        # poultry
+        "chicken",
+        "turkey",
+        "duck",
+        "goose",
+        "quail",
+        "pheasant",
+        "poultry",
+        "hen",
+        "capon",
+        # fish and seafood
+        "fish",
+        "salmon",
+        "tuna",
+        "cod",
+        "haddock",
+        "halibut",
+        "tilapia",
+        "trout",
+        "sardine",
+        "sardines",
+        "anchovy",
+        "anchovies",
+        "mackerel",
+        "sole",
+        "snapper",
+        "catfish",
+        "bass",
+        "eel",
+        "swordfish",
+        "surimi",
+        "shrimp",
+        "prawn",
+        "crab",
+        "lobster",
+        "crayfish",
+        "scallop",
+        "scallops",
+        "clam",
+        "clams",
+        "mussel",
+        "mussels",
+        "oyster",
+        "oysters",
+        "squid",
+        "calamari",
+        "octopus",
+        "seafood",
+        # gelatin and similar animal-derived ingredients
+        "gelatin",
+        "gelatine",
+        "lard",
+        "tallow",
+        "suet",
+        "rennet",
+    }
+)
+
+#: Vegan additions: dairy, eggs and honey.
+VEGAN_EXTRA_TERMS = frozenset(
+    {
+        "milk",
+        "cheese",
+        "butter",
+        "cream",
+        "yogurt",
+        "yoghurt",
+        "whey",
+        "casein",
+        "caseinate",
+        "ghee",
+        "kefir",
+        "buttermilk",
+        "mozzarella",
+        "parmesan",
+        "cheddar",
+        "feta",
+        "ricotta",
+        "mascarpone",
+        "halloumi",
+        "paneer",
+        "provolone",
+        "gouda",
+        "brie",
+        "egg",
+        "eggs",
+        "honey",
+    }
+)
+
+VEGAN_VIOLATION_TERMS = VEGETARIAN_VIOLATION_TERMS | VEGAN_EXTRA_TERMS
+
+#: Ambiguous terms: without "vegetable" or "vegan" in the same line
+#: they keep the option but mark it unverified (never verified).
+AMBIGUOUS_DIET_TERMS = frozenset({"broth", "stock", "bouillon", "worcestershire"})
+
+#: False-positive guards: plant butters, plant milks, coconut cream
+#: and cream of tartar are not dairy.
+_NON_DAIRY_RES = (
+    re.compile(r"\b(?:peanut|almond|cashew|sunflower|sesame|soy|tahini|apple|coconut) butter\b"),
+    re.compile(r"\b(?:coconut|oat|soy|almond|cashew|rice|hemp|pea|flax|hazelnut) milk\b"),
+    re.compile(r"\bcoconut cream\b"),
+    re.compile(r"\bcream of tartar\b"),
+)
+
+
+def _word_hit(line: str, term: str) -> bool:
+    """Word-boundary match of one term in a lowercased line."""
+    return re.search(r"\b" + re.escape(term) + r"\b", line) is not None
+
+
+def _ingredient_line_texts(doc: dict[str, Any]) -> list[str]:
+    """Searchable ingredient lines: canonical/name/quantity text plus
+    raw source lines when the document keeps them."""
+    texts: list[str] = []
+    for item in _ingredient_entries(doc):
+        parts = [
+            item.get("canonical"),
+            item.get("name"),
+            item.get("quantity_text"),
+            item.get("amount_text"),
+        ]
+        line = " ".join(str(p).strip() for p in parts if str(p or "").strip())
+        if line:
+            texts.append(line)
+    raw = doc.get("ingredient_lines")
+    if isinstance(raw, list):
+        texts.extend(str(line).strip() for line in raw if str(line or "").strip())
+    return texts
+
+
+def check_dietary_option(
+    index: int, option: dict[str, Any], doc: dict[str, Any], value: str
+) -> tuple[list[str], dict[str, Any]]:
+    """Minimum hard-constraint check for one option (P3-L-07).
+
+    Compares the option's ``get_recipe`` ingredient lines against the
+    conservative term lists with word-boundary matching. Returns
+    ``(violation_errors, check_entry)``: a clear violation drops the
+    option with a readable reason; ambiguous terms keep it but list
+    them under an ``"unverified"`` entry; unknown dietary values do
+    not invent checks (``"not_checked"`` with the value).
+    """
+    label = str(value or "").strip().lower()
+    if label == "vegetarian":
+        terms = VEGETARIAN_VIOLATION_TERMS
+    elif label == "vegan":
+        terms = VEGAN_VIOLATION_TERMS
+    else:
+        return [], {"status": "not_checked", "value": str(value)}
+    errors: list[str] = []
+    violations: list[str] = []
+    unverified: list[str] = []
+    for line in _ingredient_line_texts(doc):
+        scrubbed = line.lower()
+        for rx in _NON_DAIRY_RES:
+            scrubbed = rx.sub(" ", scrubbed)
+        hit = next((term for term in sorted(terms) if _word_hit(scrubbed, term)), None)
+        if hit is not None:
+            excerpt = line.strip()[:80]
+            errors.append(
+                f"option {index}: violates dietary constraint {label!r}: "
+                f"{hit!r} in ingredient line {excerpt!r}"
+            )
+            if hit not in violations:
+                violations.append(hit)
+            continue
+        for ambiguous in sorted(AMBIGUOUS_DIET_TERMS):
+            if _word_hit(scrubbed, ambiguous) and not (
+                _word_hit(scrubbed, "vegetable") or _word_hit(scrubbed, "vegan")
+            ):
+                if ambiguous not in unverified:
+                    unverified.append(ambiguous)
+    if violations:
+        entry: dict[str, Any] = {"status": "violated", "value": label, "terms": violations}
+    elif unverified:
+        entry = {"status": "unverified", "value": label, "terms": list(unverified)}
+    else:
+        entry = {"status": "checked", "value": label}
+    return errors, entry
 
 
 def _ingredient_entries(doc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -236,6 +465,167 @@ def validate_plan(
 TECHNIQUE_OPTION_KEYS = frozenset({"doc_id", "chunk_id", "technique_refs", "technique"})
 
 
+#: Manifest food-safety docs whose chunks may support raw-protein
+#: plans (P3-L-09): every entry has topic "food safety" in
+#: ``evals/technique_corpus/manifest.json``.
+SAFETY_DOC_IDS = frozenset(
+    {"tech-fda-safe-32", "tech-fsis-temp-34", "tech-fda-kitchen-33", "tech-fsis-leftover-36"}
+)
+
+#: Raw animal-protein terms (P3-L-09): meat, poultry, fish and eggs.
+#: A source-ingredient line containing "cooked" (e.g. "fully cooked
+#: chicken fillets") is exempt. Word-boundary matching, as above.
+RAW_PROTEIN_TERMS = frozenset(
+    {
+        "chicken",
+        "turkey",
+        "duck",
+        "goose",
+        "quail",
+        "pheasant",
+        "poultry",
+        "beef",
+        "pork",
+        "lamb",
+        "veal",
+        "venison",
+        "goat",
+        "mutton",
+        "rabbit",
+        "bacon",
+        "ham",
+        "sausage",
+        "salami",
+        "pepperoni",
+        "chorizo",
+        "prosciutto",
+        "pancetta",
+        "meatball",
+        "meatballs",
+        "fish",
+        "salmon",
+        "tuna",
+        "cod",
+        "haddock",
+        "halibut",
+        "tilapia",
+        "trout",
+        "sardine",
+        "sardines",
+        "anchovy",
+        "anchovies",
+        "mackerel",
+        "sole",
+        "snapper",
+        "catfish",
+        "bass",
+        "eel",
+        "swordfish",
+        "surimi",
+        "shrimp",
+        "prawn",
+        "crab",
+        "lobster",
+        "crayfish",
+        "scallop",
+        "scallops",
+        "clam",
+        "clams",
+        "mussel",
+        "mussels",
+        "oyster",
+        "oysters",
+        "squid",
+        "calamari",
+        "octopus",
+        "seafood",
+        "egg",
+        "eggs",
+    }
+)
+
+#: Marker phrases for a model-adaptation admission (P3-L-09): an
+#: adaptation counts as stating the steps are not from the source when
+#: its description contains one of these (case-insensitive).
+MODEL_STEPS_MARKERS = (
+    "not from the source",
+    "not in the source",
+    "not from the recipe",
+    "model-created",
+    "model created",
+    "created by the model",
+)
+
+#: Directions fields in a resolved recipe document, in lookup order.
+_DIRECTION_FIELDS = ("instructions", "instruction_lines", "steps", "directions")
+
+
+def doc_directions(doc: dict[str, Any]) -> list[str]:
+    """Source directions (empty when the record is ingredient-only)."""
+    for key in _DIRECTION_FIELDS:
+        raw = (doc or {}).get(key)
+        if isinstance(raw, list):
+            steps = [str(s).strip() for s in raw if str(s or "").strip()]
+            if steps:
+                return steps
+    return []
+
+
+def doc_text(doc: dict[str, Any]) -> str:
+    """Searchable source text: ingredient lines plus directions."""
+    return "\n".join(_ingredient_line_texts(doc) + doc_directions(doc))
+
+
+def check_plan_evidence(
+    plan: dict[str, Any],
+    doc: dict[str, Any] | None,
+    technique_rows: list[dict[str, Any]] | None,
+) -> tuple[list[str], str]:
+    """Minimum plan-evidence checks (P3-L-09).
+
+    Returns ``(errors, steps_source)``. A source without directions
+    sets ``steps_source`` to ``"model_adaptation"`` and needs at least
+    one plan adaptation stating the steps are not from the source.
+    Source ingredients with raw meat, poultry, fish or eggs (not
+    "cooked") need at least one technique_ref to a food-safety chunk.
+    """
+    errors: list[str] = []
+    source = doc or {}
+    steps_source = "source" if doc_directions(source) else "model_adaptation"
+    if steps_source == "model_adaptation":
+        adaptations = plan.get("adaptations") or []
+        descriptions = [str(a.get("description") or "") for a in adaptations if isinstance(a, dict)]
+        if not any(
+            marker in description.lower()
+            for description in descriptions
+            for marker in MODEL_STEPS_MARKERS
+        ):
+            errors.append(
+                "steps_source is model_adaptation (the source has no directions): "
+                "add a plan adaptation stating the steps are not from the source"
+            )
+    raw_hits: list[str] = []
+    for line in _ingredient_line_texts(source):
+        lowered = line.lower()
+        if _word_hit(lowered, "cooked"):
+            continue
+        hit = next((term for term in sorted(RAW_PROTEIN_TERMS) if _word_hit(lowered, term)), None)
+        if hit is not None and hit not in raw_hits:
+            raw_hits.append(hit)
+    if raw_hits:
+        safety = [
+            row
+            for row in (technique_rows or [])
+            if str((row or {}).get("doc_id") or "") in SAFETY_DOC_IDS
+        ]
+        if not safety:
+            errors.append(
+                f"plan uses raw {', '.join(raw_hits)}: cite a food-safety chunk "
+                "(search_techniques for safe internal temperatures) with a technique_ref"
+            )
+    return errors, steps_source
+
+
 def validate_technique_refs(
     refs: Any,
     *,
@@ -290,9 +680,21 @@ def validate_technique_refs(
 
 
 __all__ = [
+    "AMBIGUOUS_DIET_TERMS",
+    "RAW_PROTEIN_TERMS",
+    "MODEL_STEPS_MARKERS",
+    "SAFETY_DOC_IDS",
+    "VEGAN_EXTRA_TERMS",
+    "VEGAN_VIOLATION_TERMS",
+    "VEGETARIAN_VIOLATION_TERMS",
     "RecipeResolver",
     "TECHNIQUE_OPTION_KEYS",
     "TechniqueResolver",
+    "check_dietary_option",
+    "check_plan_evidence",
+    "dietary_values",
+    "doc_directions",
+    "doc_text",
     "hard_constraint_keys",
     "quantity_in_source",
     "validate_one_option",

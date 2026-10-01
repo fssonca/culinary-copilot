@@ -55,6 +55,7 @@ CURRY_DOC = {
         {"canonical": "yogurt", "amount": "1", "unit": "cup", "quantity_text": "1 cup"},
         {"canonical": "salt", "amount": None, "unit": None, "quantity_text": None},
     ],
+    "instructions": ["Brown the chicken.", "Stir in yogurt and simmer.", "Serve hot."],
 }
 LENTIL_DOC = {
     "dataset_id": "odunola/foodie",
@@ -65,10 +66,26 @@ LENTIL_DOC = {
         {"canonical": "red lentils", "amount": "200", "unit": "g", "quantity_text": "200 g"},
         {"canonical": "onion", "amount": "1", "unit": "count", "quantity_text": "1"},
     ],
+    "instructions": ["Simmer the lentils with onion.", "Serve hot."],
+}
+BROTH_DOC = {
+    "dataset_id": "odunola/foodie",
+    "source_id": "broth-9",
+    "title": "Simple Vegetable Broth",
+    "servings": 4.0,
+    "ingredients": [
+        {
+            "canonical": "vegetable bouillon",
+            "amount": "2",
+            "unit": "cubes",
+            "quantity_text": "2 cubes",
+        },
+    ],
 }
 DOCS = {
     ("odunola/foodie", "curry-1"): CURRY_DOC,
     ("odunola/foodie", "lentil-2"): LENTIL_DOC,
+    ("odunola/foodie", "broth-9"): BROTH_DOC,
 }
 SEARCH_ROWS = [
     {"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry"},
@@ -1385,6 +1402,21 @@ def test_provider_auth_fails_fast(engine) -> None:
     assert excinfo.value.reason == "provider_auth"
 
 
+def test_reservation_breach_propagates_unmapped(engine) -> None:
+    """A spend-guard breach is never mapped to a provider error terminal."""
+
+    class _Breach(RuntimeError):
+        def __init__(self) -> None:
+            super().__init__("reservation breach on model-turn-1")
+            self.reservation_breach = True
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider([("raise", _Breach())])
+    with pytest.raises(_Breach):
+        _run(run_agent(state.id, deps=_deps(store, provider)))
+
+
 def test_provider_transient_then_no_progress(engine) -> None:
     store = PostgresSessionStore(engine)
     state = _session(store)
@@ -1500,21 +1532,40 @@ def test_plan_finish_after_select(engine) -> None:
     provider2 = ScriptedProvider(
         [
             (
+                "tools",
+                [("c9", "search_techniques", {"query": "safe internal temperatures"})],
+            ),
+            (
                 "parsed",
                 {
                     "decision": "finish",
                     "move_to": "plan",
-                    "result": {"plan": plan},
+                    "result": {
+                        "plan": {
+                            **plan,
+                            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                        }
+                    },
                     "constraints_honored": [],
                     "note": "plan from selected source",
                 },
-            )
+            ),
         ]
     )
-    result2 = _run(run_agent(state.id, deps=_deps(store, provider2)))
+    deps2 = _deps(
+        store,
+        provider2,
+        overrides={"search_techniques": _tech_search([_safety_row()])},
+    )
+    deps2.technique_resolver = lambda doc_id, chunk_id: (
+        dict(_safety_row()) if (doc_id, chunk_id) == ("tech-fda-safe-32", 0) else None
+    )
+    result2 = _run(run_agent(state.id, deps=deps2))
     assert result2.stop_reason == "agent_sufficient_evidence"
     assert result2.phase == "plan"
     assert store.get(state.id).cooking_plan["plating"] == "in a bowl"
+    assert result2.final is not None
+    assert result2.final["plan"]["steps_source"] == "source"
 
 
 def test_direct_dish_single_option_with_epicure(engine) -> None:
@@ -2374,7 +2425,34 @@ def _tech_row(doc_id: str = "tech-egg-1", chunk_id: int = 0) -> dict[str, Any]:
         "licence": "CC-BY-SA-4.0",
         "licence_url": "https://example.test/licence",
         "attribution_text": "Egg corpus (CC BY-SA 4.0)",
+        "chunk_text": "Simmer eggs 6 minutes, then plunge into an ice bath.",
     }
+
+
+def _safety_row(chunk_id: int = 0) -> dict[str, Any]:
+    """Food-safety technique chunk (P3-L-09 raw-protein support)."""
+    return {
+        "doc_id": "tech-fda-safe-32",
+        "chunk_id": chunk_id,
+        "section": "Safe Food Handling",
+        "title": "Safe Food Handling",
+        "url": "https://example.test/safe",
+        "licence": "CC-BY-SA-4.0",
+        "licence_url": "https://example.test/licence",
+        "attribution_text": "Safe corpus (CC BY-SA 4.0)",
+        "chunk_text": "Cook poultry to a safe internal temperature of 165°F (74°C).",
+    }
+
+
+class _VocabEpicureCore(_FakeEpicureCore):
+    """Fake core with a vocabulary hook for claim-grounding tests."""
+
+    def __init__(self, vocabulary: set[str], **kw: Any) -> None:
+        super().__init__(**kw)
+        self._vocabulary = set(vocabulary)
+
+    def vocabulary(self) -> set[str]:
+        return set(self._vocabulary)
 
 
 def _tech_search(rows: list[dict[str, Any]]):  # type: ignore[no-untyped-def]
@@ -2441,18 +2519,35 @@ def test_options_after_select_rejected_then_plan_accepted(engine) -> None:
         [
             ("parsed", _finish_options([_opt()])),
             (
+                "tools",
+                [("c9", "search_techniques", {"query": "safe internal temperatures"})],
+            ),
+            (
                 "parsed",
                 {
                     "decision": "finish",
                     "move_to": "plan",
-                    "result": {"plan": plan},
+                    "result": {
+                        "plan": {
+                            **plan,
+                            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                        }
+                    },
                     "constraints_honored": [],
                     "note": "plan from selected source",
                 },
             ),
         ]
     )
-    result2 = _run(run_agent(state.id, deps=_deps(store, provider2)))
+    deps2 = _deps(
+        store,
+        provider2,
+        overrides={"search_techniques": _tech_search([_safety_row()])},
+    )
+    deps2.technique_resolver = lambda doc_id, chunk_id: (
+        dict(_safety_row()) if (doc_id, chunk_id) == ("tech-fda-safe-32", 0) else None
+    )
+    result2 = _run(run_agent(state.id, deps=deps2))
     assert result2.stop_reason == "agent_sufficient_evidence"
     assert result2.phase == "plan"
     rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
@@ -2931,3 +3026,438 @@ def test_technique_final_carries_note_and_deduped_attribution(engine) -> None:
             "licence_url": "https://example.test/licence",
         }
     ]
+
+
+# --- P3-L-07 minimum hard-constraint control ---------------------------------
+
+
+def test_vegetarian_chicken_stock_option_dropped(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store, constraints={"dietary_constraints": ["vegetarian"]})
+    provider = ScriptedProvider(
+        [
+            _retrieval_turn(),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts(),
+                    constraints_honored=["dietary_constraints"],
+                    note="Two options, one dropped for chicken.",
+                ),
+            ),
+        ]
+    )
+    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    assert [o["source_id"] for o in result.final["options"]] == ["lentil-2"]
+    assert result.final.get("single_option_reason") == "only_one_valid_candidate"
+    assert result.final.get("note_source") == "server"
+    checks = result.final.get("constraint_check")
+    assert checks == [
+        {
+            "index": 0,
+            "source_id": "curry-1",
+            "status": "violated",
+            "value": "vegetarian",
+            "terms": ["chicken"],
+        },
+        {"index": 1, "source_id": "lentil-2", "status": "checked", "value": "vegetarian"},
+    ]
+
+
+def test_vegetable_bouillon_passes_vegetarian(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store, constraints={"dietary_constraints": ["vegetarian"]})
+    broth = {
+        "dataset_id": "odunola/foodie",
+        "source_id": "broth-9",
+        "title": "Simple Vegetable Broth",
+        "quantities": [],
+        "adaptations": [],
+    }
+    lentil = _opt(source_id="lentil-2", title="Red Lentil Soup", quantities=[])
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c0", "search_recipes", {"query": "vegetarian soup"}),
+                    (
+                        "c1",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "broth-9"},
+                    ),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options([broth, lentil], constraints_honored=["dietary_constraints"]),
+            ),
+        ]
+    )
+    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    assert len(result.final["options"]) == 2
+    assert result.final.get("dropped_options") == []
+    assert result.final.get("note_source") == "model"
+    assert result.final.get("note_claims") == "unverified"
+    assert result.final.get("constraint_check") == [
+        {"index": 0, "source_id": "broth-9", "status": "checked", "value": "vegetarian"},
+        {"index": 1, "source_id": "lentil-2", "status": "checked", "value": "vegetarian"},
+    ]
+
+
+def test_unknown_dietary_value_not_checked(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store, constraints={"dietary_constraints": ["gluten-free"]})
+    provider = ScriptedProvider(
+        [
+            _retrieval_turn(),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(), constraints_honored=["dietary_constraints"]
+                ),
+            ),
+        ]
+    )
+    result = _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    assert len(result.final["options"]) == 2
+    assert result.final.get("constraint_check") == [
+        {"index": 0, "source_id": "curry-1", "status": "not_checked", "value": "gluten-free"},
+        {"index": 1, "source_id": "lentil-2", "status": "not_checked", "value": "gluten-free"},
+    ]
+
+
+# --- P3-L-08 minimum claim grounding ------------------------------------------
+
+
+def test_note_unsupported_pairing_rejected_then_returned_passes(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    core = _VocabEpicureCore({"lemon", "rosemary", "pork", "garlic", "chicken", "beef"})
+    turns: list[tuple[str, Any]] = [
+        (
+            "tools",
+            [
+                ("c1", "search_recipes", {"query": "roast chicken"}),
+                (
+                    "c2",
+                    "get_recipe",
+                    {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                ),
+                (
+                    "c3",
+                    "get_recipe",
+                    {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                ),
+                ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+            ],
+        ),
+        (
+            "parsed",
+            _finish_options(
+                _two_opts_no_quantities(),
+                epicure_lines=[{"ingredient": "pork", "decision": "used", "reason": "roast match"}],
+                note="classic companions lemon, rosemary",
+            ),
+        ),
+        (
+            "parsed",
+            _finish_options(
+                _two_opts_no_quantities(),
+                epicure_lines=[{"ingredient": "pork", "decision": "used", "reason": "roast match"}],
+                note="Two options with pork",
+            ),
+        ),
+    ]
+    provider = ScriptedProvider(turns)
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True), epicure_core=core)
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    errors = rejects[0].payload["errors"]
+    assert any("unsupported pairing" in e and "lemon" in e for e in errors)
+    assert any("unsupported pairing" in e and "rosemary" in e for e in errors)
+    assert result.final is not None
+    assert result.final.get("note") == "Two options with pork"
+    assert result.final.get("note_source") == "model"
+    assert result.final.get("note_claims") == "verified"
+
+
+def test_technique_time_claim_needs_cited_chunk(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            ("tools", [("c1", "search_techniques", {"query": "how to boil an egg"})]),
+            (
+                "parsed",
+                _tech_answer(
+                    "Boil 10-12 minutes.",
+                    [{"doc_id": "tech-egg-1", "chunk_id": 0}],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+            (
+                "parsed",
+                _tech_answer(
+                    "Simmer eggs 6 minutes.",
+                    [{"doc_id": "tech-egg-1", "chunk_id": 0}],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"search_techniques": _tech_search([_tech_row()])},
+        request_text="How do I boil an egg?",
+    )
+    deps.technique_resolver = lambda doc_id, chunk_id: dict(_tech_row(doc_id, chunk_id))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert any("unsupported time/temperature claim" in e for e in rejects[0].payload["errors"])
+    assert result.final is not None
+    assert result.final.get("note_claims") == "verified"
+
+
+# --- P3-L-09 minimum plan evidence ---------------------------------------------
+
+
+def _curry_plan(**overrides: Any) -> dict[str, Any]:
+    plan: dict[str, Any] = {
+        "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+        "mise_en_place": ["chop chicken"],
+        "steps": ["cook curry", "serve"],
+        "plating": "in a bowl",
+    }
+    plan.update(overrides)
+    return plan
+
+
+def _select_curry(store: PostgresSessionStore, state_id: str) -> None:
+    from culinary_copilot.agent.loop import record_select, run_agent
+
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    ("c3", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt()],
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
+        ]
+    )
+    _run(
+        run_agent(
+            state_id,
+            deps=_deps(store, provider, settings=_settings(epicure_enabled=True)),
+        )
+    )
+    mid = store.get(state_id)
+    assert mid is not None
+    record_select(
+        store,
+        state_id,
+        expected_revision=mid.revision,
+        dataset_id="odunola/foodie",
+        source_id="curry-1",
+    )
+
+
+def test_raw_chicken_plan_rejected_without_safety_ref(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    _select_curry(store, state.id)
+    bad = {
+        "decision": "finish",
+        "move_to": "plan",
+        "result": {"plan": _curry_plan()},
+        "constraints_honored": [],
+        "note": "plan from selected source",
+    }
+    provider = ScriptedProvider([("parsed", bad), ("parsed", bad)])
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert excinfo.value.reason == "agent_validation_failed"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 2
+    assert any("safe internal temperatures" in e for e in rejects[-1].payload["errors"])
+
+
+def test_ingredient_only_plan_needs_admission_then_accepted(engine) -> None:
+    from culinary_copilot.agent.loop import record_select
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    broth = {
+        "dataset_id": "odunola/foodie",
+        "source_id": "broth-9",
+        "title": "Simple Vegetable Broth",
+        "quantities": [],
+        "adaptations": [],
+    }
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "broth"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "broth-9"},
+                    ),
+                    ("c3", "find_balanced_pairings", {"ingredient": "onion"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    [broth],
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "broth match"}
+                    ],
+                ),
+            ),
+        ]
+    )
+    _run(run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True))))
+    mid = store.get(state.id)
+    assert mid is not None
+    record_select(
+        store,
+        state.id,
+        expected_revision=mid.revision,
+        dataset_id="odunola/foodie",
+        source_id="broth-9",
+    )
+
+    def _broth_plan(**overrides: Any) -> dict[str, Any]:
+        plan: dict[str, Any] = {
+            "source": {"dataset_id": "odunola/foodie", "source_id": "broth-9"},
+            "mise_en_place": ["open cubes"],
+            "steps": ["simmer broth", "serve"],
+            "plating": "in bowls",
+        }
+        plan.update(overrides)
+        return plan
+
+    def _parsed_plan(plan: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {"plan": plan},
+            "constraints_honored": [],
+            "note": "plan from broth",
+        }
+
+    provider2 = ScriptedProvider(
+        [
+            ("parsed", _parsed_plan(_broth_plan())),
+            (
+                "parsed",
+                _parsed_plan(
+                    _broth_plan(
+                        adaptations=[
+                            {
+                                "description": "Steps are model-created: not from the source.",
+                                "label": "adaptation",
+                            }
+                        ]
+                    )
+                ),
+            ),
+        ]
+    )
+    result2 = _run(run_agent(state.id, deps=_deps(store, provider2)))
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert result2.final is not None
+    assert result2.final["plan"]["steps_source"] == "model_adaptation"
+    assert result2.final.get("note_source") == "model"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert any("model_adaptation" in e for e in rejects[0].payload["errors"])
+
+
+# --- P3-L-10 truncation controls ------------------------------------------------
+
+
+def test_tool_output_truncation_stays_valid_json() -> None:
+    from culinary_copilot.agent.loop import truncate_tool_output
+
+    huge = {
+        "tool": "search_recipes",
+        "ok": True,
+        "results": [{"title": "t" * 200, "id": i} for i in range(200)],
+    }
+    truncated = truncate_tool_output(huge)
+    import json as _json
+
+    text = _json.dumps(truncated)
+    assert len(text) <= 4000
+    assert _json.loads(text) == truncated
+    assert truncated["truncated"] is True
+    assert truncated["dropped_items"] > 0
+
+    small = {"tool": "search_recipes", "ok": True, "results": []}
+    assert truncate_tool_output(small) == small
+
+
+def test_overlong_note_rejected_by_schema_not_cut(engine) -> None:
+    from pydantic import ValidationError
+
+    from culinary_copilot.agent.loop import AgentDirective
+
+    base: dict[str, Any] = {
+        "decision": "finish",
+        "move_to": "recommend",
+        "result": {"options": []},
+        "note": "x" * 600,
+    }
+    AgentDirective.model_validate(base)
+    with pytest.raises(ValidationError):
+        AgentDirective.model_validate({**base, "note": "x" * 601})
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    bad = _finish_options(_two_opts_no_quantities(), note="y" * 700)
+    provider = ScriptedProvider([("parsed", bad), ("parsed", bad)])
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert excinfo.value.reason == "agent_validation_failed"
+    events = store.list_events(state.id)
+    assert any(e.event_type == "agent_validation_reject" for e in events)
+    assert not any(e.event_type == "agent_finished" for e in events)
+    rejects = [e for e in events if e.event_type == "agent_validation_reject"]
+    assert any("directive malformed" in e for e in rejects[0].payload["errors"])

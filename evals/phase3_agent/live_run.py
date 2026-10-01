@@ -17,11 +17,14 @@ Safety (all enforced, all tested with fakes on disposable databases):
   cache-only probe, missing technique tables, or an unverifiable
   snapshot;
 - every paid call (model turns, query embeddings, retries) is
-  reserved before the call from a conservative local input bound
-  (UTF-8 bytes/3 over the full payload, never below chars/4) plus
-  maximum permitted output, reconciled with reported usage after,
-  kept as spent on ambiguous failure, and refused when it does not
-  fit the remaining cap;
+  reserved before the call from a true-upper-bound local input count
+  (UTF-8 byte length of the full serialized request — input items,
+  tools array, text.format schema — plus per-item and per-request
+  overhead) plus maximum permitted output, reconciled with reported
+  usage after; any excess over the reservation is recorded as
+  reservation_breach and stops the run with contact-operator and no
+  further calls; ambiguous failures keep the reservation, and calls
+  that do not fit the remaining cap are refused;
 - trial isolation: a fresh session per attempt (a retry never
   inherits answers or evidence); ask-and-resume stays inside one
   session with scripted answers frozen in the scenario file; the
@@ -62,14 +65,18 @@ def recorded_entry_usd(entry: dict[str, Any]) -> float:
 
     Stored history entries carry the settled ``usd`` amount (written by
     ``append_spend_history``); the live ledger path (reserve →
-    reconcile/keep) reads ``used_usd``/``reserved_usd`` instead and is
-    unchanged.
+    reconcile/keep/breach) reads ``used_usd``/``reserved_usd`` instead
+    and is unchanged.
     """
     if "usd" in entry:
         return float(entry.get("usd") or 0.0)
     decision = entry.get("decision")
     if decision == "reconciled":
         return float(entry.get("used_usd") or 0.0)
+    if decision == "reservation_breach":
+        # The bound failed but the call was billed: the used amount is
+        # what was spent, conservatively.
+        return float(entry.get("used_usd") or entry.get("reserved_usd") or 0.0)
     if decision == "kept-ambiguous":
         return float(entry.get("reserved_usd") or entry.get("usd") or 0.0)
     return 0.0
@@ -152,20 +159,80 @@ MAX_ATTEMPTS = 2
 
 # --- input bound ---------------------------------------------------------------
 
+#: Reservation assumption: one token spans at least one UTF-8 byte of
+#: the serialized request, so the UTF-8 byte length of the full
+#: serialized request is a true upper bound on input tokens (strictly
+#: above any chars-per-token heuristic). Two overhead constants cover
+#: Responses-envelope framing the SDK adds around our payload: per
+#: input item (role/type wrappers, call ids) and per request (model
+#: name, reasoning effort, the text.format envelope, tool_choice).
+_RESERVE_PER_ITEM_TOKENS = 16
+_RESERVE_REQUEST_OVERHEAD_TOKENS = 256
 
-def estimate_input_tokens(payload: Any) -> int:
-    """Conservative local input bound: UTF-8 bytes/3, never below chars/4.
 
-    The Responses input-token endpoint exists and the installed SDK
-    exposes it, but the docs do not confirm it is unbilled — a counting
-    call could itself cost money and break the ledger. So reservations
-    use this deterministic offline bound over the full payload (input
-    items, tools, schema). bytes/3 strictly dominates chars/4 for any
-    UTF-8 text, hence the floor never binds, but it is kept as stated.
+def _text_format_schema(response_model: Any) -> Any:
+    """Serializable form of the structured-output schema for the bound.
+
+    The SDK sends the Pydantic class itself (converted to
+    ``text.format`` internally); the reservation measures the JSON
+    schema it denotes, falling back to the class repr when it has no
+    ``model_json_schema`` (fakes only).
     """
-    text = json.dumps(payload, sort_keys=True, default=str)
-    encoded = text.encode("utf-8")
-    return max(len(encoded) // 3, len(text) // 4)
+    schema_fn = getattr(response_model, "model_json_schema", None)
+    if callable(schema_fn):
+        try:
+            return schema_fn()
+        except Exception:
+            pass
+    return str(response_model)
+
+
+def estimate_request_tokens(
+    *,
+    input_items: Any,
+    tools: Any,
+    response_model: Any = None,
+    tool_choice: Any = None,
+    max_output_tokens: Any = None,
+) -> int:
+    """True-upper-bound input reservation for one model turn.
+
+    Measured over the full request the SDK will send — input items,
+    the tools array and the text.format JSON schema, as serialized —
+    plus the per-item and per-request overhead above.
+    """
+    payload = {
+        "input_items": input_items,
+        "tools": tools,
+        "text_format": _text_format_schema(response_model),
+        "tool_choice": tool_choice,
+        "max_output_tokens": max_output_tokens,
+    }
+    raw = json.dumps(payload, sort_keys=True, default=str)
+    n_items = len(input_items) if isinstance(input_items, list) else 0
+    return (
+        len(raw.encode("utf-8"))
+        + _RESERVE_PER_ITEM_TOKENS * n_items
+        + _RESERVE_REQUEST_OVERHEAD_TOKENS
+    )
+
+
+def estimate_embedding_request_tokens(texts: list[str], *, attempts: int = 1) -> int:
+    """True-upper-bound input reservation for query embeddings.
+
+    Same approach as model turns: UTF-8 byte length of the serialized
+    texts plus per-text and per-request overhead, times the attempts
+    the call may bill (the runner forces provider retries to zero, so
+    one wrapped call bills at most ``attempts`` requests).
+    """
+    items = list(texts)
+    raw = json.dumps({"texts": items}, sort_keys=True, default=str)
+    single = (
+        len(raw.encode("utf-8"))
+        + _RESERVE_PER_ITEM_TOKENS * len(items)
+        + _RESERVE_REQUEST_OVERHEAD_TOKENS
+    )
+    return single * max(1, int(attempts))
 
 
 # --- spend ledger --------------------------------------------------------------
@@ -180,6 +247,69 @@ class BudgetExhausted(RuntimeError):
     the scenario "not_completed: budget" (never counted as an agent or
     provider failure in the grades).
     """
+
+
+class ReservationBreach(RuntimeError):
+    """Reported usage exceeded the reservation: stop everything.
+
+    Raised by the ledger wrappers after recording the breach in the
+    ledger. Carries ``reservation_breach = True`` so the agent loop's
+    turn-level handler re-raises it instead of mapping it to a
+    provider error; run_scenario_live maps it to a run stop with
+    reason ``contact-operator`` and no further calls.
+    """
+
+    def __init__(self, message: str, *, label: str = "") -> None:
+        super().__init__(message)
+        self.reservation_breach = True
+        self.label = label
+
+
+def _caused_by_reservation_breach(exc: BaseException) -> bool:
+    """True when a ReservationBreach is anywhere in the exception chain."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if bool(getattr(current, "reservation_breach", False)):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def find_unacknowledged_breach(path: Path | str) -> dict[str, Any] | None:
+    """First unacknowledged ``reservation_breach`` entry, if any.
+
+    Acknowledging is a manual owner step: an object with the run's
+    ``run_utc`` and the entry's ``label`` under the history file's
+    top-level ``breach_acknowledgments`` list (documented in
+    LIVE_PLAN.md). Returns ``{"run_utc": ..., "label": ...}`` or None.
+    """
+    try:
+        body = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    acked = body.get("breach_acknowledgments")
+    acked_set = set()
+    if isinstance(acked, list):
+        for item in acked:
+            if isinstance(item, dict):
+                acked_set.add((str(item.get("run_utc") or ""), str(item.get("label") or "")))
+    runs = body.get("runs")
+    if not isinstance(runs, list):
+        return None
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        run_utc = str(run.get("run_utc") or "")
+        for entry in run.get("entries", []) or []:
+            if isinstance(entry, dict) and entry.get("decision") == "reservation_breach":
+                key = (run_utc, str(entry.get("label") or ""))
+                if key not in acked_set:
+                    return {"run_utc": run_utc, "label": str(entry.get("label") or "")}
+    return None
 
 
 class SpendLedger:
@@ -260,13 +390,32 @@ class SpendLedger:
         return True
 
     def reconcile(self, label: str, *, reported_in: int | None, reported_out: int | None) -> None:
-        """Replace the reservation with reported usage (release the rest)."""
+        """Replace the reservation with reported usage (release the rest).
+
+        Raises :class:`ReservationBreach` (after recording it) when the
+        reported usage exceeds the reservation in input tokens, output
+        tokens, or USD: the run must stop with ``contact-operator`` and
+        make no further calls.
+        """
         for entry in reversed(self.entries):
             if entry.get("label") == label and entry.get("decision") == "reserved":
                 if reported_in is None or reported_out is None:
                     entry["decision"] = "kept-ambiguous"
                     self.spent_usd += float(entry["reserved_usd"])
                     return
+                reserved_in = int(entry.get("reserved_in") or 0)
+                reserved_out = int(entry.get("reserved_out") or 0)
+                if int(reported_in) > reserved_in or int(reported_out) > reserved_out:
+                    breached = self.record_breach(
+                        label,
+                        reported_in=int(reported_in),
+                        reported_out=int(reported_out),
+                    )
+                    raise ReservationBreach(
+                        f"reservation breach on {label}: {breached.get('breach')} "
+                        "(contact operator; no further calls)",
+                        label=label,
+                    )
                 actual, _ = self._cost(
                     str(entry.get("model") or self.model),
                     str(entry.get("kind") or "chat"),
@@ -274,6 +423,17 @@ class SpendLedger:
                     int(reported_out),
                 )
                 actual = actual or 0.0
+                if actual > float(entry["reserved_usd"]):
+                    breached = self.record_breach(
+                        label,
+                        reported_in=int(reported_in),
+                        reported_out=int(reported_out),
+                    )
+                    raise ReservationBreach(
+                        f"reservation breach on {label}: {breached.get('breach')} "
+                        "(contact operator; no further calls)",
+                        label=label,
+                    )
                 entry["decision"] = "reconciled"
                 entry["used_in"] = int(reported_in)
                 entry["used_out"] = int(reported_out)
@@ -281,6 +441,45 @@ class SpendLedger:
                 self.remaining_usd += float(entry["reserved_usd"]) - actual
                 self.spent_usd += actual
                 return
+        raise ValueError(f"no open reservation for {label!r}")
+
+    def record_breach(
+        self, label: str, *, reported_in: int | None, reported_out: int | None
+    ) -> dict[str, Any]:
+        """Reported usage exceeded the reservation: record it as spent.
+
+        Marks the open ``reserved`` entry ``reservation_breach`` with
+        the reported usage and its cost (the call was billed; the
+        reservation math, not the money, is what failed). Callers raise
+        :class:`ReservationBreach` afterwards so the run stops with
+        ``contact-operator`` and no further calls.
+        """
+        for entry in reversed(self.entries):
+            if entry.get("label") == label and entry.get("decision") == "reserved":
+                actual, _ = self._cost(
+                    str(entry.get("model") or self.model),
+                    str(entry.get("kind") or "chat"),
+                    int(reported_in or 0),
+                    int(reported_out or 0),
+                )
+                actual = actual or 0.0
+                reasons: list[str] = []
+                if int(reported_in or 0) > int(entry.get("reserved_in") or 0):
+                    reasons.append(f"input {reported_in} > reserved {entry.get('reserved_in')}")
+                if int(reported_out or 0) > int(entry.get("reserved_out") or 0):
+                    reasons.append(f"output {reported_out} > reserved {entry.get('reserved_out')}")
+                if actual > float(entry.get("reserved_usd") or 0.0):
+                    reasons.append(
+                        f"usd {actual:.6f} > reserved {float(entry.get('reserved_usd') or 0.0):.6f}"
+                    )
+                entry["decision"] = "reservation_breach"
+                entry["used_in"] = int(reported_in or 0)
+                entry["used_out"] = int(reported_out or 0)
+                entry["used_usd"] = actual
+                entry["breach"] = "; ".join(reasons) or "usage exceeded reservation"
+                self.remaining_usd += float(entry["reserved_usd"]) - actual
+                self.spent_usd += actual
+                return entry
         raise ValueError(f"no open reservation for {label!r}")
 
     def keep(self, label: str) -> None:
@@ -388,14 +587,15 @@ class LedgerModelProvider:
         self._seq = 0
 
     async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
-        payload = {
-            "input_items": kwargs.get("input_items"),
-            "tools": kwargs.get("tools"),
-            "response_model": str(kwargs.get("response_model")),
-        }
+        reserved_in = estimate_request_tokens(
+            input_items=kwargs.get("input_items"),
+            tools=kwargs.get("tools"),
+            response_model=kwargs.get("response_model"),
+            tool_choice=kwargs.get("tool_choice"),
+            max_output_tokens=kwargs.get("max_output_tokens", self._max_output),
+        )
         self._seq += 1
         label = f"model-turn-{self._seq}"
-        reserved_in = estimate_input_tokens(payload)
         # The call's own cap wins when the loop passes one; otherwise the
         # configured per-turn maximum.
         max_out = kwargs.get("max_output_tokens", self._max_output)
@@ -468,11 +668,9 @@ class LedgerEmbedProvider:
         self._seq = 0
 
     async def embed_texts(self, texts: list[str]) -> Any:
-        from culinary_copilot.embeddings.rendering import estimate_tokens_bytes
-
         self._seq += 1
         label = f"query-embed-{self._seq}"
-        reserved = sum(estimate_tokens_bytes(t) for t in texts) * (self._retries + 1)
+        reserved = estimate_embedding_request_tokens(texts, attempts=self._retries + 1)
         if not self._ledger.reserve(
             label, input_tokens=reserved, max_output=0, model=self._model, kind="embedding"
         ):
@@ -665,6 +863,16 @@ def preflight(
     remaining_budget = float(args.ceiling_usd) - prior_spend
     record["prior_recorded_spend_usd"] = prior_spend
     record["remaining_budget_usd"] = remaining_budget
+    if history_path:
+        breach = find_unacknowledged_breach(Path(history_path))
+        record["reservation_breach"] = breach
+        if breach is not None:
+            problems.append(
+                "spend history records an unacknowledged reservation breach "
+                f"(run {breach.get('run_utc')}, {breach.get('label')}); no paid "
+                "run until an owner acknowledges it (LIVE_PLAN.md: add a "
+                "matching entry to breach_acknowledgments in spend-history.json)"
+            )
     if history_path and spec is not None:
         from culinary_copilot.recommendations.pricing import estimate_cost_usd
 
@@ -872,6 +1080,7 @@ _FAKE_DOCS = {
         "ingredients": [
             {"canonical": "chicken", "amount": "500", "unit": "g", "quantity_text": "500 g"}
         ],
+        "instructions": ["Brown the chicken.", "Serve hot."],
     },
     ("odunola/foodie", "lentil-2"): {
         "dataset_id": "odunola/foodie",
@@ -886,6 +1095,7 @@ _FAKE_DOCS = {
                 "quantity_text": "200 g",
             }
         ],
+        "instructions": ["Simmer the lentils.", "Serve hot."],
     },
 }
 
@@ -975,6 +1185,7 @@ class FakeRunProvider:
                     ("c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
                     ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
                     ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    ("c5", "search_techniques", {"query": "safe internal temperatures"}),
                 )
             if self.calls == 2:
                 return self._options_finish(
@@ -1004,6 +1215,7 @@ class FakeRunProvider:
                             "plating": "in bowls",
                             "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
                             "adaptations": [],
+                            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
                         }
                     },
                     "constraints_honored": [],
@@ -1146,18 +1358,35 @@ def _fake_techniques(args: Any, context: Any) -> dict[str, Any]:
         "cost_class": "free",
         "results": [
             {
-                "doc_id": "tech-egg-boil-18",
+                "doc_id": "tech-fda-safe-32",
                 "chunk_id": 0,
-                "section": "Boiled egg",
-                "title": "Boiled egg",
-                "url": "https://en.wikipedia.org/wiki/Boiled_egg",
+                "section": "Safe Food Handling",
+                "title": "Safe Food Handling",
+                "url": "https://en.wikipedia.org/wiki/Food_safety",
                 "licence": "CC-BY-SA-4.0",
                 "licence_url": "https://creativecommons.org/licenses/by-sa/4.0/",
                 "attribution_text": "fake attribution",
-                "excerpt": "Boil eggs.",
+                "excerpt": "Cook poultry to 165°F (74°C).",
             }
         ],
     }
+
+
+def _fake_technique_resolver(doc_id: str, chunk_id: int) -> dict[str, Any] | None:
+    """Fake technique resolver: the safety chunk plans cite (tests only)."""
+    if (doc_id, chunk_id) == ("tech-fda-safe-32", 0):
+        return {
+            "doc_id": doc_id,
+            "chunk_id": chunk_id,
+            "section": "Safe Food Handling",
+            "title": "Safe Food Handling",
+            "url": "https://en.wikipedia.org/wiki/Food_safety",
+            "licence": "CC-BY-SA-4.0",
+            "licence_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+            "attribution_text": "fake attribution",
+            "chunk_text": "Cook poultry to a safe internal temperature of 165°F (74°C).",
+        }
+    return None
 
 
 class _FakeEpicureCore:
@@ -1265,6 +1494,8 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
             "epicure_lines": payload.get("epicure_lines"),
             "dropped_options": payload.get("dropped_options"),
             "single_option_reason": payload.get("single_option_reason"),
+            "plan_source": payload.get("plan_source"),
+            "steps_source": payload.get("steps_source"),
             "stop_reason": payload.get("stop_reason"),
             "stop": stop,
             "reason": reason,
@@ -1402,6 +1633,7 @@ def run_scenario_live(
     raw_dir: Path,
     max_attempts: int = MAX_ATTEMPTS,
     recipe_resolver: Any = None,
+    technique_resolver: Any = None,
     manual_review: bool = False,
     fresh_provider_per_run: bool = False,
 ) -> dict[str, Any]:
@@ -1450,6 +1682,7 @@ def run_scenario_live(
                 provider=fresh,
                 tool_context=tool_context,
                 recipe_resolver=recipe_resolver,
+                technique_resolver=technique_resolver,
                 request_text=scenario.get("request"),
             )
             try:
@@ -1500,6 +1733,7 @@ def run_scenario_live(
                 provider=provider,
                 tool_context=tool_context,
                 recipe_resolver=recipe_resolver,
+                technique_resolver=technique_resolver,
                 request_text=scenario.get("request"),
             )
             result = _run_once(sid, deps, tool_context)
@@ -1570,6 +1804,20 @@ def run_scenario_live(
                     )
                     last_final, last_stop = result3.final, result3.stop_reason
         except AgentLoopError as exc:
+            if _caused_by_reservation_breach(exc):
+                # Reservation breach: the bound failed, not the model.
+                # Record the stop, end the scenario and the whole run
+                # with contact-operator (no further calls, no grade).
+                attempt_record["runs"].append(
+                    {"stop_reason": "reservation-breach", "reservation_breach": True}
+                )
+                last_final, last_stop = None, "reservation-breach"
+                run_stop = {
+                    "reason": "contact-operator",
+                    "detail": f"reservation breach: {str(exc)[:200]}",
+                }
+                attempts.append(attempt_record)
+                break
             if _caused_by_budget(exc):
                 # Reservation refusal: end the scenario cleanly with no
                 # further attempt. Never an agent or provider failure.
@@ -1594,6 +1842,20 @@ def run_scenario_live(
             if fatal is not None:
                 run_stop = {"reason": fatal}
         except Exception as exc:
+            # Reservation breach (raised raw by the ledger wrappers, not
+            # as an AgentLoopError): stop the run with
+            # contact-operator, do not grade the wreckage.
+            if _caused_by_reservation_breach(exc):
+                attempt_record["runs"].append(
+                    {"stop_reason": "reservation-breach", "reservation_breach": True}
+                )
+                last_final, last_stop = None, "reservation-breach"
+                run_stop = {
+                    "reason": "contact-operator",
+                    "detail": f"reservation breach: {type(exc).__name__}: {str(exc)[:200]}",
+                }
+                attempts.append(attempt_record)
+                break
             # Preflight-class failure mid-run (snapshot, store, driver):
             # stop the run, do not grade the wreckage.
             attempt_record["runs"].append(
@@ -1614,6 +1876,13 @@ def run_scenario_live(
     if run_stop is not None and run_stop.get("reason") == "budget":
         grades: dict[str, Any] = {"graded": False, "reason": "budget-exhausted"}
         status = "not_completed: budget"
+    elif (
+        last_stop == "reservation-breach"
+        and run_stop is not None
+        and run_stop.get("reason") == "contact-operator"
+    ):
+        grades = {"graded": False, "reason": "reservation-breach"}
+        status = "stopped: contact-operator"
     elif not created:
         grades = {"graded": False, "reason": "runner-error"}
         status = "stopped: runner-error"
@@ -2105,6 +2374,7 @@ def _run_fake_scenario(
         raw_dir=raw_dir,
         max_attempts=max_attempts,
         recipe_resolver=_recipe_resolver,
+        technique_resolver=_fake_technique_resolver,
     )
 
 

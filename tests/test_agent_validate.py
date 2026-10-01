@@ -309,3 +309,133 @@ def test_options_reject_technique_keys() -> None:
         allow_single=True,
     )
     assert any("never be an option" in e or "not options" in e for e in errors)
+
+
+# --- P3-L-07 minimum hard-constraint control ---------------------------------
+
+
+def _doc_with(*canonicals: str) -> dict[str, Any]:
+    return {"ingredients": [{"canonical": name} for name in canonicals]}
+
+
+def test_dietary_chicken_stock_dropped_for_vegetarian() -> None:
+    from culinary_copilot.agent.validate import check_dietary_option
+
+    errors, entry = check_dietary_option(0, {}, _doc_with("chicken", "chicken stock"), "vegetarian")
+    assert len(errors) == 2
+    assert all("violates dietary constraint 'vegetarian'" in e for e in errors)
+    assert entry["status"] == "violated"
+    assert entry["terms"] == ["chicken"]
+
+
+def test_dietary_vegetable_bouillon_passes() -> None:
+    from culinary_copilot.agent.validate import check_dietary_option
+
+    errors, entry = check_dietary_option(0, {}, _doc_with("vegetable bouillon"), "vegetarian")
+    assert errors == []
+    assert entry == {"status": "checked", "value": "vegetarian"}
+
+
+def test_dietary_bare_bouillon_unverified() -> None:
+    from culinary_copilot.agent.validate import check_dietary_option
+
+    errors, entry = check_dietary_option(0, {}, _doc_with("bouillon"), "vegetarian")
+    assert errors == []
+    assert entry == {"status": "unverified", "value": "vegetarian", "terms": ["bouillon"]}
+
+
+def test_dietary_eggplant_passes_vegan() -> None:
+    from culinary_copilot.agent.validate import check_dietary_option
+
+    errors, entry = check_dietary_option(
+        0, {}, _doc_with("eggplant", "coconut milk", "peanut butter"), "vegan"
+    )
+    assert errors == []
+    assert entry == {"status": "checked", "value": "vegan"}
+
+
+def test_dietary_vegan_flags_dairy_eggs_honey() -> None:
+    from culinary_copilot.agent.validate import check_dietary_option
+
+    errors, entry = check_dietary_option(
+        0, {}, _doc_with("milk", "egg", "honey", "cream of tartar"), "vegan"
+    )
+    assert len(errors) == 3
+    assert entry["status"] == "violated"
+    assert sorted(entry["terms"]) == ["egg", "honey", "milk"]
+
+
+def test_dietary_unknown_value_not_checked() -> None:
+    from culinary_copilot.agent.validate import check_dietary_option
+
+    errors, entry = check_dietary_option(0, {}, _doc_with("chicken"), "gluten-free")
+    assert errors == []
+    assert entry == {"status": "not_checked", "value": "gluten-free"}
+
+
+# --- P3-L-09 minimum plan evidence --------------------------------------------
+
+
+def test_plan_raw_chicken_needs_safety_ref() -> None:
+    from culinary_copilot.agent.validate import check_plan_evidence
+
+    errors, steps_source = check_plan_evidence(
+        {"adaptations": []},
+        {"ingredients": [{"canonical": "chicken breast"}], "instructions": ["Cook."]},
+        [],
+    )
+    assert steps_source == "source"
+    assert errors == [
+        "plan uses raw chicken: cite a food-safety chunk "
+        "(search_techniques for safe internal temperatures) with a technique_ref"
+    ]
+
+
+def test_plan_raw_chicken_accepted_with_safety_ref() -> None:
+    from culinary_copilot.agent.validate import check_plan_evidence
+
+    errors, steps_source = check_plan_evidence(
+        {"adaptations": []},
+        {"ingredients": [{"canonical": "chicken breast"}], "instructions": ["Cook."]},
+        [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+    )
+    assert (errors, steps_source) == ([], "source")
+
+
+def test_plan_fully_cooked_fillets_need_no_ref() -> None:
+    from culinary_copilot.agent.validate import check_plan_evidence
+
+    errors, steps_source = check_plan_evidence(
+        {"adaptations": []},
+        {
+            "ingredients": [{"canonical": "fully cooked chicken fillets"}],
+            "instructions": ["Heat."],
+        },
+        [],
+    )
+    assert (errors, steps_source) == ([], "source")
+
+
+def test_plan_ingredient_only_record_needs_admission() -> None:
+    from culinary_copilot.agent.validate import check_plan_evidence
+
+    doc = {"ingredients": [{"canonical": "red lentils"}]}
+    errors, steps_source = check_plan_evidence({"adaptations": []}, doc, [])
+    assert steps_source == "model_adaptation"
+    assert errors == [
+        "steps_source is model_adaptation (the source has no directions): "
+        "add a plan adaptation stating the steps are not from the source"
+    ]
+    errors, _ = check_plan_evidence(
+        {
+            "adaptations": [
+                {
+                    "label": "adaptation",
+                    "description": "Steps are model-created: not from the source.",
+                }
+            ]
+        },
+        doc,
+        [],
+    )
+    assert errors == []

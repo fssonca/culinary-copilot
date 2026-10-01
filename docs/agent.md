@@ -182,6 +182,26 @@ removed), and the next run substitutes (labelled `adaptation`,
   `get_recipe` call in this session's events (resumed runs count;
   dataset-qualified; failures and other sessions do not count), and
   quantities need a `get_recipe` full document, not a search row.
+  Minimum dietary check (P3-L-07): each option's `get_recipe`
+  ingredient lines are matched against conservative vegetarian/vegan
+  term lists with word boundaries (`eggplant` never flags `egg`,
+  `vegetable broth` never flags `broth`). A clear violation drops the
+  option with a readable reason; ambiguous terms (`broth`, `stock`,
+  `bouillon`, `Worcestershire` without `vegetable`/`vegan`) keep the
+  option but list the term under `constraint_check: "unverified"` in
+  the client final, and the note must not claim the option is
+  verified. Unknown dietary values do not invent checks
+  (`constraint_check: "not_checked"` with the value).
+  Minimum claim grounding (P3-L-08): Epicure-vocabulary pairings or
+  companions named in the model `note` must appear in session evidence
+  (returned pairings, the options' source ingredient lines, or cited
+  chunks); numeric time/temperature claims must appear in a cited
+  chunk or the selected recipe document. Anything else is validation
+  feedback naming the unsupported terms. The client final marks the
+  model note `note_source: "model"` (a server-written drop note is
+  `"server"`) and `"unverified"` whenever it passes these checks only
+  by containing no checkable claims. The model note is schema-bound to
+  600 characters (never silently cut).
   Stored in `suggestions` (+ source refs in
   `evidence`).
 - `select`: `POST …/select` stores the user's pick from the offered
@@ -213,6 +233,15 @@ removed), and the next run substitutes (labelled `adaptation`,
   covers the grown `technique_refs` field inside the unchanged 30k/12k
   ceilings; technique excerpts travel in bounded tool summaries
   (300 chars/hit in history, 4000 chars/turn).
+  Minimum plan evidence (P3-L-09): a source without directions sets
+  `steps_source: "model_adaptation"` on the plan (shown in the client
+  final), and at least one plan adaptation must state the steps are
+  not from the source. Source ingredients with raw meat, poultry, fish
+  or eggs (not "cooked") need at least one `technique_ref` to a chunk
+  from a food-safety manifest doc (`tech-fda-safe-32`,
+  `tech-fsis-temp-34`, `tech-fda-kitchen-33`, `tech-fsis-leftover-36`);
+  the feedback tells the model to `search_techniques` for safe
+  internal temperatures.
 
 ## Endpoints (`api/agent.py`)
 
