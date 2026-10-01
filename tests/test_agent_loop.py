@@ -3461,3 +3461,77 @@ def test_overlong_note_rejected_by_schema_not_cut(engine) -> None:
     assert not any(e.event_type == "agent_finished" for e in events)
     rejects = [e for e in events if e.event_type == "agent_validation_reject"]
     assert any("directive malformed" in e for e in rejects[0].payload["errors"])
+
+
+# --- Canonical time/temperature claims (review fix) ------------------------------
+
+
+def test_canonical_claim_forms() -> None:
+    from culinary_copilot.agent.loop import _parse_time_temp_claim as parse
+
+    assert parse("165°F") == ((165,), "fahrenheit")
+    assert parse("165°F") == parse("165 °F")
+    assert parse("10 to 12 minutes") == parse("10-12 minutes") == ((10, 12), "minute")
+    assert parse("9 mins") == parse("9 minutes") == ((9,), "minute")
+    assert parse("74°C") == parse("74 °C") == ((74,), "celsius")
+    assert parse("2 hours") == ((2,), "hour")
+    assert parse("165 degrees") == ((165,), "degree")
+    assert parse("165 degrees F") == ((165,), "fahrenheit")
+    assert parse("165 fahrenheit") == ((165,), "fahrenheit")
+
+
+def test_canonical_claim_support_rules() -> None:
+    from culinary_copilot.agent.loop import (
+        _evidence_time_temp_claims as evidence,
+    )
+    from culinary_copilot.agent.loop import (
+        _parse_time_temp_claim as parse,
+    )
+    from culinary_copilot.agent.loop import (
+        _time_temp_claim_supported as supported,
+    )
+
+    chart = evidence("165 °F (74 °C)")
+    assert supported(parse("165°F"), chart)
+    assert supported(parse("74°C"), chart)
+    assert supported(parse("165 degrees"), chart)  # bare degree matches either class
+    assert not supported(parse("160°F"), chart)
+
+    singles = evidence("4 minutes, 7 minutes and 9 minutes")
+    assert not supported(parse("10-12 minutes"), singles)  # range needs the range
+    assert supported(parse("10-12 minutes"), evidence("simmer 10-12 minutes"))
+    assert supported(parse("7 minutes"), evidence("simmer 7-9 minutes"))  # range end
+    assert not supported(parse("8 minutes"), evidence("simmer 7-9 minutes"))
+
+
+def test_spaced_degree_answer_passes_against_tight_chunk(engine) -> None:
+    """ "Cook poultry to 165 °F." is supported by chunk text with "165°F"."""
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            ("tools", [("c1", "search_techniques", {"query": "safe chicken temperature"})]),
+            (
+                "parsed",
+                _tech_answer(
+                    "Cook poultry to 165 °F.",
+                    [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"search_techniques": _tech_search([_safety_row()])},
+        request_text="What temperature is safe for chicken?",
+    )
+    deps.technique_resolver = lambda doc_id, chunk_id: (
+        dict(_safety_row()) if (doc_id, chunk_id) == ("tech-fda-safe-32", 0) else None
+    )
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    assert result.final.get("note_claims") == "verified"

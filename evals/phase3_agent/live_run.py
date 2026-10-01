@@ -174,10 +174,19 @@ def _text_format_schema(response_model: Any) -> Any:
     """Serializable form of the structured-output schema for the bound.
 
     The SDK sends the Pydantic class itself (converted to
-    ``text.format`` internally); the reservation measures the JSON
-    schema it denotes, falling back to the class repr when it has no
-    ``model_json_schema`` (fakes only).
+    ``text.format`` internally via ``type_to_text_format_param``,
+    which is larger than the plain JSON schema); the reservation
+    measures that converted form when the SDK helper is importable,
+    falling back to ``model_json_schema`` and then the class repr
+    (fakes only).
     """
+    if response_model is not None:
+        try:
+            from openai.lib._parsing._responses import type_to_text_format_param
+
+            return type_to_text_format_param(response_model)
+        except Exception:
+            pass
     schema_fn = getattr(response_model, "model_json_schema", None)
     if callable(schema_fn):
         try:

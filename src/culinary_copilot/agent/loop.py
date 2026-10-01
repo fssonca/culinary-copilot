@@ -679,10 +679,21 @@ def _extract_vocab_terms(text: str, vocabulary: set[str]) -> list[str]:
 
 
 #: Numeric time/temperature claims: a number (or range) with a time or
-#: temperature unit (P3-L-08). Narrow and deterministic.
+#: temperature unit (P3-L-08). Narrow and deterministic. A range
+#: separator is -, –, — or the word "to" (word-bounded, so "total"
+#: never splits); decimals ride along with the number.
+_TIME_TEMP_UNIT_RE = (
+    r"(?:minutes?|mins?|hours?|hrs?|°\s*[FC]?|"
+    r"degrees?(?:\s*(?:fahrenheit|celsius|[FC]))?|fahrenheit|celsius)"
+)
 _TIME_TEMP_RE = re.compile(
-    r"\d+\s*(?:[–—\-/]|to)?\s*\d*\s*"
-    r"(?:minutes?|mins?|hours?|hrs?|°\s*[FC]|degrees?(?:\s*(?:fahrenheit|celsius|[FC]))?)",
+    r"\d+(?:\.\d+)?\s*(?:[–—\-]|\bto\b)?\s*\d*(?:\.\d+)?\s*" + _TIME_TEMP_UNIT_RE,
+    re.IGNORECASE,
+)
+_TIME_TEMP_PARTS_RE = re.compile(
+    r"(?P<first>\d+(?:\.\d+)?)\s*"
+    r"(?:(?P<sep>[–—\-]|\bto\b)\s*(?P<second>\d+(?:\.\d+)?))?"
+    r"\s*(?P<unit>" + _TIME_TEMP_UNIT_RE + r")",
     re.IGNORECASE,
 )
 
@@ -697,12 +708,87 @@ def _extract_time_temp_claims(text: str) -> list[str]:
     return claims
 
 
-def _normalize_claim(text: str) -> str:
-    """Claim comparison form: lowercase, dashes unified, spaces collapsed."""
-    lowered = str(text or "").lower()
-    for dash in ("–", "—", "−"):
-        lowered = lowered.replace(dash, "-")
-    return " ".join(lowered.split())
+def _parse_claim_number(raw: str) -> int | float:
+    """Claim number: int when integral (so 10 == 10.0), else float."""
+    value = float(raw)
+    return int(value) if value.is_integer() else value
+
+
+def _canonical_temp_unit(unit: str) -> str:
+    """Unit class: minute, hour, fahrenheit, celsius, or degree.
+
+    "min"/"mins"/"minutes" are one unit; an explicit F/C scale (or
+    "fahrenheit"/"celsius") decides the temperature class; a bare "°"
+    or "degrees" stays "degree" and matches either class.
+    """
+    unit = unit.strip().lower()
+    if unit.startswith("min"):
+        return "minute"
+    if unit.startswith("hr") or unit.startswith("hour"):
+        return "hour"
+    compact = unit.replace(" ", "")
+    if "celsius" in compact:
+        return "celsius"
+    if "fahrenheit" in compact:
+        return "fahrenheit"
+    scale = re.search(r"([fc])$", compact)
+    if scale is not None:
+        return "fahrenheit" if scale.group(1) == "f" else "celsius"
+    return "degree"
+
+
+def _parse_time_temp_claim(span: str) -> tuple[tuple[int | float, ...], str] | None:
+    """Canonical (numbers, unit-class) form of one claim span.
+
+    Two numbers are a range tuple ("10 to 12 minutes" ==
+    "10-12 minutes"); one number is a single tuple.
+    """
+    match = _TIME_TEMP_PARTS_RE.search(str(span or ""))
+    if match is None:
+        return None
+    numbers = [_parse_claim_number(match.group("first"))]
+    if match.group("second") is not None:
+        numbers.append(_parse_claim_number(match.group("second")))
+    return (tuple(numbers), _canonical_temp_unit(match.group("unit") or ""))
+
+
+#: Temperature classes a bare "degree" may stand for.
+_TEMP_CLASSES = frozenset({"fahrenheit", "celsius", "degree"})
+
+
+def _claim_units_match(left: str, right: str) -> bool:
+    """Same unit class, with bare "degree" matching °F or °C."""
+    if left == right:
+        return True
+    return left in _TEMP_CLASSES and right in _TEMP_CLASSES and "degree" in (left, right)
+
+
+def _evidence_time_temp_claims(text: str) -> set[tuple[tuple[int | float, ...], str]]:
+    """Canonical time/temperature claims in evidence text, same parser."""
+    found: set[tuple[tuple[int | float, ...], str]] = set()
+    for span in _extract_time_temp_claims(str(text or "")):
+        parsed = _parse_time_temp_claim(span)
+        if parsed is not None:
+            found.add(parsed)
+    return found
+
+
+def _time_temp_claim_supported(
+    parsed: tuple[tuple[int | float, ...], str],
+    evidence: set[tuple[tuple[int | float, ...], str]],
+) -> bool:
+    """Canonical support: the same form appears in the evidence, or a
+    single number matches either end of an evidence range (same unit).
+    A range is supported only by the same range."""
+    numbers, unit = parsed
+    for ev_numbers, ev_unit in evidence:
+        if not _claim_units_match(unit, ev_unit):
+            continue
+        if numbers == ev_numbers:
+            return True
+        if len(numbers) == 1 and len(ev_numbers) == 2 and numbers[0] in ev_numbers:
+            return True
+    return False
 
 
 def _term_in_text(term: str, text: str) -> bool:
@@ -2463,10 +2549,11 @@ async def _handle_finish(
                             f"note names unsupported pairing {term!r} (not in Epicure "
                             "pairings, option ingredients, or cited chunks)"
                         )
-            recipe_blob = _normalize_claim("\n".join(selection_texts))
+            recipe_claims = _evidence_time_temp_claims("\n".join(selection_texts))
             for claim in _extract_time_temp_claims(model_note_text):
                 checkable_claims += 1
-                if _normalize_claim(claim) not in recipe_blob:
+                parsed = _parse_time_temp_claim(claim)
+                if parsed is None or not _time_temp_claim_supported(parsed, recipe_claims):
                     grounding_errors.append(
                         f"note makes an unsupported time/temperature claim: {claim!r} "
                         "(not in the selected recipe documents)"
@@ -2559,10 +2646,11 @@ async def _handle_finish(
                         f"technique answer names unsupported pairing {term!r} "
                         "(not in Epicure pairings or the cited chunks)"
                     )
-        chunk_blob = _normalize_claim("\n".join(chunk_texts))
+        chunk_claims = _evidence_time_temp_claims("\n".join(chunk_texts))
         for claim in _extract_time_temp_claims(answer_text):
             checkable_claims += 1
-            if _normalize_claim(claim) not in chunk_blob:
+            parsed = _parse_time_temp_claim(claim)
+            if parsed is None or not _time_temp_claim_supported(parsed, chunk_claims):
                 grounding_errors.append(
                     f"technique answer makes an unsupported time/temperature claim: "
                     f"{claim!r} (not in the cited chunks)"

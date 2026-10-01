@@ -207,6 +207,8 @@ def _turn5_shaped_payload() -> dict[str, Any]:
 
 
 def test_request_bound_is_byte_length_plus_overhead() -> None:
+    from openai.lib._parsing._responses import type_to_text_format_param
+
     from culinary_copilot.agent.loop import AgentDirective
 
     payload = _turn5_shaped_payload()
@@ -219,7 +221,7 @@ def test_request_bound_is_byte_length_plus_overhead() -> None:
         {
             "input_items": payload["input_items"],
             "tools": payload["tools"],
-            "text_format": AgentDirective.model_json_schema(),
+            "text_format": type_to_text_format_param(AgentDirective),
             "tool_choice": None,
             "max_output_tokens": None,
         },
@@ -233,6 +235,23 @@ def test_request_bound_is_byte_length_plus_overhead() -> None:
         + live_run._RESERVE_REQUEST_OVERHEAD_TOKENS
     )
     assert bound >= len(raw.encode("utf-8"))
+
+
+def test_request_bound_covers_converted_schema() -> None:
+    """The bound for AgentDirective covers the strict-converted
+    text.format payload the SDK actually sends (larger than the plain
+    JSON schema)."""
+    import json as _json
+
+    from openai.lib._parsing._responses import type_to_text_format_param
+
+    from culinary_copilot.agent.loop import AgentDirective
+
+    converted = _json.dumps(type_to_text_format_param(AgentDirective), sort_keys=True, default=str)
+    bound = estimate_request_tokens(input_items=[], tools=[], response_model=AgentDirective)
+    assert bound >= len(converted.encode("utf-8"))
+    plain = _json.dumps(AgentDirective.model_json_schema(), sort_keys=True, default=str)
+    assert len(converted.encode("utf-8")) > len(plain.encode("utf-8"))
 
 
 def test_request_bound_covers_all_turn_shapes() -> None:

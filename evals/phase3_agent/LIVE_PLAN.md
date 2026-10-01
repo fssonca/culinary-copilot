@@ -189,7 +189,8 @@ fewer scenarios is acceptable).
 
 Input counting: a true-upper-bound local count — the UTF-8 byte
 length of the full serialized request the SDK will send (input
-items, the tools array and the text.format JSON schema), plus a
+items, the tools array and the text.format JSON schema in its strict
+converted form, as the SDK sends it), plus a
 fixed per-item and per-request overhead for Responses-envelope
 framing. Assumption (documented in `live_run.py`): one token spans
 at least one UTF-8 byte of the serialized request, so the byte
