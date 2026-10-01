@@ -1,6 +1,11 @@
-# Phase 3 live evaluation plan (RUNNER BUILT, NOT RUN)
+# Phase 3 live evaluation plan (RUN 2026-09-29/30; see LIVE_REVIEW.md)
 
-Status: runner built (`evals/phase3_agent/live_run.py`), tested with
+Status (2026-09-30): the owner ran attempts 1–9. The results, findings
+and recorded spend ($0.1249 of $0.15) are in `LIVE_REVIEW.md`. Any
+further live run needs the owner's explicit go-ahead. The text below is
+the original plan, kept as the historical record.
+
+Original status: runner built (`evals/phase3_agent/live_run.py`), tested with
 fakes on disposable databases only. **The live run is NOT authorized:
 do not run it until the owner says "run it".** Re-verify pricing
 (`EMBED_PRICING_VERSION`, `PRICING_VERSION`) immediately before any

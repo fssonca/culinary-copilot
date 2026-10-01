@@ -53,7 +53,34 @@
     "database": "Option A (application database) only with verified trial isolation; otherwise option B (explicitly identified disposable database).",
     "timing": "After the P3-A-01/P3-A-02 fixes, before Phase 5.",
     "run_authorized": false,
-    "note": "The paid run waits for the owner's explicit 'run it'."
+    "note": "The paid run waits for the owner's explicit 'run it'.",
+    "result": {
+      "date": "2026-09-30",
+      "runs": "Attempts 1-9 on 2026-09-29/30, each started by the owner (application database with verified trial isolation; scenarios v2 from attempt 8).",
+      "recorded_spend_usd": 0.1249,
+      "remaining_budget_usd_approx": 0.025,
+      "owner_decision_verbatim": "Accept the live evaluation as a diagnostic with reservations. Correct the structural-success and first-attempt wording, and keep live ask-and-resume validation open. Address minimum constraint, claim-grounding, plan-evidence, and truncation controls offline before Phase 5. Defer broader quality evaluation, Epicure comparison, and session-budget tuning to Phase 7. Fix spending reservations before any further paid run. Keep the remaining budget unspent for now.",
+      "decision": "accepted_as_diagnostic_with_reservations",
+      "open_before_phase5_offline": [
+        "P3-L-07 minimum constraint control",
+        "P3-L-08 claim grounding",
+        "P3-L-09 plan evidence",
+        "P3-L-10 truncation",
+        "P3-L-14 spending reservations (before any further paid run)"
+      ],
+      "open": [
+        "P3-L-13 live ask-and-resume validation"
+      ],
+      "deferred_phase7": [
+        "broader quality evaluation",
+        "P3-L-11 Epicure variant comparison",
+        "P3-L-12 session-budget tuning"
+      ],
+      "further_paid_runs_authorized": false,
+      "review_document": "evals/phase3_agent/LIVE_REVIEW.md",
+      "review_document_sha256": "99d69ad3041c71f4294730cd5c9d5afc84ff0f85aa02e8cb2c951c744244e91e",
+      "recorded_by": "Claude (AI assistant), from the owner's message; not a signature."
+    }
   },
   "not_covered": [
     "real-model behaviour (live evaluation not run)",
