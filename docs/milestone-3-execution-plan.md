@@ -1,14 +1,15 @@
 # Milestone 3 execution plan: agentic RAG and optional internet research
 
-Status: **checkpoint 0 decided (2026-09-28); Phase 1 implemented and
-reviewed (2026-09-28, see `docs/sessions.md`); Phase 2 implemented and
-reviewed (2026-09-28, see `docs/tools.md`); Phase 3 implemented
-(2026-09-28, see `docs/agent.md`; ends at a human checkpoint — review
-`evals/phase3_agent/REVIEW.md` and approve `LIVE_PLAN.md` before any
-live run); Phases 4–7 not started. Phase 4 part 1: source proposal
-drafted, awaiting owner approval. Phase 4 complete; label spot-check
-by owner pending. Checkpoint A recorded (2026-09-29); P3-A-01/02
-fixed; live runner built, live run pending owner 'run it'.**
+Status: **Phase 3 live evaluation accepted as a diagnostic with
+reservations (2026-09-30, see `evals/phase3_agent/LIVE_REVIEW.md`);
+Phase 4 complete (the owner's label spot-check was recorded 2026-09-29,
+see `docs/techniques.md`); Phase 5 part 1 in progress (verification and
+proposal in `docs/proposals/phase5-web-search.md`, no live calls yet).
+Historical note: checkpoint 0 decided 2026-09-28; Phases 1–2 implemented
+and reviewed 2026-09-28; Phase 3 offline loop implemented 2026-09-28
+with checkpoint A recorded 2026-09-29 and P3-A-01/02 fixed before the
+live run; the earlier "live run pending owner 'run it'" and "label
+spot-check pending" lines are superseded by the dates above.**
 Based on Milestone 3 in `../../ai-learning-plan.md` and the code at `266d89d`
 (branch `phase6-retrieval-comparison`, since merged into main).
 
