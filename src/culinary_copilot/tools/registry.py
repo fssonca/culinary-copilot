@@ -628,6 +628,12 @@ async def run_tool(
         )
         return result
     except Exception as exc:
+        # Runner control-flow exceptions (runner_stop) propagate to the
+        # live runner instead of becoming tool errors: campaign stops
+        # (estimate breach, budget refusal) must halt the run, not feed
+        # the agent another tool output.
+        if getattr(exc, "runner_stop", False):
+            raise
         latency_ms = (time.monotonic() - start) * 1000.0
         # An escaping exception is a defect, surfaced as
         # tool_internal_error (never raised, never truncated).

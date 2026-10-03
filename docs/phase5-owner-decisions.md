@@ -441,3 +441,27 @@ pending until the reservation issue (decision 4) is resolved.
       the later authorized probe.
     - The outstanding ask-and-resume scenario (P3-L-13) is included, and
       it verifies that the agent asks, receives the answer and resumes.
+
+## Owner answers, follow-up (2026-10-02)
+
+Recorded by an AI assistant from the owner's answers; not a signature.
+
+**Decision 4 (reservation): option A, an estimate with a stepwise live
+check.** The owner explicitly accepts that paid web searches are
+budgeted with an estimate (about $0.025 per search), not a proven upper
+bound, with acknowledged overrun risk. This applies only to searches.
+Agent turns and embeddings keep hard, true-upper-bound reservations.
+Conditions:
+- **At most 4 paid searches** across the whole Phase 5 live campaign,
+  counted across runs.
+- **Stepwise:** the first live run makes exactly **one** search and
+  stops. Its reported usage (fee, content and input tokens, cost) is
+  compared with the estimate before any further search is authorized.
+- Any search whose reported cost exceeds its estimate stops the
+  campaign, and preflight refuses until the owner acknowledges it.
+- The $0.10 Phase 5 cap applies (decision 5). Each live run still needs
+  its own "run it".
+
+**P3-L-13 (live ask-and-resume): run separately now, without web
+search.** One scenario, one attempt, hard reservations. It is charged to
+the Phase 3 cap's remaining ~$0.025, not to the Phase 5 share.

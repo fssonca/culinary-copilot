@@ -237,16 +237,25 @@ ledger covers agent turns, search sub-requests, tool fees,
 embeddings and retries, capped at $0.10 for Phase 5
 (`evals/phase3_agent/live_scenarios_phase5.json`, prepare-only).
 
-Per-search accounting (owner decision 4 — PROVISIONAL): call fee
-($0.01) + content allowance (config default 128k tokens) +
-byte-bound sub-request input + fixed output cap, about $0.025 each.
-Status: provisional — not an established upper bound; the live check
-needs an owner decision (either a supported bound, or an explicit
-change from a hard guarantee to an estimate with acknowledged
-overrun risk). Three searches cost $0.03 in call fees alone. The
-runner completes what fits; it promises no session count. Preflight
-refuses live mode while the reservation is provisional unless
-`--acknowledge-provisional-reservation` records decision 4.
+Per-search accounting (owner follow-up 2026-10-02, decision 4 option A):
+estimate with acknowledged overrun risk — call fee ($0.01) + content
+allowance (config default 128k tokens) + byte-bound sub-request input
++ fixed output cap, about $0.025 each. Agent turns and embeddings keep
+their hard reservations. Three searches cost $0.03 in call fees alone.
+The runner completes what fits; it promises no session count.
+Preflight requires `--acknowledge-search-estimate
+phase5-decision-4-2026-10-02` (exact value, recorded) only when a
+selected scenario has `internet_search_allowed` true; a search-off
+selection runs with hard reservations only. At most 4 paid searches
+across all Phase 5 runs, counted from the persisted campaign history
+`data/phase5-live/spend-history.json` (same format as the Phase 3
+history; ambiguous dispatches count, unaffordable refusals do not);
+preflight refuses when the cap is reached. If a search's reconciled
+cost exceeds its estimate, the campaign stops at once with
+`search_estimate_exceeded`, recorded in the ledger and history; the
+owner must acknowledge it under `estimate_acknowledgments` in the
+campaign history before preflight runs again. The $0.10 campaign cap
+covers agent turns, search sub-requests, fees, embeddings and retries.
 
 Retry policy: provider-internal retries are forced to zero on a
 runner settings copy (`llm_app_max_retries=0`, `embed_max_retries=0`;
@@ -299,3 +308,51 @@ happens after the P3-A-01/02 fixes and before Phase 5.
 - Every trajectory (stage events, tool outcomes, stop reason, final) is
   kept in `session_events` and exported to `live-results/` for the Phase 7
   comparison against fixed retrieval modes.
+
+## Prepared run A: P3-L-13 live ask-and-resume (not authorized)
+
+Scenario `live-ask-resume-p3l13` in
+`evals/phase3_agent/live_scenarios_phase5.json` (this file is not
+frozen). 2026-10-03 change: the yogurt request never made the real
+model ask (attempts 8 and 9), so it cannot test asking. Replaced with
+a request where the missing fact materially changes the answer:
+"I'm cooking dinner for a friend who has a food allergy. Suggest
+something with chicken." Scripted answer "She is allergic to
+peanuts." goes to whatever question is pending. Run separately
+without web search; charged to the Phase 3 cap ($0.15 cumulative
+history in `data/phase3-live/spend-history.json`, about $0.025
+remaining), not to the Phase 5 campaign. `--budget-pool phase3`
+selects the cap and history explicitly (recorded in preflight and
+summary); preflight refuses if the first reservation does not fit the
+pool remainder. Grade: asked (first run stops `agent_needs_user_input`
+with a question), answer_recorded (answer in confirmed_answers),
+resumed_used_answer (resumed run finishes with options and no
+option's source ingredient lines contain peanut, peanuts or peanut
+butter — word-boundary match reusing the constraint term matcher),
+plus whether the note or constraints mention the allergy. "Not
+exercised: model did not ask" is never a pass.
+
+## Exact live command A (paste-safe: no comment lines)
+
+```sh
+EPICURE_ENABLED=true EMBEDDINGS_ENABLED=true HF_HUB_OFFLINE=1 LLM_RECOMMENDATION_ENABLED=true uv run python evals/phase3_agent/live_run.py --live --yes --ceiling-usd 0.15 --expect-db-name culinary_copilot --expect-db-host localhost --scenarios-file evals/phase3_agent/live_scenarios_phase5.json --scenarios live-ask-resume-p3l13 --max-attempts 1 --budget-pool phase3
+```
+
+## Prepared run B: Phase 5 search campaign step 1 (not authorized)
+
+Decision 4 option A. `--acknowledge-search-estimate
+phase5-decision-4-2026-10-02` (exact value) replaces the generic flag.
+`--max-campaign-searches N` bounds this run; step 1 uses 1, selects
+only `live-search-missing-dish`, and stops right after that
+scenario completes (`--stop-after-first-search`). The summary reports,
+for that search: reported input tokens (including search content, if
+the usage separates it), output tokens, the call fee, reconciled cost
+vs the $0.025 estimate, and the raw usage fields as returned (no
+prompts or page text). Steps 2+ need their own owner go-ahead after
+the step-1 review.
+
+## Exact live command B step 1 (paste-safe: no comment lines)
+
+```sh
+EPICURE_ENABLED=true EMBEDDINGS_ENABLED=true HF_HUB_OFFLINE=1 LLM_RECOMMENDATION_ENABLED=true uv run python evals/phase3_agent/live_run.py --live --yes --ceiling-usd 0.10 --expect-db-name culinary_copilot --expect-db-host localhost --scenarios-file evals/phase3_agent/live_scenarios_phase5.json --scenarios live-search-missing-dish --max-attempts 1 --budget-pool phase5 --acknowledge-search-estimate phase5-decision-4-2026-10-02 --max-campaign-searches 1 --stop-after-first-search
+```

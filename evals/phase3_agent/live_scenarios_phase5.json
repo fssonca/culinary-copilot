@@ -1,6 +1,6 @@
 {
-  "version": "live-scenarios-phase5-2026-10-02",
-  "note": "Phase 5 prepare-only (no run authorized): search off; search on for a dish missing locally; toggle-off mid-session; ask-and-resume for P3-L-13. Campaign ledger capped at $0.10. Preflight refuses live mode while the reservation is provisional unless the owner flag records decision 4.",
+  "version": "live-scenarios-phase5-2026-10-03",
+  "note": "Phase 5 prepare-only (no run authorized). 2026-10-03 change (noted in LIVE_PLAN): live-ask-resume-p3l13 now uses the allergy request where the missing fact materially changes the answer; the yogurt request never made the model ask (attempts 8-9). Campaign ledger capped at $0.10. Search runs need --acknowledge-search-estimate phase5-decision-4-2026-10-02.",
   "campaign_cap_usd": 0.1,
   "reservation_status": "provisional: not an established upper bound; the live check needs an owner decision",
   "scenarios": [
@@ -8,50 +8,82 @@
       "key": "live-search-off",
       "title": "Search off: search_web not offered",
       "request": "Give me the red lentil soup recipe.",
-      "session": {"internet_search_allowed": false},
+      "session": {
+        "internet_search_allowed": false
+      },
       "settings": {},
       "scripted_answers": [],
-      "flow": ["recommend"],
+      "flow": [
+        "recommend"
+      ],
       "fake_flow": "direct",
-      "expected": {"stop_reason": "agent_sufficient_evidence", "search_offered": false, "web_answer": false}
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "search_offered": false,
+        "web_answer": false
+      }
     },
     {
       "key": "live-search-missing-dish",
       "title": "Search on for a dish missing locally",
       "request": "How do I make okonomiyaki? I cannot find it in the app.",
-      "session": {"internet_search_allowed": true},
+      "session": {
+        "internet_search_allowed": true
+      },
       "settings": {},
       "scripted_answers": [],
-      "flow": ["recommend"],
+      "flow": [
+        "recommend"
+      ],
       "fake_flow": "web-discovery",
-      "expected": {"stop_reason": "agent_sufficient_evidence", "search_offered": true, "web_answer": true, "max_searches": 2}
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "search_offered": true,
+        "web_answer": true,
+        "max_searches": 2
+      }
     },
     {
       "key": "live-search-toggle-off",
       "title": "Toggle-off mid-session blocks unclaimed searches",
       "request": "How do I make okonomiyaki?",
-      "session": {"internet_search_allowed": true},
+      "session": {
+        "internet_search_allowed": true
+      },
       "settings": {},
       "scripted_answers": [],
-      "flow": ["recommend-toggle-off", "resume"],
+      "flow": [
+        "recommend-toggle-off",
+        "resume"
+      ],
       "fake_flow": "web-toggle",
-      "expected": {"stop_reason": "agent_sufficient_evidence", "toggle_blocks_unclaimed": true}
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "toggle_blocks_unclaimed": true
+      }
     },
     {
       "key": "live-ask-resume-p3l13",
-      "title": "Ask-and-resume for P3-L-13",
-      "request": "Something with chicken; I might have yogurt.",
+      "title": "Ask-and-resume for P3-L-13 (allergy)",
+      "request": "I'm cooking dinner for a friend who has a food allergy. Suggest something with chicken.",
       "session": {},
       "settings": {},
-      "scripted_answers": [{"question_id": "q-yogurt", "answer": "No, I don't have yogurt."}],
-      "flow": ["recommend-ask", "resume"],
-      "fake_flow": "ask",
+      "scripted_answers": [
+        {
+          "question_id": "q-allergy",
+          "answer": "She is allergic to peanuts."
+        }
+      ],
+      "flow": [
+        "recommend-ask",
+        "resume"
+      ],
+      "fake_flow": "ask-allergy",
       "expected": {
         "stop_reason": "agent_sufficient_evidence",
-        "asked": true,
-        "answer_recorded": true,
-        "resumed_used_answer": true
+        "allergy_check": true
       }
     }
-  ]
+  ],
+  "freeze_sha256": "f569d4325651acce7b18412e96ca52534b293e37822059f556ef5bc51b87e6f2"
 }

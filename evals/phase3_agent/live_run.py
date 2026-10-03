@@ -53,6 +53,11 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from culinary_copilot.search.accounting import (  # noqa: E402
+    SEARCH_CALL_FEE_USD,
+    SearchEstimateExceeded,
+)
+
 EVALS_DIR = REPO_ROOT / "evals" / "phase3_agent"
 DEFAULT_SCENARIOS = EVALS_DIR / "live_scenarios_v2.json"
 DEFAULT_RAW_DIR = REPO_ROOT / "data" / "phase3-live"
@@ -79,6 +84,10 @@ def recorded_entry_usd(entry: dict[str, Any]) -> float:
         return float(entry.get("used_usd") or entry.get("reserved_usd") or 0.0)
     if decision == "kept-ambiguous":
         return float(entry.get("reserved_usd") or entry.get("usd") or 0.0)
+    if decision == "search_estimate_exceeded":
+        # The search was billed above its estimate: the reconciled
+        # used amount is what was spent, conservatively.
+        return float(entry.get("used_usd") or entry.get("reserved_usd") or 0.0)
     return 0.0
 
 
@@ -142,6 +151,7 @@ def append_spend_history(
                     "label": e.get("label"),
                     "decision": e.get("decision"),
                     "usd": recorded_entry_usd(e),
+                    **({"kind": e.get("kind")} if e.get("kind") else {}),
                 }
                 for e in entries
                 if isinstance(e, dict)
@@ -159,13 +169,29 @@ MAX_ATTEMPTS = 2
 #: $1.00 M3 ceiling. Covers agent turns, search sub-requests, tool fees,
 #: embeddings and retries in one ledger.
 PHASE5_CAP_USD = 0.10
-#: Per-search planning estimate status (owner decision 4): provisional,
-#: not an established upper bound. Live mode requires the owner flag
-#: --acknowledge-provisional-reservation (decision 4) until a supported
-#: bound exists.
+#: Per-search accounting status (owner follow-up 2026-10-02, option A):
+#: an estimate with acknowledged overrun risk. Agent turns and
+#: embeddings keep their hard reservations; search sub-requests do not.
 SEARCH_RESERVATION_STATUS = (
-    "provisional: not an established upper bound; the live check needs an owner decision"
+    "estimate with acknowledged overrun risk "
+    "(phase5-decision-4-2026-10-02); agent turns and embeddings keep "
+    "hard reservations"
 )
+#: Exact owner-acknowledgment value for search estimates (decision 4,
+#: option A). Preflight checks this exact string and records it.
+SEARCH_ACK_VALUE = "phase5-decision-4-2026-10-02"
+#: Provisional per-search planning estimate (not a bound).
+SEARCH_ESTIMATE_USD = 0.025
+#: Campaign search cap: at most 4 paid searches across all Phase 5 runs.
+PHASE5_CAMPAIGN_SEARCH_CAP = 4
+#: Persisted Phase 5 campaign history (same format as the Phase 3 one).
+PHASE5_HISTORY = REPO_ROOT / "data" / "phase5-live" / "spend-history.json"
+#: Budget pools: the P3-L-13 ask-and-resume run charges Phase 3, the
+#: search campaign charges Phase 5.
+BUDGET_POOLS: dict[str, dict[str, Any]] = {
+    "phase3": {"history": SPEND_HISTORY, "cap_usd": LIVE_CAP_USD},
+    "phase5": {"history": PHASE5_HISTORY, "cap_usd": PHASE5_CAP_USD},
+}
 #: Live-check search slots per session (owner item 3): at most 2, inside
 #: the code limit of 3.
 PHASE5_MAX_SEARCHES_PER_SESSION = 2
@@ -269,7 +295,12 @@ class BudgetExhausted(RuntimeError):
     run_scenario_live detects it through the exception chain and marks
     the scenario "not_completed: budget" (never counted as an agent or
     provider failure in the grades).
+
+    Carries ``runner_stop = True`` so the tool layer re-raises it
+    instead of converting it to a tool error.
     """
+
+    runner_stop = True
 
 
 class ReservationBreach(RuntimeError):
@@ -329,6 +360,64 @@ def find_unacknowledged_breach(path: Path | str) -> dict[str, Any] | None:
         run_utc = str(run.get("run_utc") or "")
         for entry in run.get("entries", []) or []:
             if isinstance(entry, dict) and entry.get("decision") == "reservation_breach":
+                key = (run_utc, str(entry.get("label") or ""))
+                if key not in acked_set:
+                    return {"run_utc": run_utc, "label": str(entry.get("label") or "")}
+    return None
+
+
+#: Ledger/history decisions that count as a dispatched paid search
+#: (ambiguous dispatches count; unaffordable refusals do not).
+SEARCH_DISPATCHED_DECISIONS = frozenset(
+    {"reconciled", "kept-ambiguous", "reservation_breach", "search_estimate_exceeded"}
+)
+
+
+def count_campaign_searches(path: Path | str) -> int:
+    """Paid search dispatches in a campaign history (0 when absent)."""
+    total = 0
+    for run in load_spend_history(Path(path)):
+        if not isinstance(run, dict):
+            continue
+        for entry in run.get("entries", []) or []:
+            if (
+                isinstance(entry, dict)
+                and entry.get("kind") == "search"
+                and entry.get("decision") in SEARCH_DISPATCHED_DECISIONS
+            ):
+                total += 1
+    return total
+
+
+def find_unacknowledged_estimate_breach(path: Path | str) -> dict[str, Any] | None:
+    """First unacknowledged ``search_estimate_exceeded`` entry, if any.
+
+    Acknowledging is a manual owner step: an object with the run's
+    ``run_utc`` and the entry's ``label`` under the history file's
+    top-level ``estimate_acknowledgments`` list (documented in
+    LIVE_PLAN.md). Returns ``{"run_utc": ..., "label": ...}`` or None.
+    """
+    try:
+        body = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    acked = body.get("estimate_acknowledgments")
+    acked_set = set()
+    if isinstance(acked, list):
+        for item in acked:
+            if isinstance(item, dict):
+                acked_set.add((str(item.get("run_utc") or ""), str(item.get("label") or "")))
+    runs = body.get("runs")
+    if not isinstance(runs, list):
+        return None
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        run_utc = str(run.get("run_utc") or "")
+        for entry in run.get("entries", []) or []:
+            if isinstance(entry, dict) and entry.get("decision") == "search_estimate_exceeded":
                 key = (run_utc, str(entry.get("label") or ""))
                 if key not in acked_set:
                     return {"run_utc": run_utc, "label": str(entry.get("label") or "")}
@@ -514,12 +603,131 @@ class SpendLedger:
                 return
         raise ValueError(f"no open reservation for {label!r}")
 
+    def reserve_search(self, label: str, *, estimate_usd: float) -> bool:
+        """Reserve a search estimate (decision 4, option A: estimate, not bound).
+
+        False (no state change beyond a refused record) when the
+        estimate does not fit the remainder.
+        """
+        if float(estimate_usd) > self.remaining_usd:
+            self.entries.append(
+                {
+                    "label": label,
+                    "decision": "refused",
+                    "reserved_usd": float(estimate_usd),
+                    "kind": "search",
+                    "estimate_usd": float(estimate_usd),
+                }
+            )
+            return False
+        self.remaining_usd -= float(estimate_usd)
+        self.entries.append(
+            {
+                "label": label,
+                "decision": "reserved",
+                "reserved_usd": float(estimate_usd),
+                "kind": "search",
+                "estimate_usd": float(estimate_usd),
+            }
+        )
+        return True
+
+    def reconcile_search(
+        self,
+        label: str,
+        *,
+        reported_in: int | None,
+        reported_out: int | None,
+        call_fee_usd: float = SEARCH_CALL_FEE_USD,
+        model: str | None = None,
+        pricing_version: str | None = None,
+        raw_usage: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Settle a search dispatch against its estimate.
+
+        Returns the per-search summary report. Ambiguous usage
+        (``None``) keeps the estimate spent and counts toward the
+        campaign cap. A reconciled cost above the estimate marks
+        ``search_estimate_exceeded`` and raises
+        :class:`SearchEstimateExceeded` so the campaign stops at once.
+        """
+        from culinary_copilot.recommendations.pricing import estimate_cost_usd
+
+        for entry in reversed(self.entries):
+            if entry.get("label") == label and entry.get("decision") == "reserved":
+                estimate = float(entry.get("estimate_usd") or 0.0)
+                if reported_in is None or reported_out is None:
+                    entry["decision"] = "kept-ambiguous"
+                    self.spent_usd += float(entry["reserved_usd"])
+                    return {
+                        "label": label,
+                        "status": "kept-ambiguous",
+                        "estimate_usd": estimate,
+                        "reconciled_usd": float(entry["reserved_usd"]),
+                        "within_estimate": True,
+                        "raw_usage": dict(raw_usage or {}),
+                    }
+                turn_cost = estimate_cost_usd(
+                    int(reported_in), int(reported_out), model or self.model
+                )
+                actual = float(call_fee_usd) + float(turn_cost or 0.0)
+                report = {
+                    "label": label,
+                    "status": "reconciled",
+                    "reported_input_tokens": int(reported_in),
+                    "reported_output_tokens": int(reported_out),
+                    "call_fee_usd": float(call_fee_usd),
+                    "estimate_usd": estimate,
+                    "reconciled_usd": actual,
+                    "within_estimate": actual <= estimate,
+                    "raw_usage": dict(raw_usage or {}),
+                }
+                if actual > estimate:
+                    entry["decision"] = "search_estimate_exceeded"
+                    entry["used_in"] = int(reported_in)
+                    entry["used_out"] = int(reported_out)
+                    entry["used_usd"] = actual
+                    entry["model"] = model or self.model
+                    if pricing_version:
+                        entry["pricing_version"] = pricing_version
+                    self.remaining_usd += float(entry["reserved_usd"]) - actual
+                    self.spent_usd += actual
+                    raise SearchEstimateExceeded(
+                        f"search estimate exceeded on {label}: "
+                        f"${actual:.6f} > ${estimate:.6f} estimate "
+                        "(campaign stops; owner acknowledgment required)",
+                        label=label,
+                        report=report,
+                    )
+                entry["decision"] = "reconciled"
+                entry["used_in"] = int(reported_in)
+                entry["used_out"] = int(reported_out)
+                entry["used_usd"] = actual
+                entry["model"] = model or self.model
+                if pricing_version:
+                    entry["pricing_version"] = pricing_version
+                self.remaining_usd += float(entry["reserved_usd"]) - actual
+                self.spent_usd += actual
+                return report
+        raise ValueError(f"no open search reservation for {label!r}")
+
+    def count_search_dispatches(self) -> int:
+        """Search dispatches in this ledger (ambiguous ones count)."""
+        return sum(
+            1
+            for entry in self.entries
+            if isinstance(entry, dict)
+            and entry.get("kind") == "search"
+            and entry.get("decision") in SEARCH_DISPATCHED_DECISIONS
+        )
+
     def summary(self) -> dict[str, Any]:
         return {
             "model": self.model,
             "ceiling_usd": self.ceiling_usd,
             "spent_usd": self.spent_usd,
             "remaining_usd": self.remaining_usd,
+            "search_dispatches": self.count_search_dispatches(),
             "entries": list(self.entries),
         }
 
@@ -880,16 +1088,32 @@ def preflight(
                     else "unknown probe failure"
                 )
                 problems.append(f"Epicure cache probe failed for {name}: {error}")
-    if float(args.ceiling_usd) > LIVE_CAP_USD:
-        problems.append(f"ceiling ${float(args.ceiling_usd):.2f} exceeds ${LIVE_CAP_USD:.2f} cap")
+    pool = str(getattr(args, "budget_pool", "phase3") or "phase3")
+    if pool not in BUDGET_POOLS:
+        problems.append(f"unknown --budget-pool {pool!r} (phase3 | phase5)")
+        pool = "phase3"
+    pool_cap = float(BUDGET_POOLS[pool]["cap_usd"])
+    record["budget_pool"] = pool
+    record["pool_cap_usd"] = pool_cap
+    record["pool_history"] = str(BUDGET_POOLS[pool]["history"])
+    if float(args.ceiling_usd) > pool_cap:
+        problems.append(
+            f"ceiling ${float(args.ceiling_usd):.2f} exceeds ${pool_cap:.2f} {pool} pool cap"
+        )
     record["search_reservation_status"] = SEARCH_RESERVATION_STATUS
     live_mode = bool(getattr(args, "live", False))
-    acknowledged = bool(getattr(args, "acknowledge_provisional_reservation", False))
-    if live_mode and not acknowledged:
+    selected = list((scenarios or {}).get("scenarios", []) or [])
+    search_selected = any(
+        bool((s.get("session", {}) or {}).get("internet_search_allowed")) for s in selected
+    )
+    record["search_selected"] = search_selected
+    ack = str(getattr(args, "acknowledge_search_estimate", "") or "")
+    record["acknowledge_search_estimate"] = ack
+    if live_mode and search_selected and ack != SEARCH_ACK_VALUE:
         problems.append(
-            "search reservation is provisional: live mode refused without "
-            "--acknowledge-provisional-reservation (owner decision 4: a supported "
-            "bound, or an explicit change to an estimate with overrun risk)"
+            "search accounting is an estimate with acknowledged overrun risk: "
+            "live mode with search selected refused without "
+            f"--acknowledge-search-estimate {SEARCH_ACK_VALUE} (decision 4, option A)"
         )
     per_live = int(getattr(args, "search_max_per_live_session", PHASE5_MAX_SEARCHES_PER_SESSION))
     if per_live > PHASE5_MAX_SEARCHES_PER_SESSION:
@@ -898,6 +1122,36 @@ def preflight(
             f"{PHASE5_MAX_SEARCHES_PER_SESSION} (owner item 3)"
         )
     record["phase5_campaign_cap_usd"] = PHASE5_CAP_USD
+    # Campaign search cap: at most 4 paid searches across all Phase 5
+    # runs, counted from the persisted campaign history (ambiguous
+    # dispatches count; unaffordable refusals do not).
+    prior_searches = count_campaign_searches(PHASE5_HISTORY)
+    record["prior_campaign_searches"] = prior_searches
+    record["campaign_search_cap"] = PHASE5_CAMPAIGN_SEARCH_CAP
+    max_campaign = getattr(args, "max_campaign_searches", None)
+    record["max_campaign_searches"] = max_campaign
+    if live_mode and search_selected:
+        if prior_searches >= PHASE5_CAMPAIGN_SEARCH_CAP:
+            problems.append(
+                f"campaign search cap reached: {prior_searches} paid searches recorded "
+                f"in {PHASE5_HISTORY} (cap {PHASE5_CAMPAIGN_SEARCH_CAP}); no further searches"
+            )
+        if max_campaign is not None and prior_searches + int(max_campaign) > (
+            PHASE5_CAMPAIGN_SEARCH_CAP
+        ):
+            problems.append(
+                f"--max-campaign-searches {max_campaign} does not fit: "
+                f"{prior_searches} already recorded, cap {PHASE5_CAMPAIGN_SEARCH_CAP}"
+            )
+        estimate_breach = find_unacknowledged_estimate_breach(PHASE5_HISTORY)
+        record["search_estimate_breach"] = estimate_breach
+        if estimate_breach is not None:
+            problems.append(
+                "campaign history records an unacknowledged search estimate breach "
+                f"(run {estimate_breach.get('run_utc')}, {estimate_breach.get('label')}); "
+                "no search run until an owner acknowledges it (LIVE_PLAN.md: add a "
+                "matching entry to estimate_acknowledgments in data/phase5-live/spend-history.json)"
+            )
     prior_spend = recorded_spend_total(Path(history_path)) if history_path else 0.0
     remaining_budget = float(args.ceiling_usd) - prior_spend
     record["prior_recorded_spend_usd"] = prior_spend
@@ -910,7 +1164,7 @@ def preflight(
                 "spend history records an unacknowledged reservation breach "
                 f"(run {breach.get('run_utc')}, {breach.get('label')}); no paid "
                 "run until an owner acknowledges it (LIVE_PLAN.md: add a "
-                "matching entry to breach_acknowledgments in spend-history.json)"
+                f"matching entry to breach_acknowledgments in {history_path})"
             )
     if history_path and spec is not None:
         from culinary_copilot.recommendations.pricing import estimate_cost_usd
@@ -918,7 +1172,7 @@ def preflight(
         first_turn_floor = estimate_cost_usd(2000, 1000, model)
         if first_turn_floor is not None and remaining_budget < first_turn_floor:
             problems.append(
-                f"remaining budget ${remaining_budget:.4f} cannot fit a first turn "
+                f"remaining {pool} pool budget ${remaining_budget:.4f} cannot fit a first turn "
                 f"(floor ${first_turn_floor:.4f} after ${prior_spend:.4f} prior recorded spend)"
             )
     if os.environ.get("HF_HUB_OFFLINE") != "1":
@@ -1139,6 +1393,66 @@ def grade_attempt(
             grades["answer_recorded"] = recorded_ok
         if expected.get("resumed_used_answer"):
             grades["resumed_used_answer"] = used_ok
+    if expected.get("allergy_check"):
+        # P3-L-13 allergy run (prepare-only): the missing fact
+        # materially changes the answer. "not-exercised" when the model
+        # did not ask — never counted as a pass.
+        from culinary_copilot.recommendations.policy import ingredient_term_hit
+
+        try:
+            all_events = store.list_events(session_id)
+        except Exception:
+            all_events = []
+        question_events = [
+            e for e in all_events or [] if getattr(e, "event_type", "") == "agent_question"
+        ]
+        allergy_answer_events = [
+            e for e in all_events or [] if getattr(e, "event_type", "") == "agent_answer"
+        ]
+        try:
+            allergy_committed = store.get(session_id)
+            allergy_confirmed = list(getattr(allergy_committed, "confirmed_answers", None) or [])
+        except Exception:
+            allergy_confirmed = []
+        scripted = [str(a.get("answer") or "") for a in scenario.get("scripted_answers", [])]
+        allergy_asked = bool(question_events)
+        allergy_recorded = bool(allergy_answer_events) and any(
+            any(text in str(c.get("answer") or "") for text in scripted if text)
+            for c in allergy_confirmed
+            if isinstance(c, dict)
+        )
+        peanut_lines: list[str] = []
+        for option in options:
+            if not isinstance(option, dict):
+                continue
+            for quantity in option.get("quantities", []) or []:
+                line = str((quantity or {}).get("ingredient") or "")
+                if line and ingredient_term_hit(line, "peanut"):
+                    peanut_lines.append(f"{option.get('title')}: {line}")
+        allergy_note = str((final or {}).get("note") or "")
+        honored_text = str((final or {}).get("constraints_honored") or "")
+        allergy_mentioned = (
+            "allerg" in (allergy_note + honored_text).lower()
+            or "peanut" in (allergy_note + honored_text).lower()
+        )
+        if not allergy_asked:
+            grades["allergy"] = "not-exercised: model did not ask"
+        else:
+            grades["allergy"] = {
+                "asked": True,
+                "answer_recorded": allergy_recorded,
+                "resumed_with_options": stop_reason == "agent_sufficient_evidence"
+                and bool(options),
+                "no_peanut_options": not peanut_lines,
+                "peanut_lines": peanut_lines,
+                "allergy_mentioned": allergy_mentioned,
+            }
+            grades["allergy_pass"] = bool(
+                allergy_recorded
+                and stop_reason == "agent_sufficient_evidence"
+                and bool(options)
+                and not peanut_lines
+            )
     return grades
 
 
@@ -1338,6 +1652,45 @@ class FakeRunProvider:
                 ],
                 epicure_lines=self._lines(),
             )
+        if flow == "ask-allergy":
+            if self.calls == 1:
+                return self._tools(("c1", "search_recipes", query))
+            if self.calls == 2:
+                return self._parsed(
+                    {
+                        "decision": "ask_user",
+                        "question": {
+                            "question_id": "q-allergy",
+                            "question_text": (
+                                "What is your friend allergic to? I need to avoid "
+                                "it in every suggestion."
+                            ),
+                            "options": ["peanuts", "dairy", "gluten", "other"],
+                        },
+                        "note": "fake allergy ask",
+                    }
+                )
+            if self.calls == 3:
+                return self._tools(
+                    ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                )
+            # Both fake options are peanut-free (chicken; red lentils).
+            return self._options_finish(
+                [
+                    self._opt(
+                        "curry-1",
+                        "Creamy Chicken Curry",
+                        [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                    ),
+                    self._opt(
+                        "lentil-2",
+                        "Red Lentil Soup",
+                        [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+                    ),
+                ],
+                epicure_lines=self._lines(),
+            )
         if flow == "empty":
             if self.calls == 1:
                 return self._tools(("c1", "search_recipes", query))
@@ -1367,6 +1720,29 @@ class FakeRunProvider:
                     self._opt("lentil-2", "Red Lentil Soup", []),
                 ],
                 epicure_skip_reason="simple_technique_question",
+            )
+        if flow == "web-discovery":
+            if self.calls == 1:
+                return self._tools(("c1", "search_web", {"query": "okonomiyaki recipe"}))
+            # Discovery-only text (no numbers: numeric claims fail
+            # closed with no source text obtained). The ref URL must
+            # equal the fake search source URL below.
+            return self._parsed(
+                {
+                    "decision": "finish",
+                    "move_to": "recommend",
+                    "result": {
+                        "web_answer": {
+                            "text": (
+                                "Okonomiyaki is a savoury Japanese pancake. "
+                                "A full guide is linked below."
+                            ),
+                            "web_refs": [{"url": _FAKE_WEB_URL, "title": "Okonomiyaki guide"}],
+                        }
+                    },
+                    "constraints_honored": [],
+                    "note": "fake web discovery",
+                }
             )
         if flow == "degraded":
             if self.calls == 1:
@@ -1690,11 +2066,13 @@ _CONFIG_ERROR_STOPS = frozenset({"generation_disabled"})
 
 def _final_answered(final: dict[str, Any] | None) -> bool:
     """True when the run produced an answer: options, a plan, a
-    technique answer, or an accepted final (a clarifying question the
-    owner can answer)."""
+    technique answer, a web answer, or an accepted final (a clarifying
+    question the owner can answer)."""
     if not isinstance(final, dict):
         return False
     if final.get("options") or final.get("plan") or final.get("technique_answer"):
+        return True
+    if final.get("web_answer"):
         return True
     return bool(final.get("question"))
 
@@ -1934,6 +2312,26 @@ def run_scenario_live(
                 }
                 attempts.append(attempt_record)
                 break
+            if isinstance(exc, SearchEstimateExceeded):
+                # Estimate breach: the search was billed above its
+                # estimate. Stop the campaign at once; the owner must
+                # acknowledge it in the campaign history (LIVE_PLAN.md)
+                # before preflight runs again.
+                attempt_record["runs"].append(
+                    {
+                        "stop_reason": "search-estimate-exceeded",
+                        "search_estimate_exceeded": True,
+                        "search_report": dict(getattr(exc, "report", None) or {}),
+                    }
+                )
+                last_final, last_stop = None, "search-estimate-exceeded"
+                run_stop = {
+                    "reason": "search-estimate-exceeded",
+                    "detail": f"search estimate exceeded: {str(exc)[:200]}",
+                    "search_report": dict(getattr(exc, "report", None) or {}),
+                }
+                attempts.append(attempt_record)
+                break
             # Preflight-class failure mid-run (snapshot, store, driver):
             # stop the run, do not grade the wreckage.
             attempt_record["runs"].append(
@@ -2031,9 +2429,27 @@ def _args(argv: list[str] | None = None) -> Any:
         help="live-check searches per session (at most 2, inside code limit 3)",
     )
     parser.add_argument(
-        "--acknowledge-provisional-reservation",
+        "--budget-pool",
+        choices=("phase3", "phase5"),
+        default="phase3",
+        help="which cap/history the run charges (phase3: $0.15 cap; phase5: $0.10 campaign)",
+    )
+    parser.add_argument(
+        "--acknowledge-search-estimate",
+        default="",
+        help="owner decision 4 option A: must equal phase5-decision-4-2026-10-02 "
+        "for live runs with search selected",
+    )
+    parser.add_argument(
+        "--max-campaign-searches",
+        type=int,
+        default=None,
+        help="paid searches this run may dispatch (campaign cap 4 across all runs; step 1 uses 1)",
+    )
+    parser.add_argument(
+        "--stop-after-first-search",
         action="store_true",
-        help="owner decision 4: accept the provisional search estimate with overrun risk",
+        help="step-1 behavior: stop right after the first search's scenario completes",
     )
     return parser.parse_args(argv)
 
@@ -2133,14 +2549,18 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    if float(args.ceiling_usd) > LIVE_CAP_USD:
-        print(f"error: ceiling exceeds ${LIVE_CAP_USD:.2f} cap", file=sys.stderr)
+    pool = str(getattr(args, "budget_pool", "phase3") or "phase3")
+    pool_info = BUDGET_POOLS.get(pool, BUDGET_POOLS["phase3"])
+    pool_history: Path = pool_info["history"]
+    pool_cap = float(pool_info["cap_usd"])
+    if float(args.ceiling_usd) > pool_cap:
+        print(f"error: ceiling exceeds ${pool_cap:.2f} {pool} pool cap", file=sys.stderr)
         return 2
     if not args.expect_db_name or not args.expect_db_host:
         print("error: --expect-db-name and --expect-db-host are required", file=sys.stderr)
         return 2
     settings = _effective_settings(Settings())
-    ok, problems, record = preflight(args, settings, scenarios, history_path=SPEND_HISTORY)
+    ok, problems, record = preflight(args, settings, scenarios, history_path=pool_history)
     record["scenarios_file"] = str(args.scenarios_file)
     if not ok:
         for problem in problems:
@@ -2157,10 +2577,24 @@ def main(argv: list[str] | None = None) -> int:
         raw_dir,
         summary_out,
         fake=False,
-        history_path=SPEND_HISTORY,
+        history_path=pool_history,
     )
     print(json.dumps({"preflight": record}, indent=2))
     return result
+
+
+def _count_session_claims(store: Any, session_ids: list[str] | None) -> int:
+    """search_slot_claimed events across sessions (0 when unreadable)."""
+    total = 0
+    for session_id in session_ids or []:
+        try:
+            events = store.list_events(session_id)
+        except Exception:
+            continue
+        for event in events or []:
+            if getattr(event, "event_type", "") == "search_slot_claimed":
+                total += 1
+    return total
 
 
 def _run_all(
@@ -2241,6 +2675,7 @@ def _run_all(
                 "first_attempt": None,
             }
         created_all.extend(report["sessions"])
+        report["searches_dispatched"] = _count_session_claims(store, report.get("sessions"))
         scenario_reports.append(report)
         (raw_dir / f"{scenario['key']}.json").write_text(
             json.dumps(report, indent=2) + "\n", encoding="utf-8"
@@ -2252,6 +2687,18 @@ def _run_all(
             }
             if report["run_stop"].get("detail"):
                 stopped_early["detail"] = str(report["run_stop"]["detail"])
+            break
+        if (
+            bool(getattr(args, "stop_after_first_search", False))
+            and (report.get("searches_dispatched", 0) or 0) > 0
+        ):
+            # Step-1 behavior: stop right after the first search's
+            # scenario completes (later steps need their own go-ahead).
+            stopped_early = {
+                "reason": "step-1-complete: first search done",
+                "after_scenario": scenario["key"],
+                "searches_dispatched": int(report["searches_dispatched"]),
+            }
             break
         if report.get("stop_reason") in ("agent_no_progress", "agent_validation_failed"):
             streak += 1
@@ -2291,6 +2738,7 @@ def _run_all(
     summary = {
         "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "fake": fake,
+        "budget_pool": str(getattr(args, "budget_pool", "phase3") or "phase3"),
         "scenarios_file": str(getattr(args, "scenarios_file", "") or ""),
         "scenarios_sha256": scenarios["freeze_sha256"],
         "model": model,
@@ -2306,6 +2754,7 @@ def _run_all(
                 "attempts": r.get("attempts", 0),
                 "stop_reason": r.get("stop_reason"),
                 "expected_stop_matched": _stop_matched(r),
+                "searches_dispatched": r.get("searches_dispatched", 0),
                 "grades": r.get("grades", {"graded": False, "reason": "not-run"}),
                 "first_attempt_stop": _attempt_stop(r.get("first_attempt")),
             }
@@ -2345,6 +2794,43 @@ def _run_all(
     return 0 if isolated else 1
 
 
+_FAKE_WEB_URL = "https://example.com/okonomiyaki-guide"
+
+
+class _FakeWebSearchProvider:
+    """Offline fake search sub-request (tests only, proves shape only)."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def complete_web_search(
+        self, *, instruction: str, query: str, max_output_tokens: int | None = None
+    ) -> Any:
+        from culinary_copilot.llm.client import WebSearchResult
+
+        self.calls.append({"instruction": instruction, "query": query})
+        return WebSearchResult(
+            performed=True,
+            parsed={
+                "summary": "Okonomiyaki is a savoury Japanese pancake.",
+                "sources": [
+                    {
+                        "url": _FAKE_WEB_URL,
+                        "title": "Okonomiyaki guide",
+                        "excerpt_model": "a savoury pancake",
+                        "published_at": None,
+                    }
+                ],
+            },
+            web_search_call_ids=["ws_fake_1"],
+            citations=[{"url": _FAKE_WEB_URL, "title": "Okonomiyaki guide"}],
+            action_sources=[{"type": "url", "url": _FAKE_WEB_URL}],
+            model="fake",
+            latency_ms=1,
+            attempts=1,
+        )
+
+
 def _fake_context(current_store: Any, settings: Any, scenario: dict[str, Any] | None) -> Any:
     from culinary_copilot.tools.registry import ToolContext
 
@@ -2363,6 +2849,7 @@ def _fake_context(current_store: Any, settings: Any, scenario: dict[str, Any] | 
         epicure_core=core,
         epicure_cooc=core,
         epicure_chem=core,
+        search_provider=_FakeWebSearchProvider(),
     )
 
 
@@ -2412,19 +2899,96 @@ def _live_context_factory(settings: Any, engine: Any, ledger: SpendLedger) -> An
     """Tool-context factory for live runs (module-level for tests)."""
 
     def _factory(current_store: Any, scenario: dict[str, Any]) -> Any:
+        from culinary_copilot.llm.client import OpenAIApplicationProvider
         from culinary_copilot.tools import build_tool_context
 
         context = build_tool_context(settings=settings, engine=engine, session_store=current_store)
         # Reviewable raw trajectories: the live run opts into bounded
         # args in tool_call events (default stays digest-only).
         context.record_tool_args = True
-        return _wrap_context_embed_provider(
-            context,
-            ledger,
-            settings,
-        )
+        context = _wrap_context_embed_provider(context, ledger, settings)
+        if bool((scenario.get("session", {}) or {}).get("internet_search_allowed")):
+            # Search-on scenarios get the ledgered hosted-search
+            # sub-request (decision 4, option A estimate accounting).
+            context.search_provider = LedgeredSearchProvider(
+                OpenAIApplicationProvider(settings),
+                ledger,
+                model=str(getattr(settings, "llm_rec_model", "") or ""),
+            )
+        return context
 
     return _factory
+
+
+class LedgeredSearchProvider:
+    """Wraps a search sub-request provider: estimate per search, settle after.
+
+    Decision 4, option A: the $0.025 figure is an estimate with
+    acknowledged overrun risk, not a bound. Each dispatch reserves the
+    estimate on the campaign ledger (refusal stops the scenario with
+    budget-exhausted); afterwards the reported usage reconciles it and
+    a reconciled cost above the estimate stops the whole campaign via
+    :class:`SearchEstimateExceeded`.
+    """
+
+    def __init__(
+        self,
+        inner: Any,
+        ledger: SpendLedger,
+        *,
+        estimate_usd: float = SEARCH_ESTIMATE_USD,
+        max_output_tokens: int = 1500,
+        model: str | None = None,
+    ) -> None:
+        self._inner = inner
+        self._ledger = ledger
+        self._estimate_usd = float(estimate_usd)
+        self._max_output_tokens = int(max_output_tokens)
+        self._model = model
+        self._seq = 0
+        self.last_report: dict[str, Any] | None = None
+
+    async def complete_web_search(
+        self, *, instruction: str, query: str, max_output_tokens: int | None = None
+    ) -> Any:
+        from culinary_copilot.llm.models import PRICING_VERSION
+
+        self._seq += 1
+        label = f"search-{self._seq}"
+        if not self._ledger.reserve_search(label, estimate_usd=self._estimate_usd):
+            raise BudgetExhausted(
+                f"search estimate ${self._estimate_usd:.4f} does not fit the remainder"
+            )
+        try:
+            result = await self._inner.complete_web_search(
+                instruction=instruction,
+                query=query,
+                max_output_tokens=(
+                    max_output_tokens if max_output_tokens is not None else self._max_output_tokens
+                ),
+            )
+        except Exception:
+            self._ledger.keep(label)
+            raise
+        reported_in = getattr(result, "input_tokens", None)
+        reported_out = getattr(result, "output_tokens", None)
+        raw_usage = {
+            "input_tokens": reported_in,
+            "output_tokens": reported_out,
+            "model": getattr(result, "model", None),
+            "response_id": getattr(result, "response_id", None),
+            "attempts": getattr(result, "attempts", None),
+        }
+        report = self._ledger.reconcile_search(
+            label,
+            reported_in=reported_in,
+            reported_out=reported_out,
+            model=self._model or getattr(result, "model", None),
+            pricing_version=PRICING_VERSION,
+            raw_usage=raw_usage,
+        )
+        self.last_report = report
+        return result
 
 
 def _run_fake_scenario(

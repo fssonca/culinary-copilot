@@ -196,6 +196,17 @@ def _token_hit(words: list[str], token: str) -> bool:
     return any(w in forms for w in words)
 
 
+def ingredient_term_hit(canonical: str, term: str) -> bool:
+    """Whole-word, plural-aware term match on one ingredient line.
+
+    Reuses the constraint matcher (tokenize + plural forms), so the
+    live-run allergy grade and the dietary policy agree on what counts
+    as a hit. ``peanut`` hits ``peanut``, ``peanuts`` and
+    ``peanut butter`` alike.
+    """
+    return _token_hit(_words(canonical or ""), (term or "").strip().lower())
+
+
 def _dietary_match(diet: str, ref: str, canonical: str) -> tuple[bool, str | None, str | None]:
     """Return ``(violated, matched_token, explanation)`` for one ingredient.
 

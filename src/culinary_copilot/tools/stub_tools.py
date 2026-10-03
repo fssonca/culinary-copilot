@@ -243,6 +243,20 @@ async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str
             instruction=instruction, query=query_min, max_output_tokens=max_output
         )
     except Exception as exc:
+        if getattr(exc, "runner_stop", False):
+            # Runner control flow (budget refusal, estimate breach):
+            # the slot stays claimed (a dispatch happened), the
+            # outcome is recorded without text, then propagation
+            # stops the run instead of feeding the agent.
+            try:
+                store.append_event(
+                    session_id,
+                    "search_outcome",
+                    {"call_id": call_id, "outcome": "runner-stop"},
+                )
+            except Exception:
+                pass
+            raise
         # Fail-closed: type-name-or-minimized error only, never raw text.
         err_text = _min_error(f"{type(exc).__name__}: {exc}")
         try:
