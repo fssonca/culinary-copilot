@@ -36,7 +36,7 @@ import inspect
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel, ValidationError
@@ -228,6 +228,23 @@ class ToolContext:
     epicure_core: Any = None
     epicure_cooc: Any = None
     epicure_chem: Any = None
+    # Server-bound session id for permission-gated tools (Phase 5, part 2,
+    # owner item 3): set per run by the agent loop / API layer from the URL
+    # path, never from model arguments. A spoofed id is impossible by
+    # construction: search_web's args model has no session field
+    # (extra="forbid" rejects it) and the impl reads only this value.
+    bound_session_id: str | None = None
+    # Registry call id for this invocation (Phase 5 review fix 3):
+    # run_tool sets a per-call copy before invoking the impl, so
+    # parallel calls never share it. Impls use it for their own
+    # events (slot claims, search events) to correlate with the
+    # registry's tool_call event; absent (direct impl calls) they
+    # fall back to uuid4.
+    call_id: str | None = None
+    # Bounded search sub-request provider (Phase 5, part 2): any object
+    # with ``async complete_web_search(*, instruction, query,
+    # max_output_tokens)``. None means unconfigured (tool_not_configured).
+    search_provider: Any = None
     # Test hook: wrap the raw implementation (e.g. inject a sleeping fake).
     impl_overrides: dict[str, Callable[..., Any]] = field(default_factory=dict)
     # Review hook: also store the bounded validated args in the session
@@ -455,12 +472,19 @@ def _record_event(
     if session_id and getattr(context, "session_store", None) is not None:
         # Bounded args travel in the session event only when the caller
         # opts in (reviewable raw trajectories); the process log and the
-        # default event keep the digest only.
+        # default event keep the digest only. Minimization (Phase 5)
+        # runs on the trajectory path too: emails, phones, street
+        # addresses and "my <Name>" are scrubbed before storage.
+        # Fail-closed (review fix 1): when the minimizer throws, store
+        # the digest only plus args_minimization_failed — never the
+        # unminimized args.
         if args is not None and bool(getattr(context, "record_tool_args", False)):
             try:
-                payload["args"] = bounded_args_json(args)
-            except (TypeError, ValueError):
-                payload["args"] = str(args)[:2000]
+                from culinary_copilot.search.minimize import minimize_tool_args as _min_args
+
+                payload["args"] = _min_args(args)
+            except Exception:
+                payload["args_minimization_failed"] = True
         try:
             context.session_store.append_event(session_id, TOOL_CALL_EVENT_TYPE, payload)
         except Exception:
@@ -531,12 +555,20 @@ async def run_tool(
     start = time.monotonic()
     override = context.impl_overrides.get(tool.name)
     target: Callable[..., Any] = override if override is not None else impl
+    # Per-call copy carrying this invocation's call id (fix 3): the
+    # shared context must not be mutated — parallel calls in one batch
+    # would race on it. Impls read context.call_id for their own
+    # events; failure to copy keeps the shared context untouched.
+    try:
+        call_context = replace(context, call_id=cid)
+    except Exception:
+        call_context = context
     try:
         if _is_async_callable(target):
-            outcome_raw = await asyncio.wait_for(target(parsed, context), timeout=timeout)
+            outcome_raw = await asyncio.wait_for(target(parsed, call_context), timeout=timeout)
         else:
             outcome_raw = await asyncio.wait_for(
-                asyncio.to_thread(target, parsed, context), timeout=timeout
+                asyncio.to_thread(target, parsed, call_context), timeout=timeout
             )
         latency_ms = (time.monotonic() - start) * 1000.0
         typed: dict[str, Any]

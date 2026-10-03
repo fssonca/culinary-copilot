@@ -1,0 +1,57 @@
+{
+  "version": "live-scenarios-phase5-2026-10-02",
+  "note": "Phase 5 prepare-only (no run authorized): search off; search on for a dish missing locally; toggle-off mid-session; ask-and-resume for P3-L-13. Campaign ledger capped at $0.10. Preflight refuses live mode while the reservation is provisional unless the owner flag records decision 4.",
+  "campaign_cap_usd": 0.1,
+  "reservation_status": "provisional: not an established upper bound; the live check needs an owner decision",
+  "scenarios": [
+    {
+      "key": "live-search-off",
+      "title": "Search off: search_web not offered",
+      "request": "Give me the red lentil soup recipe.",
+      "session": {"internet_search_allowed": false},
+      "settings": {},
+      "scripted_answers": [],
+      "flow": ["recommend"],
+      "fake_flow": "direct",
+      "expected": {"stop_reason": "agent_sufficient_evidence", "search_offered": false, "web_answer": false}
+    },
+    {
+      "key": "live-search-missing-dish",
+      "title": "Search on for a dish missing locally",
+      "request": "How do I make okonomiyaki? I cannot find it in the app.",
+      "session": {"internet_search_allowed": true},
+      "settings": {},
+      "scripted_answers": [],
+      "flow": ["recommend"],
+      "fake_flow": "web-discovery",
+      "expected": {"stop_reason": "agent_sufficient_evidence", "search_offered": true, "web_answer": true, "max_searches": 2}
+    },
+    {
+      "key": "live-search-toggle-off",
+      "title": "Toggle-off mid-session blocks unclaimed searches",
+      "request": "How do I make okonomiyaki?",
+      "session": {"internet_search_allowed": true},
+      "settings": {},
+      "scripted_answers": [],
+      "flow": ["recommend-toggle-off", "resume"],
+      "fake_flow": "web-toggle",
+      "expected": {"stop_reason": "agent_sufficient_evidence", "toggle_blocks_unclaimed": true}
+    },
+    {
+      "key": "live-ask-resume-p3l13",
+      "title": "Ask-and-resume for P3-L-13",
+      "request": "Something with chicken; I might have yogurt.",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [{"question_id": "q-yogurt", "answer": "No, I don't have yogurt."}],
+      "flow": ["recommend-ask", "resume"],
+      "fake_flow": "ask",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "asked": true,
+        "answer_recorded": true,
+        "resumed_used_answer": true
+      }
+    }
+  ]
+}

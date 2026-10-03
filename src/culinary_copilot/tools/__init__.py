@@ -57,6 +57,8 @@ def build_tool_context(
     epicure_core: Any | None = None,
     epicure_cooc: Any | None = None,
     epicure_chem: Any | None = None,
+    bound_session_id: str | None = None,
+    search_provider: Any | None = None,
 ) -> ToolContext:
     """Assemble a ``ToolContext`` (fakes injected in tests)."""
     timeout = float(getattr(settings, "tool_timeout_s", 10.0)) if settings else 10.0
@@ -88,6 +90,8 @@ def build_tool_context(
         epicure_core=epicure_core,
         epicure_cooc=epicure_cooc,
         epicure_chem=epicure_chem,
+        bound_session_id=bound_session_id,
+        search_provider=search_provider,
     )
 
 

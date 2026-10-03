@@ -140,6 +140,32 @@ class Settings(BaseSettings):
     # session row (defaults below); the bounded loop in Phase 3 enforces them.
     session_max_tool_calls: int = 12
     session_max_steps: int = 8
+    # Permission-gated web search (Milestone 3, Phase 5, part 2, offline).
+    # Per-session search slots (owner decision 3: 3 in code, 2 in the live
+    # check via runner flag). Enforced by an atomic slot claim in
+    # services/session_store.py; no migration (existing session_events).
+    search_max_per_session: int = 3
+    # Strict sub-request output cap for the search summarizer turn.
+    search_max_output_tokens: int = 1500
+    # Provisional content allowance (tokens) for planning estimates only
+    # (owner decision 4: NOT an established upper bound). Equals the
+    # documented 128k search-context window cap; the live check must
+    # resolve decision 4 before any live run.
+    search_content_allowance_tokens: int = 128_000
+    # Publisher-signal domain lists (owner decision 7). Comma-separated;
+    # empty means unconfigured (all sources unclassified for that class).
+    # Labels are publisher signals, never authority verdicts. usda.gov is
+    # NOT listed here: it is official_guidance only on food-safety paths
+    # (see search/labels.py), otherwise unclassified. Never list bare
+    # nih.gov (only the NLM hosts below count as research_publication).
+    web_official_guidance_domains: str = "fda.gov,fsis.usda.gov,foodsafety.gov,cdc.gov,who.int"
+    web_research_domains: str = "pubmed.ncbi.nlm.nih.gov,pmc.ncbi.nlm.nih.gov"
+    web_culinary_domains: str = ""
+    # Search retention (owner decision 8, implemented): session search
+    # events 90 days, process logs 30 days. Purge is owner-run
+    # (scripts/search/purge_search.py + trigger-aware SQL), never automatic.
+    search_event_retention_days: int = 90
+    process_log_retention_days: int = 30
 
     @field_validator("llm_rec_reasoning_effort", mode="before")
     @classmethod
@@ -202,6 +228,12 @@ class Settings(BaseSettings):
             raise ValueError("SESSION_MAX_TOOL_CALLS must be >= 1")
         if self.session_max_steps < 1:
             raise ValueError("SESSION_MAX_STEPS must be >= 1")
+        if int(self.search_max_per_session) < 1:
+            raise ValueError("SEARCH_MAX_PER_SESSION must be >= 1")
+        if int(self.search_max_output_tokens) < 1:
+            raise ValueError("SEARCH_MAX_OUTPUT_TOKENS must be >= 1")
+        if int(self.search_content_allowance_tokens) < 1:
+            raise ValueError("SEARCH_CONTENT_ALLOWANCE_TOKENS must be >= 1")
         if not math.isfinite(float(self.tool_timeout_s)) or float(self.tool_timeout_s) <= 0:
             raise ValueError("TOOL_TIMEOUT_S must be a finite positive number")
         if not math.isfinite(float(self.agent_wall_clock_s)) or float(self.agent_wall_clock_s) <= 0:

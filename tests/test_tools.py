@@ -117,7 +117,7 @@ def test_argument_validation_for_every_tool() -> None:
         "scale_recipe": {"dataset_id": "x", "source_id": "y"},
         "convert_units": {"amount": -1, "from_unit": "g", "to_unit": "kg"},
         "search_techniques": {"query": ""},
-        "search_web": {"session_id": "", "query": ""},
+        "search_web": {"query": ""},
     }
     for name, args in bad.items():
         result = _call(name, args, ctx)
@@ -629,6 +629,7 @@ class _FakeSessionStore:
     def __init__(self, allowed: bool) -> None:
         self._allowed = allowed
         self.events: list[dict[str, Any]] = []
+        self.claims = 0
 
     def get(self, session_id: str) -> Any:
         return _FakeSessionState(self._allowed)
@@ -637,20 +638,38 @@ class _FakeSessionStore:
         self.events.append({"session_id": session_id, "type": event_type, "payload": payload})
         return self.events[-1]
 
+    def claim_search_slot(
+        self, session_id: str, *, max_slots: int, call_id: str, minimized_query: str = ""
+    ) -> dict[str, Any]:
+        if not self._allowed:
+            return {"ok": False, "reason": "permission_denied", "slots_used": 0}
+        if self.claims >= max_slots:
+            return {
+                "ok": False,
+                "reason": "search_budget_exhausted",
+                "slots_used": self.claims,
+            }
+        self.claims += 1
+        return {"ok": True, "slots_used": self.claims}
+
+
+def _web_ctx(store: Any) -> ToolContext:
+    return _ctx(session_store=store, bound_session_id="ses-1")
+
 
 def test_search_web_denied_off_then_unavailable_on() -> None:
     denied = _call(
         "search_web",
-        {"session_id": "ses-1", "query": "ramen"},
-        _ctx(session_store=_FakeSessionStore(allowed=False)),
+        {"query": "ramen"},
+        _web_ctx(_FakeSessionStore(allowed=False)),
     )
     assert denied["ok"] is False
     assert denied["error_type"] == "permission_denied"
     assert denied["reason"] == REASON_TOOL_PERMISSION_DENIED
     allowed = _call(
         "search_web",
-        {"session_id": "ses-1", "query": "ramen"},
-        _ctx(session_store=_FakeSessionStore(allowed=True)),
+        {"query": "ramen"},
+        _web_ctx(_FakeSessionStore(allowed=True)),
     )
     assert allowed["ok"] is False
     assert allowed["error_type"] == "unavailable"
@@ -658,14 +677,22 @@ def test_search_web_denied_off_then_unavailable_on() -> None:
     assert next_action_for(allowed["reason"]) == "contact_operator"
 
 
+def test_search_web_rejects_session_id_spoof() -> None:
+    """A model-supplied session_id is rejected; the bound id rules."""
+    ctx = _web_ctx(_FakeSessionStore(allowed=False))
+    spoofed = _call("search_web", {"session_id": "ses-evil", "query": "ramen"}, ctx)
+    assert spoofed["ok"] is False
+    assert spoofed["reason"] == REASON_TOOL_INVALID_ARGUMENTS
+
+
 def test_tool_call_event_logged_with_digest_not_raw_args() -> None:
     store = _FakeSessionStore(allowed=False)
-    ctx = _ctx(session_store=store)
+    ctx = _web_ctx(store)
     _run(
         run_tool(
             _defs()["search_web"],
             _impls()["search_web"],
-            {"session_id": "ses-9", "query": "super-secret-query"},
+            {"query": "super-secret-query"},
             ctx,
             session_id="ses-9",
             call_id="call-test-1",

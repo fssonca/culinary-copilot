@@ -232,7 +232,21 @@ maximum); query embeddings for both `search_recipes` and
 context provider serves both tools). Every entry is priced by its
 own model — chat turns at the chat rate, embeddings at
 `text-embedding-3-small` $0.02/1M from `embeddings/registry.py` —
-and records the model, kind, and pricing version used.
+and records the model, kind, and pricing version used. One campaign
+ledger covers agent turns, search sub-requests, tool fees,
+embeddings and retries, capped at $0.10 for Phase 5
+(`evals/phase3_agent/live_scenarios_phase5.json`, prepare-only).
+
+Per-search accounting (owner decision 4 — PROVISIONAL): call fee
+($0.01) + content allowance (config default 128k tokens) +
+byte-bound sub-request input + fixed output cap, about $0.025 each.
+Status: provisional — not an established upper bound; the live check
+needs an owner decision (either a supported bound, or an explicit
+change from a hard guarantee to an estimate with acknowledged
+overrun risk). Three searches cost $0.03 in call fees alone. The
+runner completes what fits; it promises no session count. Preflight
+refuses live mode while the reservation is provisional unless
+`--acknowledge-provisional-reservation` records decision 4.
 
 Retry policy: provider-internal retries are forced to zero on a
 runner settings copy (`llm_app_max_retries=0`, `embed_max_retries=0`;

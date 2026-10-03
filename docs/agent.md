@@ -48,7 +48,9 @@ model reasoning.
 ## Tool-list filtering (backend, every step)
 
 - `search_web` is offered only when the session's
-  `internet_search_allowed` is true (the tool re-checks on every call).
+  `internet_search_allowed` is true (the tool re-checks inside the
+  atomic slot claim on every call; toggle-off blocks every search not
+  yet claimed and cannot undo a dispatched request).
 - Tools that returned `tool_not_configured` in this session (current run
   or the `tool_call` event log) are not offered again — permanent
   failures are never retried.
@@ -215,6 +217,18 @@ removed), and the next run substitutes (labelled `adaptation`,
   referenced document (`attribution_text`, `licence_url`; every chunk
   stays listed under `technique_refs`); stop reason
   `agent_sufficient_evidence`.
+- `web_answer` (Phase 5, part 2, implemented offline): a cited
+  discovery answer (`text` 1–1200 chars plus 1–5 `web_refs` with
+  clickable `url` + `title`), labelled `evidence_class: "external"`.
+  Every `web_ref.url` must equal a source URL from a successful
+  `search_web` in the same session (resumed runs count). Web evidence
+  never becomes an option, a quantity, or a plan source. No source
+  text actually obtained exists (provider `results` is image-only per
+  docs), so time/temperature claims fail closed: a web answer carrying
+  numeric claims is rejected — drop the number and point at the page.
+  Creates a `missing_recipe` investigation candidate only when the
+  request is about a recipe that local retrieval failed to find (zero
+  `search_recipes` + web ok), never for technique or general answers.
 - `plan`: `cooking_plan` (mise en place, steps, plating) from the
   selected source, with `scale_recipe` / `convert_units` results where
   asked. The plan source must equal the selected dish **and** come from

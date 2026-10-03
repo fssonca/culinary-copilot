@@ -319,12 +319,36 @@ class PlanPayload(BaseModel):
     technique_refs: list[TechniqueRef] = Field(default_factory=list, max_length=10)
 
 
+class WebRef(BaseModel):
+    """One clickable web reference (url + title, both required)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1, max_length=500)
+    title: str = Field(min_length=1, max_length=300)
+
+
+class WebAnswer(BaseModel):
+    """Cited discovery answer (Phase 5, part 2, owner decision 6).
+
+    Points the user at pages; claims no verified quantities or safety
+    instructions. Separate from corpus recipe identity: web evidence
+    never becomes an option, a quantity, or a plan source.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=1200)
+    web_refs: list[WebRef] = Field(min_length=1, max_length=5)
+
+
 class FinishResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     options: list[FinishOption] | None = None
     plan: PlanPayload | None = None
     technique_answer: TechniqueAnswer | None = None
+    web_answer: WebAnswer | None = None
 
 
 class EpicureLine(BaseModel):
@@ -1329,6 +1353,13 @@ async def run_agent(
     settings = deps.settings
     provider = deps.provider
     context = deps.tool_context
+    # Server-bound session for permission-gated tools (Phase 5, part 2,
+    # owner item 3): the model never supplies a session id; the impl
+    # reads only this value. Set per run from the path session id.
+    try:
+        context.bound_session_id = session_id
+    except Exception:
+        pass
     resolve = deps.recipe_resolver or _default_resolver(getattr(context, "engine", None))
     wall_clock = float(getattr(settings, "agent_wall_clock_s", 90.0))
     timeout_s = _timeout_s(deps)
@@ -2267,14 +2298,15 @@ async def _handle_finish(
     wants_plan = result.plan is not None
     wants_options = result.options is not None
     wants_answer = result.technique_answer is not None
-    if sum((wants_plan, wants_options, wants_answer)) != 1:
+    wants_web = result.web_answer is not None
+    if sum((wants_plan, wants_options, wants_answer, wants_web)) != 1:
         return await _validation_feedback(
             deps,
             store,
             session_id,
             state,
             revision,
-            ["finish needs exactly one of options, plan or technique_answer"],
+            ["finish needs exactly one of options, plan, technique_answer or web_answer"],
             validation_retries,
             [],
             None,
@@ -2658,6 +2690,40 @@ async def _handle_finish(
         errors.extend(grounding_errors)
         state_epicure_skip = effective_skip
         epicure_degraded = False
+    elif wants_web:
+        from culinary_copilot.agent.validate import (
+            session_web_sources,
+            validate_web_refs,
+            web_claim_context_ok,
+        )
+
+        web_answer = result.web_answer
+        assert web_answer is not None
+        web_dump = web_answer.model_dump()
+        session_sources = session_web_sources(store, session_id)
+        errors.extend(validate_web_refs(web_dump.get("web_refs"), session_sources=session_sources))
+        # Discovery-only rule (owner decision 6): no source text actually
+        # obtained exists in this integration (web_search_call.results is
+        # image-only per docs), so time/temperature claims cannot verify.
+        # Any numeric claim fails closed with subject-context wording.
+        web_text = str(web_dump.get("text") or "")
+        for claim in _extract_time_temp_claims(web_text):
+            checkable_claims += 1
+            parsed = _parse_time_temp_claim(claim)
+            verified = False
+            if parsed is not None:
+                # No source_text exists; model excerpts never verify.
+                verified = web_claim_context_ok(claim_subject="", source_text=None)
+            if not verified:
+                grounding_errors.append(
+                    f"web answer makes an unverified time/temperature claim: "
+                    f"{claim!r} (no source text obtained; drop the number and "
+                    "point at the page instead)"
+                )
+        errors.extend(grounding_errors)
+        state_epicure_skip = None
+        effective_skip = None
+        technique_evidence = []
     else:
         plan_dump = result.plan.model_dump() if result.plan else {}
         errors.extend(
@@ -2809,6 +2875,28 @@ async def _handle_finish(
             "epicure_skip_reason": state_epicure_skip,
             **(turn_usage or {}),
         }
+    elif wants_web:
+        web_answer = result.web_answer
+        assert web_answer is not None
+
+        def _apply(snapshot: Any) -> Any:
+            snapshot.evidence = list(snapshot.evidence) + [
+                {
+                    "type": "web_answer",
+                    "sources": [
+                        {"url": ref.url, "title": ref.title} for ref in web_answer.web_refs
+                    ],
+                }
+            ]
+            snapshot.current_phase = target
+            snapshot.steps_remaining = max(0, snapshot.steps_remaining - 1)
+            return snapshot
+
+        event_payload = {
+            "note": note,
+            "web_refs": len(web_answer.web_refs),
+            **(turn_usage or {}),
+        }
     else:
         assert result.plan is not None
         plan_dump = result.plan.model_dump()
@@ -2867,7 +2955,7 @@ async def _handle_finish(
         ) from exc
     await _emit(deps, "finished", {"stop_reason": REASON_AGENT_SUFFICIENT})
     plan_payload = result.plan
-    assert plan_payload is not None or wants_options or wants_answer
+    assert plan_payload is not None or wants_options or wants_answer or wants_web
     final: dict[str, Any]
     if wants_options:
         final = {"options": options_dump}
@@ -2915,6 +3003,19 @@ async def _handle_finish(
         }
         if state_epicure_skip is not None:
             final["epicure_skip_reason"] = state_epicure_skip
+    elif wants_web:
+        web_final = result.web_answer
+        assert web_final is not None
+        final = {
+            "note": note,
+            "note_source": "model",
+            "note_claims": "unverified",
+            "web_answer": {
+                "text": web_final.text,
+                "web_refs": [{"url": ref.url, "title": ref.title} for ref in web_final.web_refs],
+                "evidence_class": "external",
+            },
+        }
     else:
         plan_final = dict(plan_payload.model_dump() if plan_payload else {})
         plan_final["steps_source"] = steps_source

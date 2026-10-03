@@ -679,6 +679,83 @@ def validate_technique_refs(
     return errors, resolved
 
 
+def session_web_sources(store: Any, session_id: str) -> dict[str, dict[str, Any]]:
+    """Successful search_web sources for the session, keyed by URL.
+
+    Reads search_results_retrieved-style evidence: the tool result is
+    not stored in tool_call events (digest only), so this helper reads
+    the search_results_retrieved events' URL lists. Fail-closed: store
+    errors yield an empty mapping. Provenance note: these are provider
+    citation metadata (URLs), not verified page text.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        events = store.list_events(session_id)
+    except Exception:
+        return out
+    for event in events:
+        if getattr(event, "event_type", "") != "search_results_retrieved":
+            continue
+        payload = getattr(event, "payload", None) or {}
+        urls = payload.get("urls")
+        if isinstance(urls, list):
+            for url in urls:
+                if isinstance(url, str) and url and url not in out:
+                    out[url] = {"url": url}
+    return out
+
+
+def validate_web_refs(refs: Any, *, session_sources: dict[str, Any]) -> list[str]:
+    """Every web_ref URL must equal a source URL from this session.
+
+    Successful searches only (resumed runs count; failures and other
+    sessions do not). Refs are clickable: url plus non-empty title.
+    """
+    errors: list[str] = []
+    if not isinstance(refs, list) or not refs:
+        return ["web_answer needs at least 1 web_ref"]
+    if len(refs) > 5:
+        return ["web_answer carries at most 5 web_refs"]
+    for index, ref in enumerate(refs):
+        if not isinstance(ref, dict):
+            errors.append(f"web ref {index}: not a mapping")
+            continue
+        url = ref.get("url")
+        title = ref.get("title")
+        if not isinstance(url, str) or not url.strip():
+            errors.append(f"web ref {index}: missing url")
+            continue
+        if not isinstance(title, str) or not title.strip():
+            errors.append(f"web ref {index}: missing title (citations stay clickable)")
+            continue
+        if url not in session_sources:
+            errors.append(f"web ref {index}: {url!r} was not returned in this session")
+    return errors
+
+
+def web_claim_context_ok(*, claim_subject: str, source_text: str | None) -> bool:
+    """Subject-context fit for a numeric claim against source text.
+
+    The claim's subject (e.g. "chicken") must appear in the SAME
+    sentence as the number in that source text (sentence-split on
+    . ! ? ;). No source text (always None in this integration) fails
+    closed. Checking generated text against generated text never
+    counts: only source text actually obtained (provider-retrieved
+    page content) verifies; model excerpts do not.
+    """
+    if not source_text:
+        return False
+    subject = str(claim_subject or "").strip().lower()
+    if not subject:
+        return False
+    subject_rx = re.compile(r"\b" + re.escape(subject) + r"s?\b")
+    number_rx = re.compile(r"\d+(?:\.\d+)?")
+    for sentence in re.split(r"[.!?;]+", str(source_text)):
+        if subject_rx.search(sentence.lower()) and number_rx.search(sentence):
+            return True
+    return False
+
+
 __all__ = [
     "AMBIGUOUS_DIET_TERMS",
     "RAW_PROTEIN_TERMS",
@@ -697,8 +774,11 @@ __all__ = [
     "doc_text",
     "hard_constraint_keys",
     "quantity_in_source",
+    "session_web_sources",
     "validate_one_option",
     "validate_options",
     "validate_plan",
     "validate_technique_refs",
+    "validate_web_refs",
+    "web_claim_context_ok",
 ]

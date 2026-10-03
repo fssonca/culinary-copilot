@@ -201,8 +201,11 @@ class PostgresSessionStore:
         """
         _check_phase(new_state.current_phase)
         with self._engine.begin() as conn:
+            # Review fix 5: lock the session row before computing the
+            # event seq below, so update() races neither with
+            # append_event nor with another update.
             current_row = conn.execute(
-                text(f"SELECT {_COLUMNS} FROM sessions WHERE id=:sid"),
+                text(f"SELECT {_COLUMNS} FROM sessions WHERE id=:sid FOR UPDATE"),
                 {"sid": session_id},
             ).first()
             if current_row is None:
@@ -330,13 +333,19 @@ class PostgresSessionStore:
     def append_event(
         self, session_id: str, event_type: str, payload: dict[str, Any] | None = None
     ) -> SessionEvent:
-        """Standalone append (does not bump the session revision)."""
+        """Standalone append (does not bump the session revision).
+
+        Review fix 5: locks the session row (SELECT ... FOR UPDATE)
+        before computing MAX(seq)+1, so concurrent appends (slot
+        claims, parallel tool_call events) serialize on the row
+        instead of colliding on UNIQUE(session_id, seq).
+        """
         with self._engine.begin() as conn:
-            exists = conn.execute(
-                text("SELECT 1 FROM sessions WHERE id=:sid"),
+            locked = conn.execute(
+                text("SELECT id FROM sessions WHERE id=:sid FOR UPDATE"),
                 {"sid": session_id},
             ).scalar_one_or_none()
-            if exists is None:
+            if locked is None:
                 raise SessionNotFoundError(session_id)
             next_seq = conn.execute(
                 text("SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_id=:sid"),
@@ -360,3 +369,86 @@ class PostgresSessionStore:
             event_type=event_type,
             payload=dict(payload or {}),
         )
+
+    def claim_search_slot(
+        self,
+        session_id: str,
+        *,
+        max_slots: int,
+        call_id: str,
+        minimized_query: str = "",
+    ) -> dict[str, Any]:
+        """Atomic search-slot claim (Phase 5, part 2, owner item 3).
+
+        One transaction: lock the session row (SELECT ... FOR UPDATE),
+        re-read internet_search_allowed, count claimed slots, append a
+        search_slot_claimed event plus search_requested. If the claim
+        cannot be recorded, nothing is claimed and the caller must not
+        search. Permission-denied calls claim no slot (no event beyond
+        the registry's own tool_call error event).
+
+        Toggle-off blocks every search not yet claimed; it cannot undo
+        a request already dispatched (documented limitation).
+        """
+        with self._engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT internet_search_allowed FROM sessions WHERE id=:sid FOR UPDATE"),
+                {"sid": session_id},
+            ).first()
+            if row is None:
+                raise SessionNotFoundError(session_id)
+            allowed = bool(row._mapping["internet_search_allowed"])
+            if not allowed:
+                return {"ok": False, "reason": "permission_denied", "slots_used": 0}
+            used = conn.execute(
+                text(
+                    "SELECT count(*) FROM session_events WHERE session_id=:sid "
+                    "AND event_type='search_slot_claimed'"
+                ),
+                {"sid": session_id},
+            ).scalar_one()
+            used_int = int(used or 0)
+            if used_int >= int(max_slots):
+                return {
+                    "ok": False,
+                    "reason": "search_budget_exhausted",
+                    "slots_used": used_int,
+                }
+            next_seq = conn.execute(
+                text("SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_id=:sid"),
+                {"sid": session_id},
+            ).scalar_one()
+            claim_payload = {
+                "call_id": call_id,
+                "slots_used": used_int + 1,
+                "slots_max": int(max_slots),
+            }
+            conn.execute(
+                text(
+                    "INSERT INTO session_events (session_id, seq, event_type, payload) "
+                    "VALUES (:sid, :seq, 'search_slot_claimed', CAST(:payload AS jsonb))"
+                ),
+                {
+                    "sid": session_id,
+                    "seq": int(next_seq),
+                    "payload": json.dumps(claim_payload),
+                },
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO session_events (session_id, seq, event_type, payload) "
+                    "VALUES (:sid, :seq, 'search_requested', CAST(:payload AS jsonb))"
+                ),
+                {
+                    "sid": session_id,
+                    "seq": int(next_seq) + 1,
+                    "payload": json.dumps(
+                        {
+                            "call_id": call_id,
+                            "minimized_query": minimized_query[:500],
+                            "permission": True,
+                        }
+                    ),
+                },
+            )
+            return {"ok": True, "slots_used": used_int + 1}

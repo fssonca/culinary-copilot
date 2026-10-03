@@ -155,6 +155,20 @@ def append_spend_history(
 
 LIVE_CAP_USD = 0.15
 MAX_ATTEMPTS = 2
+#: Phase 5 campaign ledger cap (owner item 9, prepare-only): $0.10 of the
+#: $1.00 M3 ceiling. Covers agent turns, search sub-requests, tool fees,
+#: embeddings and retries in one ledger.
+PHASE5_CAP_USD = 0.10
+#: Per-search planning estimate status (owner decision 4): provisional,
+#: not an established upper bound. Live mode requires the owner flag
+#: --acknowledge-provisional-reservation (decision 4) until a supported
+#: bound exists.
+SEARCH_RESERVATION_STATUS = (
+    "provisional: not an established upper bound; the live check needs an owner decision"
+)
+#: Live-check search slots per session (owner item 3): at most 2, inside
+#: the code limit of 3.
+PHASE5_MAX_SEARCHES_PER_SESSION = 2
 
 
 # --- input bound ---------------------------------------------------------------
@@ -868,6 +882,22 @@ def preflight(
                 problems.append(f"Epicure cache probe failed for {name}: {error}")
     if float(args.ceiling_usd) > LIVE_CAP_USD:
         problems.append(f"ceiling ${float(args.ceiling_usd):.2f} exceeds ${LIVE_CAP_USD:.2f} cap")
+    record["search_reservation_status"] = SEARCH_RESERVATION_STATUS
+    live_mode = bool(getattr(args, "live", False))
+    acknowledged = bool(getattr(args, "acknowledge_provisional_reservation", False))
+    if live_mode and not acknowledged:
+        problems.append(
+            "search reservation is provisional: live mode refused without "
+            "--acknowledge-provisional-reservation (owner decision 4: a supported "
+            "bound, or an explicit change to an estimate with overrun risk)"
+        )
+    per_live = int(getattr(args, "search_max_per_live_session", PHASE5_MAX_SEARCHES_PER_SESSION))
+    if per_live > PHASE5_MAX_SEARCHES_PER_SESSION:
+        problems.append(
+            f"--search-max-per-live-session {per_live} exceeds "
+            f"{PHASE5_MAX_SEARCHES_PER_SESSION} (owner item 3)"
+        )
+    record["phase5_campaign_cap_usd"] = PHASE5_CAP_USD
     prior_spend = recorded_spend_total(Path(history_path)) if history_path else 0.0
     remaining_budget = float(args.ceiling_usd) - prior_spend
     record["prior_recorded_spend_usd"] = prior_spend
@@ -1008,7 +1038,10 @@ def grade_attempt(
     plan = (final or {}).get("plan")
     question = (final or {}).get("question") or {}
     technique_answer = (final or {}).get("technique_answer") or {}
-    empty_run = not options and not plan and not question and not technique_answer
+    web_answer = (final or {}).get("web_answer") or {}
+    empty_run = (
+        not options and not plan and not question and not technique_answer and not web_answer
+    )
     termination_ok = stop_reason == expected.get("stop_reason")
     options_ok = len(options) >= int(expected.get("min_options", 0))
     plan_ok = True
@@ -1070,6 +1103,42 @@ def grade_attempt(
         "request": scenario.get("request"),
         "option_titles": [str(o.get("title")) for o in options if isinstance(o, dict)],
     }
+    if "web_answer" in expected:
+        grades["web_answer"] = bool(web_answer) == bool(expected.get("web_answer"))
+        refs = web_answer.get("web_refs") if isinstance(web_answer, dict) else []
+        grades["web_refs_clickable"] = (
+            bool(web_answer)
+            and isinstance(refs, list)
+            and all(isinstance(r, dict) and r.get("url") and r.get("title") for r in refs)
+        )
+    if (
+        expected.get("asked")
+        or expected.get("answer_recorded")
+        or expected.get("resumed_used_answer")
+    ):
+        # P3-L-13 ask-and-resume triple: the agent asked (agent_answer
+        # event + confirmed answer on the session), the answer was
+        # recorded, and the resumed run used the answer (terminal
+        # sufficient final after the answer).
+        try:
+            events = store.list_events(session_id)
+        except Exception:
+            events = []
+        answer_events = [e for e in events or [] if getattr(e, "event_type", "") == "agent_answer"]
+        try:
+            committed = store.get(session_id)
+            confirmed = list(getattr(committed, "confirmed_answers", None) or [])
+        except Exception:
+            confirmed = []
+        asked_ok = bool(answer_events) or bool(confirmed)
+        recorded_ok = bool(answer_events) and bool(confirmed)
+        used_ok = bool(confirmed) and stop_reason == "agent_sufficient_evidence"
+        if expected.get("asked"):
+            grades["asked"] = asked_ok
+        if expected.get("answer_recorded"):
+            grades["answer_recorded"] = recorded_ok
+        if expected.get("resumed_used_answer"):
+            grades["resumed_used_answer"] = used_ok
     return grades
 
 
@@ -1955,6 +2024,17 @@ def _args(argv: list[str] | None = None) -> Any:
     parser.add_argument("--fake", action="store_true")
     parser.add_argument("--raw-dir", default="")
     parser.add_argument("--summary-out", default="")
+    parser.add_argument(
+        "--search-max-per-live-session",
+        type=int,
+        default=PHASE5_MAX_SEARCHES_PER_SESSION,
+        help="live-check searches per session (at most 2, inside code limit 3)",
+    )
+    parser.add_argument(
+        "--acknowledge-provisional-reservation",
+        action="store_true",
+        help="owner decision 4: accept the provisional search estimate with overrun risk",
+    )
     return parser.parse_args(argv)
 
 

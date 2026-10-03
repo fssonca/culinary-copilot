@@ -121,6 +121,11 @@ REASON_TOOL_INTERNAL_ERROR = "tool_internal_error"
 REASON_TOOL_PERMISSION_DENIED = "tool_permission_denied"
 REASON_SCALE_MISSING_SERVINGS = "scale_missing_servings"
 REASON_CONVERT_UNSUPPORTED_UNIT = "convert_unsupported_unit"
+# Permission-gated web search (Milestone 3, Phase 5, part 2, owner items
+# 2–3): per-session slot exhaustion and provider-did-not-search. The
+# scanner in tests/test_next_action.py requires a mapping for each.
+REASON_SEARCH_BUDGET_EXHAUSTED = "search_budget_exhausted"
+REASON_SEARCH_NOT_PERFORMED = "search_not_performed"
 
 # Stable stop reasons for the bounded agent loop (Milestone 3, Phase 3,
 # reviewed). Step, tool-call and token budgets are per session and never
@@ -182,6 +187,8 @@ _NEXT_ACTION_BY_REASON: dict[str, str] = {
     REASON_TOOL_PERMISSION_DENIED: NEXT_CHANGE_REQUEST,
     REASON_SCALE_MISSING_SERVINGS: NEXT_CHANGE_REQUEST,
     REASON_CONVERT_UNSUPPORTED_UNIT: NEXT_CHANGE_REQUEST,
+    REASON_SEARCH_BUDGET_EXHAUSTED: NEXT_CHANGE_REQUEST,
+    REASON_SEARCH_NOT_PERFORMED: NEXT_RETRY,
     REASON_AGENT_MAX_STEPS: NEXT_CHANGE_REQUEST,
     REASON_AGENT_TOOL_BUDGET: NEXT_CHANGE_REQUEST,
     REASON_AGENT_TOKEN_BUDGET: NEXT_CHANGE_REQUEST,

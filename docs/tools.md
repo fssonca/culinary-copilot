@@ -61,7 +61,7 @@ bump); standalone calls go to the logger.
 | `scale_recipe` | `dataset_id`, `source_id`, `target_servings` (>0) | `free` | `TOOL_TIMEOUT_S` | `scale_missing_servings` (source servings unknown), `invalid_arguments`, transient `unavailable`, `timeout`; unknown quantities listed, never scaled; qualitative units `approximate: true` |
 | `convert_units` | `amount` (>0), `from_unit`, `to_unit` | `free` | `TOOL_TIMEOUT_S` | `convert_unsupported_unit` (unknown, cross-group, or any `count` conversion), `invalid_arguments`, `timeout`; every success states `unit_system` (`metric`/`us_customary`/`count`) |
 | `search_techniques` | `query` (1–500, send 2–5 keywords), `mode?` (`fulltext`\|`vector`), `limit?` (1–10, default 5) | **mode that ran**: fulltext `free`, vector `paid` (one query embedding; full-text is zero-call) | `TOOL_TIMEOUT_S` | `invalid_arguments`, `tool_not_configured` (006 tables missing; vector without embeddings/007 rows; never falls back), transient `unavailable`, `timeout`; full-text matches every term per chunk first, then any term (`match: all\|any` in result + event); every hit carries `attribution_text` + `licence_url` |
-| `search_web` | `session_id`, `query` | `network` | `TOOL_TIMEOUT_S` | `permission_denied` (permission off), `tool_not_configured` (on, stub until Phase 5); never a network call |
+| `search_web` | `query` (1–500; session bound server-side, never a model arg) | `network` | `TOOL_TIMEOUT_S` | `permission_denied` (permission off, no slot), `search_budget_exhausted` (3/session), `search_not_performed` (no web_search_call), `tool_not_configured` (no provider/store), transient `unavailable`, `timeout`; atomic slot claim (FOR UPDATE + re-read + count + claim event) before dispatch |
 
 ## Retrieval wiring (ADR 0001 steps 1–2 and 5: done)
 
@@ -170,11 +170,19 @@ Epicure tools.
 
 ## Stubs (explicit, not silent)
 
-- `search_web(session_id, query)`: re-reads
-  `internet_search_allowed` from `PostgresSessionStore` on every call.
-  Off → `permission_denied`; on → `tool_not_configured` (Phase 5 wires the
-  OpenAI Responses `web_search` tool). Never a network call; prompt
-  text never grants permission.
+- `search_web(query)`: Phase 5 part 2 (offline) replaces the stub with
+  a server-bound implementation: the session id comes from
+  `ToolContext.bound_session_id` (set per run from the path id; the
+  args model has no session field and `extra="forbid"` rejects a
+  spoofed one). Every call re-reads `internet_search_allowed` inside
+  the atomic slot claim. Off → `permission_denied` (no slot); on →
+  one bounded sub-request via `llm/client.py::complete_web_search`
+  (hosted `web_search`, `search_context_size: low`, required
+  tool choice, `max_tool_calls: 1`, sources include only,
+  strict schema, `store: false`, retries zero), verified to have
+  performed a search. No provider field carries text page content
+  (`web_search_call.results` is image-only per docs), so model
+  excerpts are never verified quotations.
 
 ## New settings (all read, none dead)
 

@@ -76,12 +76,13 @@ def test_search_web_permission_gate_and_tool_event_log(engine) -> None:
     defs = {d.name: d for d in all_tool_definitions(timeout_s=10.0)}
     impls = all_tool_impls()
     ctx = ToolContext(settings=settings, engine=None, session_store=store)
+    ctx.bound_session_id = session_id
 
     denied = _run(
         run_tool(
             defs["search_web"],
             impls["search_web"],
-            {"session_id": session_id, "query": "ramen broth"},
+            {"query": "ramen broth"},
             ctx,
             session_id=session_id,
             call_id="call-web-denied",
@@ -99,7 +100,7 @@ def test_search_web_permission_gate_and_tool_event_log(engine) -> None:
         run_tool(
             defs["search_web"],
             impls["search_web"],
-            {"session_id": session_id, "query": "ramen broth"},
+            {"query": "ramen broth"},
             ctx,
             session_id=session_id,
             call_id="call-web-allowed",

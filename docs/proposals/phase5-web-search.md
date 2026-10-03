@@ -584,3 +584,43 @@ gap export script; 008 DDL draft (disposable-DB test only). Then
 - Official docs read (2026-10-01): §1 URLs A–G. No paid calls, searches,
   downloads, migrations, app-DB writes or commits.
 - Next: `make check`; then stop for owner approval (checkpoint B setup).
+
+---
+
+## Addendum C2 — part-2 baseline corrections (2026-10-02, per docs/phase5-owner-decisions.md)
+
+Every statement below is labelled documented, not documented, or not
+yet tested in our integration. Fakes prove nothing about live API
+compatibility.
+
+1. max_tool_calls correction (documented): setting `max_tool_calls`
+   explicitly DOES cap built-in calls per response — "The maximum
+   number of total calls to built-in tools that can be processed in a
+   response. This maximum number applies across all built-in tool
+   calls, not per individual tool. Any further attempts to call a tool
+   by the model will be ignored." An undocumented default does not
+   prevent setting a limit. The part-1 claim that option (a) is
+   "unbounded" is corrected: (a) with `max_tool_calls: 1` is bounded
+   per response — but per TURN it is still model-driven (the model may
+   chain search → open_page → find_in_page across responses), while
+   (b) is one sub-request with no chaining. (b) remains recommended.
+2. `web_search_call.results` (documented): the guide documents
+   `include="web_search_call.results"` ONLY for image results —
+   "To inspect raw image results, include `web_search_call.results`
+   in the request and read `web_search_call.results[]` from the
+   response." Each `image_result` carries `image_url`,
+   `source_website_url`, `thumbnail_url`, `caption`. The docs do NOT
+   say `results` carries provider-retrieved text for text searches.
+   Whether text searches return anything under `results` is an open
+   question for the live check. This integration does NOT request
+   `results` (text-only use; avoids image payload and cost).
+3. Combination status (not yet tested in our integration): the docs
+   list `tools` + `text.format` as one-request body params and the
+   model page lists web_search/function_calling/structured_outputs as
+   supported — but no doc sentence asserts the triple with
+   `gpt-6-luna`. Fakes in part 2 prove the SHAPE only. Live
+   compatibility is an open question for the live check (single
+   bounded probe, separately authorized).
+4. Content-token counts per call (not documented): only the 128k
+   search-context window cap is documented. The $0.025/search figure
+   is a provisional planning estimate (owner decision 4), not a bound.
