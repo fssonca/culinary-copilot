@@ -3535,3 +3535,408 @@ def test_spaced_degree_answer_passes_against_tight_chunk(engine) -> None:
     assert result.stop_reason == "agent_sufficient_evidence"
     assert result.final is not None
     assert result.final.get("note_claims") == "verified"
+
+
+# --- unnamed allergy restriction (P3-L-13) ---------------------------------------
+
+
+def _ask_allergy() -> dict[str, Any]:
+    return {
+        "decision": "ask_user",
+        "question": {
+            "question_id": "q-allergy",
+            "question_text": "What is your friend allergic to?",
+            "options": ["peanuts", "dairy", "other"],
+        },
+        "note": "need the named allergen before recommending",
+    }
+
+
+def _two_safe_opts() -> list[dict[str, Any]]:
+    return [
+        _opt(),
+        _opt(
+            source_id="lentil-2",
+            title="Red Lentil Soup",
+            quantities=[{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+        ),
+    ]
+
+
+def test_unnamed_allergy_blocks_finish_until_named_answer(engine) -> None:
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    record_user_message(
+        store,
+        state.id,
+        text=(
+            "I'm cooking dinner for a friend who has a food allergy. "
+            "Suggest something with chicken."
+        ),
+    )
+    finish = _finish_options(_two_safe_opts())
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", finish),
+            ("parsed", _ask_allergy()),
+        ]
+    )
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False)))
+    )
+    assert result.stop_reason == "agent_needs_user_input"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert any(
+        "unnamed allergy or restriction" in " ".join(str(e) for e in r.payload.get("errors", []))
+        for r in rejects
+    ), "options finish rejected with the ask-first feedback"
+
+    mid = store.get(state.id)
+    assert mid is not None
+    answered = record_answer(
+        store,
+        state.id,
+        expected_revision=mid.revision,
+        question_id="q-allergy",
+        answer="She is allergic to peanuts.",
+    )
+    assert answered is not None
+    provider2 = ScriptedProvider([("parsed", finish)])
+    result2 = _run(
+        run_agent(state.id, deps=_deps(store, provider2, settings=_settings(epicure_enabled=False)))
+    )
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert result2.final is not None
+    checks = result2.final.get("constraint_check", [])
+    assert [
+        c
+        for c in checks
+        if c.get("value") == "peanut" and c.get("status") == "no_listed_terms_found"
+    ]
+
+
+def test_named_allergy_request_finishes_without_asking(engine) -> None:
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    record_user_message(
+        store, state.id, text="My friend has a peanut allergy. Suggest something with chicken."
+    )
+    finish = _finish_options(_two_safe_opts())
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", finish),
+        ]
+    )
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False)))
+    )
+    assert result.stop_reason == "agent_sufficient_evidence"
+
+
+# --- token-growth final turn (P3-L-13 run 1) --------------------------------------
+
+
+def test_token_growth_final_turn_rule() -> None:
+    from culinary_copilot.agent.loop import token_growth_final_turn
+
+    # Run-1 shape: after turn 6 the remainder cannot cover two more
+    # turns of the current size -> final.
+    assert (
+        token_growth_final_turn(
+            in_ceiling=30000,
+            used_in=18363,
+            est_in=6000,
+            out_ceiling=12000,
+            used_out=200,
+            turn_cap=6500,
+            last_turn_in=4790,
+            last_turn_out=35,
+        )
+        is True
+    )
+    # Earlier: plenty of room -> not final.
+    assert (
+        token_growth_final_turn(
+            in_ceiling=30000,
+            used_in=13573,
+            est_in=5500,
+            out_ceiling=12000,
+            used_out=150,
+            turn_cap=6500,
+            last_turn_in=4025,
+            last_turn_out=35,
+        )
+        is False
+    )
+    # First turn: no current size yet -> never final on growth.
+    assert (
+        token_growth_final_turn(
+            in_ceiling=30000,
+            used_in=0,
+            est_in=12000,
+            out_ceiling=12000,
+            used_out=0,
+            turn_cap=6500,
+            last_turn_in=None,
+            last_turn_out=None,
+        )
+        is False
+    )
+    # Output near exhaustion with a tiny typical turn -> final.
+    assert (
+        token_growth_final_turn(
+            in_ceiling=30000,
+            used_in=5000,
+            est_in=2000,
+            out_ceiling=12000,
+            used_out=11900,
+            turn_cap=100,
+            last_turn_in=2000,
+            last_turn_out=30,
+        )
+        is True
+    )
+
+
+def test_growing_turns_reach_toolless_final_before_budget_stop(engine) -> None:
+    from culinary_copilot.llm.client import NativeTurnResult
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    sizes = iter([3000, 3500, 4000, 4500, 5000, 5000, 5000, 5000])
+    tool_turns = iter(
+        [
+            # All finish evidence in turn 1, so a growth flip on any
+            # later turn still validates.
+            [
+                ("c1", "search_recipes", {"query": "chicken"}),
+                (
+                    "c2",
+                    "get_recipe",
+                    {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                ),
+                (
+                    "c3",
+                    "get_recipe",
+                    {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                ),
+                ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+            ],
+            [("c5", "search_recipes", {"query": "chicken curry"})],
+            [("c6", "search_recipes", {"query": "lentil soup"})],
+            [("c7", "search_recipes", {"query": "roast chicken"})],
+            [("c8", "search_recipes", {"query": "grilled chicken"})],
+        ]
+    )
+
+    class _GrowingProvider:
+        def __init__(self) -> None:
+            self.seen_tools: list[list[str]] = []
+
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+            tools = kwargs.get("tools") or []
+            self.seen_tools.append([t["name"] for t in tools])
+            size = next(sizes)
+            if tools:
+                batch = next(tool_turns)
+                calls = [
+                    NativeToolCall(call_id=cid, name=name, arguments=json.dumps(args))
+                    for cid, name, args in batch
+                ]
+                chain = [
+                    {
+                        "type": "function_call",
+                        "call_id": cid,
+                        "name": name,
+                        "arguments": json.dumps(args),
+                    }
+                    for cid, name, args in batch
+                ]
+                return NativeTurnResult(
+                    tool_calls=calls,
+                    parsed=None,
+                    chain_items=chain,
+                    input_tokens=size,
+                    output_tokens=30,
+                )
+            return NativeTurnResult(
+                tool_calls=[],
+                parsed=_finish_options(_two_safe_opts()),
+                chain_items=[],
+                input_tokens=size,
+                output_tokens=40,
+            )
+
+    provider = _GrowingProvider()
+    deps = _deps(store, provider)
+    assert deps.settings.agent_input_token_ceiling == 30000
+    assert deps.settings.agent_output_token_ceiling == 12000
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert any(tools == [] for tools in provider.seen_tools), (
+        "a tool-less final turn ran before the input budget stopped the session"
+    )
+    assert len(provider.seen_tools) <= 8
+    # Budgets themselves are unchanged.
+    assert deps.settings.agent_input_token_ceiling == 30000
+    assert deps.settings.agent_output_token_ceiling == 12000
+
+
+# --- allergen-free claim rule (P3-L-13 review) -------------------------------------
+
+
+def _answered_peanut_session(engine: Any) -> Any:
+    """Session with tools done, allergy asked and peanuts answered."""
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    record_user_message(
+        store,
+        state.id,
+        text=(
+            "I'm cooking dinner for a friend who has a food allergy. "
+            "Suggest something with chicken."
+        ),
+    )
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", _ask_allergy()),
+        ]
+    )
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False)))
+    )
+    assert result.stop_reason == "agent_needs_user_input"
+    mid = store.get(state.id)
+    assert mid is not None
+    answered = record_answer(
+        store,
+        state.id,
+        expected_revision=mid.revision,
+        question_id="q-allergy",
+        answer="She is allergic to peanuts.",
+    )
+    assert answered is not None
+    return store, state
+
+
+def _reject_texts(store: Any, session_id: str) -> list[str]:
+    return [
+        " ".join(str(e) for e in r.payload.get("errors", []))
+        for r in store.list_events(session_id)
+        if r.event_type == "agent_validation_reject"
+    ]
+
+
+def test_allergen_free_note_rejected(engine) -> None:
+    store, state = _answered_peanut_session(engine)
+    bad = _finish_options(_two_safe_opts(), note="These options are peanut-free.")
+    provider = ScriptedProvider([("parsed", bad), ("parsed", bad)])
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(
+            run_agent(
+                state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False))
+            )
+        )
+    assert excinfo.value.reason == "agent_validation_failed"
+    assert any("allergen-free" in text for text in _reject_texts(store, state.id)), (
+        "peanut-free note rejected with the claim feedback"
+    )
+
+
+def test_safe_for_allergy_note_rejected(engine) -> None:
+    store, state = _answered_peanut_session(engine)
+    bad = _finish_options(_two_safe_opts(), note="Safe for her allergy, enjoy.")
+    provider = ScriptedProvider([("parsed", bad), ("parsed", bad)])
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(
+            run_agent(
+                state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False))
+            )
+        )
+    assert excinfo.value.reason == "agent_validation_failed"
+    assert any("allergen-free" in text for text in _reject_texts(store, state.id)), (
+        "safe-for-allergy note rejected with the claim feedback"
+    )
+
+
+def test_evidence_digest_lists_web_searches(engine) -> None:
+    """Step-2 diagnosis: the model could not see its own web searches
+    and searched again instead of answering."""
+    from culinary_copilot.agent.loop import session_evidence_digest
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    store.append_event(
+        state.id,
+        "tool_call",
+        {
+            "call_id": "call_web1",
+            "tool": "search_web",
+            "outcome": "ok",
+            "args": '{"query": "okonomiyaki recipe"}',
+            "result_facts": {
+                "source_count": 3,
+                "classifications": ["unclassified", "unclassified", "unclassified"],
+                "titles": ["Gastronomy", "Washoku", "Recipes"],
+                "hosts": ["osaka-info.jp", "maff.go.jp", "otafukusauce.com"],
+            },
+        },
+    )
+    digest = session_evidence_digest(store, state.id)
+    assert "web query='okonomiyaki recipe' sources=3" in digest
+    assert "titles=[Gastronomy, Washoku, Recipes]" in digest
+    assert "hosts=[osaka-info.jp, maff.go.jp, otafukusauce.com]" in digest

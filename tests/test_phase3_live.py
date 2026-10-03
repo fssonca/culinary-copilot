@@ -2628,3 +2628,116 @@ def test_projection_carries_finish_review_keys() -> None:
     assert finished["steps_source"] == "source"
     assert finished["input_tokens"] == 500
     assert finished["output_tokens"] == 60
+
+
+def test_projection_carries_search_events_minimized() -> None:
+    project = live_run._project_trajectory_event
+    cases = [
+        (
+            "search_slot_claimed",
+            {"call_id": "web-abc", "slots_used": 1, "slots_max": 3, "extra": "drop"},
+            {"call_id", "slots_used", "slots_max"},
+        ),
+        (
+            "search_requested",
+            {"call_id": "web-abc", "minimized_query": "okonomiyaki recipe", "permission": True},
+            {"call_id", "minimized_query", "permission"},
+        ),
+        (
+            "search_results_retrieved",
+            {
+                "call_id": "web-abc",
+                "urls": ["https://example.com/a"],
+                "web_search_call_ids": ["ws_1"],
+                "retrieved_at": "2026-10-03T00:00:00Z",
+            },
+            {"call_id", "urls", "web_search_call_ids", "retrieved_at"},
+        ),
+        (
+            "evidence_evaluated",
+            {
+                "call_id": "web-abc",
+                "evaluations": [
+                    {"url": "https://example.com/a", "classification": "recipe", "decision": "kept"}
+                ],
+            },
+            {"call_id", "evaluations"},
+        ),
+        (
+            "search_outcome",
+            {"call_id": "web-abc", "outcome": "ok"},
+            {"call_id", "outcome"},
+        ),
+        (
+            "search_operations",
+            {
+                "call_id": "web-abc",
+                "latency_ms": 12.5,
+                "model": "gpt-6-luna",
+                "input_tokens": 9230,
+                "output_tokens": 310,
+                "estimate_status": "reconciled",
+            },
+            {"call_id", "latency_ms", "model", "input_tokens", "output_tokens", "estimate_status"},
+        ),
+    ]
+    for event_type, payload, keys in cases:
+        projected = project(event_type, dict(payload))
+        assert projected is not None, event_type
+        assert projected["type"] == event_type
+        for key in keys:
+            assert projected[key] == payload[key], (event_type, key)
+        assert "extra" not in projected
+        assert "stop" in projected and "reason" in projected
+
+
+def test_projection_search_tool_call_carries_result_facts() -> None:
+    project = live_run._project_trajectory_event
+    facts = {"source_count": 3, "classifications": ["recipe", "reference", "video"]}
+    projected = project(
+        "tool_call",
+        {"tool": "search_web", "outcome": "ok", "result_facts": dict(facts)},
+    )
+    assert projected is not None
+    assert projected["result_facts"] == facts
+    other = project(
+        "tool_call",
+        {
+            "tool": "search_recipes",
+            "outcome": "ok",
+            "result_facts": {"source_count": 9},
+        },
+    )
+    assert other is not None
+    assert "result_facts" not in other
+
+
+def test_search_web_result_facts_shape() -> None:
+    from culinary_copilot.tools.registry import _result_facts
+
+    facts = _result_facts(
+        "search_web",
+        {
+            "ok": True,
+            "sources": [
+                {
+                    "url": "https://example.com/a",
+                    "title": "Guide A",
+                    "classification": "recipe",
+                },
+                {
+                    "url": "https://example.org/b",
+                    "title": "",
+                    "citation_title": "Cited B",
+                    "classification": "reference",
+                },
+            ],
+        },
+    )
+    assert facts == {
+        "source_count": 2,
+        "classifications": ["recipe", "reference"],
+        "titles": ["Guide A", "Cited B"],
+        "hosts": ["example.com", "example.org"],
+    }
+    assert _result_facts("search_web", {"ok": False}) is None

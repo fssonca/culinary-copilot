@@ -114,7 +114,12 @@ class _FakeSearchProvider:
         self.calls: list[dict[str, Any]] = []
 
     async def complete_web_search(
-        self, *, instruction: str, query: str, max_output_tokens: int | None = None
+        self,
+        *,
+        instruction: str,
+        query: str,
+        max_output_tokens: int | None = None,
+        timeout: float | None = None,
     ) -> WebSearchResult:
         self.calls.append(
             {"instruction": instruction, "query": query, "max_output": max_output_tokens}
@@ -904,7 +909,12 @@ def test_pg_parallel_searches_overlap_and_one_runs() -> None:
 
     class _SleepingProvider(_FakeSearchProvider):
         async def complete_web_search(
-            self, *, instruction: str, query: str, max_output_tokens: int | None = None
+            self,
+            *,
+            instruction: str,
+            query: str,
+            max_output_tokens: int | None = None,
+            timeout: float | None = None,
         ) -> WebSearchResult:
             self.calls.append({"instruction": instruction, "query": query})
             await asyncio.sleep(0.3)
@@ -996,3 +1006,132 @@ def test_pg_concurrent_appends_are_gap_free() -> None:
         # Session creation writes seq 1; the 40 concurrent appends must
         # land gap-free on 2..41 with no UNIQUE collisions.
         assert seqs == list(range(1, 42))
+
+
+def test_tool_error_paths_keep_minimized_args() -> None:
+    """2026-10-03 minor fix: timeout and error tool_call events keep
+    the minimized args (the timed-out search_web event had empty args)."""
+    import json as _json
+
+    seen: list[dict[str, Any]] = []
+
+    class _CaptureStore(_FakeStore):
+        def append_event(self, session_id: str, event_type: str, payload: dict[str, Any]) -> None:
+            seen.append({"session_id": session_id, "type": event_type, **dict(payload)})
+
+    async def _raising(args: Any, context: Any) -> dict[str, Any]:
+        raise ValueError("boom")
+
+    async def _sleeping(args: Any, context: Any) -> dict[str, Any]:
+        await asyncio.sleep(5.0)
+        raise AssertionError("must time out first")
+
+    defs = {d.name: d for d in all_tool_definitions(timeout_s=10.0)}
+
+    async def _both() -> tuple[dict[str, Any], dict[str, Any]]:
+        err_store = _CaptureStore()
+        err_ctx = ToolContext(
+            settings=_settings(),
+            session_store=err_store,
+            record_tool_args=True,
+            impl_overrides={"search_web": _raising},
+        )
+        err_result = await run_tool(
+            defs["search_web"],
+            all_tool_impls()["search_web"],
+            {"query": "timeout case"},
+            err_ctx,
+            session_id="ses-err",
+            call_id="c-err",
+        )
+        time_store = _CaptureStore()
+        time_ctx = ToolContext(
+            settings=_settings(tool_timeout_s=0.2),
+            session_store=time_store,
+            record_tool_args=True,
+            impl_overrides={"search_web": _sleeping},
+        )
+        time_result = await run_tool(
+            defs["search_web"],
+            all_tool_impls()["search_web"],
+            {"query": "error case"},
+            time_ctx,
+            session_id="ses-time",
+            call_id="c-time",
+        )
+        return err_result, time_result
+
+    err_result, time_result = _run(_both())
+    assert err_result.get("reason") == "tool_internal_error"
+    assert time_result.get("reason") == "tool_timeout"
+    by_call = {e["call_id"]: e for e in seen if e["type"] == "tool_call"}
+    for call_id, query in (("c-err", "timeout case"), ("c-time", "error case")):
+        raw_args = by_call[call_id].get("args")
+        args = _json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+        assert args.get("query") == query, (call_id, raw_args)
+
+
+def test_search_provider_timeout_bounded_by_tool_timeout() -> None:
+    """2026-10-03 search proposal: the provider request's own timeout
+    is at most the tool timeout (defaults: tool 10, provider 10)."""
+    seen_timeouts: list[Any] = []
+
+    class _RecordingProvider(_FakeSearchProvider):
+        async def complete_web_search(
+            self,
+            *,
+            instruction: str,
+            query: str,
+            max_output_tokens: int | None = None,
+            timeout: float | None = None,
+        ) -> WebSearchResult:
+            seen_timeouts.append(timeout)
+            return _ok_result()
+
+    def _timeout_for(**overrides: Any) -> Any:
+        with _disposable_pg("culinary_test_p5prototimeout") as engine:
+            from culinary_copilot.domain.sessions import SessionState
+            from culinary_copilot.services.session_store import PostgresSessionStore
+
+            store = PostgresSessionStore(engine)
+            store.create(SessionState(id="ses-pto", internet_search_allowed=True))
+            ctx = ToolContext(
+                settings=_settings(**overrides),
+                engine=engine,
+                session_store=store,
+                bound_session_id="ses-pto",
+                search_provider=_RecordingProvider(),
+            )
+            defs = {d.name: d for d in all_tool_definitions(timeout_s=10.0)}
+            result = _run(
+                run_tool(
+                    defs["search_web"],
+                    all_tool_impls()["search_web"],
+                    {"query": "q"},
+                    ctx,
+                    session_id="ses-pto",
+                )
+            )
+            assert result.get("ok") is True
+            return seen_timeouts[-1]
+
+    assert _timeout_for() == 10.0
+    assert _timeout_for(search_web_timeout_s=30.0) == 20.0, "rec default binds"
+    assert _timeout_for(search_web_timeout_s=30.0, llm_rec_timeout_s=60.0) == 30.0
+    assert _timeout_for(llm_rec_timeout_s=5.0) == 5.0
+
+
+def test_rejected_web_ref_lists_session_urls() -> None:
+    """2026-10-03 step-4 fix: the rejection names the session's exact
+    source URLs so the model can correct the ref next turn."""
+    session_sources = {
+        "https://a.example/x": {"url": "https://a.example/x"},
+        "https://b.example/y": {"url": "https://b.example/y"},
+    }
+    errors = validate_web_refs(
+        [{"url": "https://home.example/", "title": "T"}], session_sources=session_sources
+    )
+    assert len(errors) == 1
+    assert "was not returned in this session" in errors[0]
+    assert "https://a.example/x" in errors[0]
+    assert "https://b.example/y" in errors[0]

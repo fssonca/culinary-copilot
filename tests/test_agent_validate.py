@@ -439,3 +439,246 @@ def test_plan_ingredient_only_record_needs_admission() -> None:
         [],
     )
     assert errors == []
+
+
+# --- unnamed restriction + allergen avoidance (P3-L-13) ---------------------------
+
+
+def test_unnamed_allergy_needs_asking() -> None:
+    from culinary_copilot.agent.validate import unresolved_unnamed_restriction
+
+    assert unresolved_unnamed_restriction(["a friend with a food allergy"], {}, []) is True
+    assert unresolved_unnamed_restriction(["she can't eat some things"], {}, []) is True
+    assert unresolved_unnamed_restriction([], {"note": "has a food allergy"}, []) is True
+
+
+def test_named_restriction_does_not_trigger() -> None:
+    from culinary_copilot.agent.validate import unresolved_unnamed_restriction
+
+    assert unresolved_unnamed_restriction(["peanut allergy, avoid it"], {}, []) is False
+    assert unresolved_unnamed_restriction(["allergic to shellfish"], {}, []) is False
+    assert unresolved_unnamed_restriction(["I'm vegetarian, suggest dinner"], {}, []) is False
+
+
+def test_naming_answer_resolves() -> None:
+    from culinary_copilot.agent.validate import unresolved_unnamed_restriction
+
+    confirmed = [{"question_id": "q-allergy", "answer": "She is allergic to peanuts."}]
+    assert unresolved_unnamed_restriction(["a friend with a food allergy"], {}, confirmed) is False
+
+
+def test_dietary_needs_paraphrase_not_caught() -> None:
+    # Documented narrowness gap: no listed pattern word, so the
+    # deterministic check stays silent (the framing still tells the
+    # model to ask).
+    from culinary_copilot.agent.validate import unresolved_unnamed_restriction
+
+    assert unresolved_unnamed_restriction(["dietary needs for a guest"], {}, []) is False
+
+
+def test_allergen_answer_naming() -> None:
+    from culinary_copilot.agent.validate import allergens_named_in_answers
+
+    assert allergens_named_in_answers(["She is allergic to peanuts."]) == ["peanut"]
+    assert allergens_named_in_answers(["dairy and sesame please"]) == ["milk/dairy", "sesame"]
+    assert allergens_named_in_answers(["strawberries"]) == []
+
+
+def _allergen_doc(lines: list[str]) -> dict[str, Any]:
+    return {
+        "dataset_id": "odunola/foodie",
+        "source_id": "x-1",
+        "ingredients": [{"canonical": line} for line in lines],
+    }
+
+
+def test_allergen_option_violated() -> None:
+    from culinary_copilot.agent.validate import check_allergen_option
+
+    doc = _allergen_doc(["2 tbsp peanut butter", "1 cup flour"])
+    errors, entry = check_allergen_option(0, _option(), doc, "peanut")
+    assert entry["status"] == "violated"
+    assert entry["terms"] == ["peanut"]
+    assert entry["disclaimer"] == "term list is incomplete; not an allergen-free guarantee"
+    assert any("peanut" in e and "confirmed allergy" in e for e in errors)
+
+
+def test_allergen_option_no_terms_found_when_clean() -> None:
+    from culinary_copilot.agent.validate import check_allergen_option
+
+    errors, entry = check_allergen_option(0, _option(), dict(DOC), "peanut")
+    assert errors == []
+    assert entry["status"] == "no_listed_terms_found"
+    assert entry["value"] == "peanut"
+    assert entry["terms"] == []
+    assert entry["unverified_terms"] == []
+    assert entry["disclaimer"] == "term list is incomplete; not an allergen-free guarantee"
+
+
+def test_allergen_option_unmapped_label_not_checked() -> None:
+    from culinary_copilot.agent.validate import check_allergen_option
+
+    errors, entry = check_allergen_option(0, _option(), dict(DOC), "strawberry")
+    assert errors == []
+    assert entry["status"] == "not_checked"
+    assert entry["disclaimer"] == "term list is incomplete; not an allergen-free guarantee"
+
+
+def test_allergen_dairy_scrub_keeps_almond_milk() -> None:
+    from culinary_copilot.agent.validate import check_allergen_option
+
+    doc = _allergen_doc(["1 cup almond milk"])
+    errors, entry = check_allergen_option(0, _option(), doc, "milk/dairy")
+    assert errors == []
+    assert entry["status"] == "no_listed_terms_found"
+    nut_errors, nut_entry = check_allergen_option(0, _option(), doc, "tree nuts")
+    assert nut_entry["status"] == "violated"
+    assert nut_errors != []
+
+
+# --- allergen tiers, review rework -------------------------------------------------
+#
+# Every line from the review table gets its tier below: violated drops
+# the option, unverified keeps it but is listed, anything else is
+# "no_listed_terms_found" (never "checked") with the disclaimer.
+
+
+def _tier(line: str, label: str) -> tuple[str, dict[str, Any]]:
+    from culinary_copilot.agent.validate import check_allergen_option
+
+    errors, entry = check_allergen_option(0, _option(), _allergen_doc([line]), label)
+    return ("violated" if errors else entry["status"]), entry
+
+
+def test_allergen_review_table_violated() -> None:
+    cases = [
+        ("2 cups all-purpose flour", "wheat/gluten"),
+        ("8 oz spaghetti", "wheat/gluten"),
+        ("1 cup panko breadcrumbs", "wheat/gluten"),
+        ("2 tbsp soy sauce", "wheat/gluten"),
+        ("1/2 cup mayonnaise", "egg"),
+        ("2 tsp aioli", "egg"),
+        ("meringue topping", "egg"),
+        ("1/2 cup grated parmesan", "milk/dairy"),
+        ("50 g gruyere", "milk/dairy"),
+        ("1 cup custard", "milk/dairy"),
+        ("2 scoops vanilla ice cream", "milk/dairy"),
+        ("100 g mozzarella", "milk/dairy"),
+        ("1 tbsp fish sauce", "fish"),
+        ("1 tbsp oyster sauce", "shellfish"),
+        ("2 tbsp soy sauce", "soy"),
+        ("1 tbsp tamari", "soy"),
+        ("100 g tempeh", "soy"),
+        ("30 g macadamia nuts", "tree nuts"),
+        ("1/4 cup brazil nuts", "tree nuts"),
+        ("2 tbsp pine nuts", "tree nuts"),
+        ("praline paste", "tree nuts"),
+        ("marzipan layer", "tree nuts"),
+        ("nutella spread", "tree nuts"),
+        ("2 tbsp peanut butter", "peanut"),
+    ]
+    for line, label in cases:
+        status, entry = _tier(line, label)
+        assert status == "violated", (line, label, entry)
+        assert entry["terms"], (line, label)
+        assert entry["disclaimer"] == "term list is incomplete; not an allergen-free guarantee", (
+            line,
+            label,
+        )
+
+
+def test_allergen_review_table_unverified() -> None:
+    cases = [
+        ("2 chicken stock cubes", "wheat/gluten"),
+        ("1 tbsp bouillon", "wheat/gluten"),
+        ("1 tsp malt vinegar", "wheat/gluten"),
+        ("1 tsp seasoning", "wheat/gluten"),
+        ("1 cup rolled oats", "wheat/gluten"),
+        ("1 cup custard", "egg"),
+        ("200 g fresh pasta", "egg"),
+        ("1 cup batter", "egg"),
+        ("1 tsp Worcestershire sauce", "fish"),
+        ("2 tbsp Caesar dressing", "fish"),
+        ("1 cup seafood stock", "shellfish"),
+        ("1 tsp XO sauce", "shellfish"),
+        ("2 tbsp vegetable oil", "soy"),
+        ("1 tsp lecithin", "soy"),
+        ("1 tsp furikake", "sesame"),
+        ("1 tsp za'atar", "sesame"),
+    ]
+    for line, label in cases:
+        status, entry = _tier(line, label)
+        assert status == "unverified", (line, label, entry)
+        assert entry["unverified_terms"], (line, label)
+        assert entry["terms"] == [], (line, label)
+        assert entry["disclaimer"] == "term list is incomplete; not an allergen-free guarantee", (
+            line,
+            label,
+        )
+
+
+def test_allergen_exemptions_and_edges() -> None:
+    cases = [
+        # (line, label, expected status)
+        ("1 cup almond flour", "wheat/gluten", "no_listed_terms_found"),
+        ("1 cup almond flour", "tree nuts", "violated"),
+        ("200 g rice noodles", "wheat/gluten", "no_listed_terms_found"),
+        ("200 g glass noodles", "wheat/gluten", "no_listed_terms_found"),
+        ("8 corn tortillas", "wheat/gluten", "no_listed_terms_found"),
+        ("8 flour tortillas", "wheat/gluten", "violated"),
+        ("gluten-free bread", "wheat/gluten", "no_listed_terms_found"),
+        ("tamari soy sauce", "wheat/gluten", "no_listed_terms_found"),
+        ("tamari soy sauce", "soy", "violated"),
+        ("1 eggplant", "egg", "no_listed_terms_found"),
+    ]
+    for line, label, expected in cases:
+        status, entry = _tier(line, label)
+        assert status == expected, (line, label, entry)
+
+
+def test_allergen_tables_share_p3l07() -> None:
+    from culinary_copilot.agent.validate import (
+        ALLERGEN_VIOLATED_TERMS,
+        VEGAN_EXTRA_TERMS,
+        VEGETARIAN_VIOLATION_TERMS,
+        _alt_flour_phrases,
+    )
+    from culinary_copilot.recommendations.policy import COMPOUND_EXCEPTIONS
+
+    # Dairy reuses the P3-L-07 vegan list: named cheeses and paneer
+    # come through the shared table, not a duplicate.
+    dairy = set(ALLERGEN_VIOLATED_TERMS["milk/dairy"])
+    for cheese in (
+        "mozzarella",
+        "parmesan",
+        "cheddar",
+        "feta",
+        "ricotta",
+        "mascarpone",
+        "brie",
+        "paneer",
+    ):
+        assert cheese in dairy and cheese in VEGAN_EXTRA_TERMS, cheese
+    # Alternative-flour exemptions reuse the shared compound table.
+    shared_flours = {c for c in COMPOUND_EXCEPTIONS if c.endswith(" flour")}
+    assert {"rice flour", "almond flour", "coconut flour", "oat flour"} <= shared_flours
+    assert {"rice flour", "almond flour", "coconut flour", "oat flour"} <= set(_alt_flour_phrases())
+    # Fish/shellfish overlap with the P3-L-07 vegetarian list.
+    assert set(ALLERGEN_VIOLATED_TERMS["fish"]) <= set(VEGETARIAN_VIOLATION_TERMS)
+    assert set(ALLERGEN_VIOLATED_TERMS["shellfish"]) - {"shellfish"} <= set(
+        VEGETARIAN_VIOLATION_TERMS
+    )
+
+
+def test_allergen_safety_claim_detector() -> None:
+    from culinary_copilot.agent.validate import (
+        allergen_claim_allowed,
+        allergen_safety_claim,
+    )
+
+    assert allergen_safety_claim("These options are peanut-free.") == "peanut-free"
+    assert allergen_safety_claim("Safe for her allergy.") == "Safe for her allergy"
+    assert allergen_safety_claim("All gluten-free options here.") == "gluten-free"
+    assert allergen_safety_claim("The chicken is tender.") is None
+    assert allergen_claim_allowed("peanut-free", ["peanut-free cookies"]) is True
+    assert allergen_claim_allowed("peanut-free", ["chicken and rice"]) is False

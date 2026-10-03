@@ -236,6 +236,11 @@ class Settings(BaseSettings):
             raise ValueError("SEARCH_CONTENT_ALLOWANCE_TOKENS must be >= 1")
         if not math.isfinite(float(self.tool_timeout_s)) or float(self.tool_timeout_s) <= 0:
             raise ValueError("TOOL_TIMEOUT_S must be a finite positive number")
+        if (
+            not math.isfinite(float(self.search_web_timeout_s))
+            or float(self.search_web_timeout_s) <= 0
+        ):
+            raise ValueError("SEARCH_WEB_TIMEOUT_S must be a finite positive number")
         if not math.isfinite(float(self.agent_wall_clock_s)) or float(self.agent_wall_clock_s) <= 0:
             raise ValueError("AGENT_WALL_CLOCK_S must be a finite positive number")
         if int(self.agent_input_token_ceiling) < 1:
@@ -283,6 +288,13 @@ class Settings(BaseSettings):
     # Typed tool layer (Milestone 3, Phase 2, Checkpoint 0 budgets):
     # per-tool timeout 10 s. Read by tools/registry.py on every call.
     tool_timeout_s: float = 10.0
+    # Hosted web search timeout (proposed 2026-10-03, default = current
+    # 10 s: nothing changes until the owner approves a higher value).
+    # Read by tools/registry.py for search_web calls only, and passed
+    # to the search provider as its own request timeout (at most the
+    # tool timeout, so an abandoned request cannot long outlive the
+    # tool that gave up on it).
+    search_web_timeout_s: float = 10.0
     # Bounded agent loop (Milestone 3, Phase 3, Checkpoint 0 budgets):
     # wall clock 90 s per agent run. Read by agent/loop.py at run start.
     # Steps (8) and tool calls (12) are per-session budgets stored on the

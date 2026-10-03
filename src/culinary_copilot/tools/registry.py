@@ -15,7 +15,11 @@ implementations run once under ``wait_for``; sync ones run once via
 ``to_thread`` under ``wait_for``. A timed-out thread is abandoned, not
 killed: it keeps running in the background and its late result is
 discarded, so implementations must be side-effect free or idempotent
-(or the tool marked non-idempotent). Every call records a structured
+(or the tool marked non-idempotent). An async implementation is
+cancelled instead (``CancelledError`` thrown into the coroutine):
+the client-side HTTP connection is torn down, but the server may
+already be executing — billing stays unknown, so dispatched paid
+calls are kept as spent (see the ledger wrappers), never $0. Every call records a structured
 event (session id, call id, tool, args digest, outcome/error, latency,
 cost); with a session id the event is appended to ``session_events``
 via ``PostgresSessionStore.append_event``, otherwise it goes to the
@@ -245,6 +249,12 @@ class ToolContext:
     # with ``async complete_web_search(*, instruction, query,
     # max_output_tokens)``. None means unconfigured (tool_not_configured).
     search_provider: Any = None
+    # In-run search limits for live evaluations (2026-10-03 overrun
+    # fix): a SearchRunLimits-like object with ``max_per_session`` and
+    # ``check_and_claim()``. search_web takes min(code limit, flag) for
+    # the slot claim and refuses dispatches past the run/campaign
+    # bounds. None means pre-limit behavior (unit tests, API path).
+    search_limits: Any = None
     # Test hook: wrap the raw implementation (e.g. inject a sleeping fake).
     impl_overrides: dict[str, Callable[..., Any]] = field(default_factory=dict)
     # Review hook: also store the bounded validated args in the session
@@ -253,8 +263,36 @@ class ToolContext:
     record_tool_args: bool = False
 
 
-def _timeout_for(context: ToolContext, tool: ToolDefinition) -> float:
-    settings = getattr(context, "settings", None)
+# Per-tool timeout overrides by settings key (2026-10-03 search
+# proposal): search_web reads SEARCH_WEB_TIMEOUT_S, every other tool
+# reads TOOL_TIMEOUT_S. The literal tool name avoids importing the
+# tool module here (it imports this registry).
+_TOOL_TIMEOUT_SETTINGS = {"search_web": "search_web_timeout_s"}
+
+
+def tool_timeout_s(tool_name: str, settings: Any, default: float = 10.0) -> float:
+    """Effective timeout for one tool call (single source of truth).
+
+    The per-tool settings override wins when explicitly set
+    (constructor kwarg or environment; pydantic
+    ``model_fields_set``), else ``Settings.tool_timeout_s``, else the
+    passed default. Without the explicitness check the override's own
+    default would shadow a deliberately set general timeout. Used
+    both by ``run_tool`` (via ``_timeout_for``) and by
+    implementations that must bound their own sub-requests at most at
+    the tool timeout.
+    """
+    override_key = _TOOL_TIMEOUT_SETTINGS.get(str(tool_name))
+    if override_key is not None and settings is not None and hasattr(settings, override_key):
+        fields_set = getattr(settings, "model_fields_set", None)
+        explicit = (override_key in fields_set) if fields_set is not None else True
+        if explicit:
+            try:
+                value = float(getattr(settings, override_key))
+                if value > 0:
+                    return value
+            except (TypeError, ValueError):
+                pass
     if settings is not None and hasattr(settings, "tool_timeout_s"):
         try:
             value = float(getattr(settings, "tool_timeout_s"))
@@ -262,7 +300,11 @@ def _timeout_for(context: ToolContext, tool: ToolDefinition) -> float:
                 return value
         except (TypeError, ValueError):
             pass
-    return float(tool.timeout_s)
+    return float(default)
+
+
+def _timeout_for(context: ToolContext, tool: ToolDefinition) -> float:
+    return tool_timeout_s(tool.name, getattr(context, "settings", None), float(tool.timeout_s))
 
 
 def _as_opt_str(value: Any) -> str | None:
@@ -386,9 +428,10 @@ def _result_facts(tool_name: str, result: dict[str, Any]) -> dict[str, Any] | No
 
     Only successful calls record facts: pairing tools record the
     requested/queried ingredient plus the top 5 pairing names,
-    ``get_recipe`` records the fetched title, and ``search_techniques``
-    records up to 10 hits (doc/chunk/title). Everything is bounded and
-    JSON-safe.
+    ``get_recipe`` records the fetched title, ``search_web`` records
+    the source count plus up to 5 classifications, titles and hosts,
+    and ``search_techniques`` records up to 10 hits
+    (doc/chunk/title). Everything is bounded and JSON-safe.
     """
     if not result.get("ok"):
         return None
@@ -410,6 +453,30 @@ def _result_facts(tool_name: str, result: dict[str, Any]) -> dict[str, Any] | No
         recipe = result.get("recipe")
         title = recipe.get("title") if isinstance(recipe, dict) else None
         return {"title": str(title or "")[:120]}
+    if tool_name == "search_web":
+        sources = result.get("sources")
+        classifications: list[str] = []
+        titles: list[str] = []
+        hosts: list[str] = []
+        if isinstance(sources, list):
+            from urllib.parse import urlparse
+
+            for source in sources[:5]:
+                if not isinstance(source, dict):
+                    continue
+                classifications.append(str(source.get("classification") or "")[:80])
+                title = str(source.get("title") or source.get("citation_title") or "")[:80]
+                titles.append(title)
+                try:
+                    hosts.append(str(urlparse(str(source.get("url") or "")).hostname or "")[:60])
+                except Exception:
+                    hosts.append("")
+        return {
+            "source_count": len(sources) if isinstance(sources, list) else 0,
+            "classifications": classifications,
+            "titles": titles,
+            "hosts": hosts,
+        }
     if tool_name == "search_techniques":
         rows = result.get("results")
         hits: list[dict[str, Any]] = []
@@ -625,6 +692,7 @@ async def run_tool(
             latency_ms=latency_ms,
             cost_class=tool.cost_class,
             result_count=_result_count(tool.name, result),
+            args=dict(validated_args),
         )
         return result
     except Exception as exc:
@@ -659,6 +727,7 @@ async def run_tool(
             latency_ms=latency_ms,
             cost_class=tool.cost_class,
             result_count=_result_count(tool.name, result),
+            args=dict(validated_args),
         )
         return result
 
@@ -670,4 +739,5 @@ __all__ = [
     "ToolDefinition",
     "args_digest",
     "run_tool",
+    "tool_timeout_s",
 ]

@@ -46,6 +46,7 @@ import json
 import os
 import sys
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -124,7 +125,18 @@ def append_spend_history(
     ``attempt`` (the live attempt number) is stored when given;
     otherwise it defaults to one past the highest stored attempt, so
     new runs keep a monotonic attempt sequence.
+
+    Fail-closed on unsettled entries: a "reserved" decision must never
+    reach the history (it would record $0 for a possibly-billed
+    request). Run the ledger's ``sweep_reserved`` first; anything
+    still reserved here raises instead of being written.
     """
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("decision") == "reserved":
+            raise ValueError(
+                f"refusing to record unsettled entry {entry.get('label')!r}: "
+                "sweep_reserved first (kept-ambiguous), never $0"
+            )
     try:
         body = json.loads(Path(path).read_text(encoding="utf-8"))
         if not isinstance(body, dict):
@@ -165,10 +177,11 @@ def append_spend_history(
 
 LIVE_CAP_USD = 0.15
 MAX_ATTEMPTS = 2
-#: Phase 5 campaign ledger cap (owner item 9, prepare-only): $0.10 of the
-#: $1.00 M3 ceiling. Covers agent turns, search sub-requests, tool fees,
-#: embeddings and retries in one ledger.
-PHASE5_CAP_USD = 0.10
+#: Phase 5 campaign ledger cap: $0.10 of the $1.00 M3 ceiling (decision
+#: 5), raised to $0.13 by the owner on 2026-10-03 for one more web_answer
+#: attempt (docs/phase5-owner-decisions.md). Covers agent turns, search
+#: sub-requests, tool fees, embeddings and retries in one ledger.
+PHASE5_CAP_USD = 0.13
 #: Per-search accounting status (owner follow-up 2026-10-02, option A):
 #: an estimate with acknowledged overrun risk. Agent turns and
 #: embeddings keep their hard reservations; search sub-requests do not.
@@ -182,8 +195,11 @@ SEARCH_RESERVATION_STATUS = (
 SEARCH_ACK_VALUE = "phase5-decision-4-2026-10-02"
 #: Provisional per-search planning estimate (not a bound).
 SEARCH_ESTIMATE_USD = 0.025
-#: Campaign search cap: at most 4 paid searches across all Phase 5 runs.
-PHASE5_CAMPAIGN_SEARCH_CAP = 4
+#: Campaign search cap: paid searches across all Phase 5 runs. 4 under
+#: decision 4 (2026-10-02); raised to 5, 6, then 7 by the owner on
+#: 2026-10-03, one search per web_answer attempt
+#: (docs/phase5-owner-decisions.md).
+PHASE5_CAMPAIGN_SEARCH_CAP = 7
 #: Persisted Phase 5 campaign history (same format as the Phase 3 one).
 PHASE5_HISTORY = REPO_ROOT / "data" / "phase5-live" / "spend-history.json"
 #: Budget pools: the P3-L-13 ask-and-resume run charges Phase 3, the
@@ -371,6 +387,46 @@ def find_unacknowledged_breach(path: Path | str) -> dict[str, Any] | None:
 SEARCH_DISPATCHED_DECISIONS = frozenset(
     {"reconciled", "kept-ambiguous", "reservation_breach", "search_estimate_exceeded"}
 )
+
+
+@dataclass
+class SearchRunLimits:
+    """In-run search limits for one runner invocation (2026-10-03 overrun fix).
+
+    Preflight alone cannot bound spending: the per-session slot max and
+    the campaign/run dispatch bounds must be enforced during the run,
+    inside ``search_web`` after the slot claim and before the provider
+    call. ``dispatched_this_run`` is the in-run authority: it counts at
+    dispatch time (synchronously, so parallel calls cannot double
+    dispatch), and ambiguous dispatches stay counted — matching
+    :meth:`SpendLedger.count_search_dispatches` and
+    :func:`count_campaign_searches`, which the USD ledger and the
+    history file reconcile afterwards.
+    """
+
+    max_per_session: int | None = None
+    max_this_run: int | None = None
+    campaign_cap: int = PHASE5_CAMPAIGN_SEARCH_CAP
+    prior_campaign_searches: int = 0
+    dispatched_this_run: int = 0
+
+    def check_and_claim(self) -> tuple[bool, str]:
+        """Allow one more dispatch, counting it at once. False with the
+        reason when the run limit or the campaign cap is reached."""
+        if self.max_this_run is not None and self.dispatched_this_run >= int(self.max_this_run):
+            return (
+                False,
+                f"run limit reached: {self.dispatched_this_run}/{self.max_this_run} "
+                "searches dispatched this run",
+            )
+        if int(self.prior_campaign_searches) + self.dispatched_this_run >= int(self.campaign_cap):
+            return (
+                False,
+                f"campaign cap reached: {self.prior_campaign_searches} prior + "
+                f"{self.dispatched_this_run} this run (cap {self.campaign_cap})",
+            )
+        self.dispatched_this_run += 1
+        return True, ""
 
 
 def count_campaign_searches(path: Path | str) -> int:
@@ -602,6 +658,25 @@ class SpendLedger:
                 self.spent_usd += float(entry["reserved_usd"])
                 return
         raise ValueError(f"no open reservation for {label!r}")
+
+    def sweep_reserved(self, *, note: str = "") -> int:
+        """Run-end backstop: any entry still "reserved" becomes
+        kept-ambiguous at its reservation.
+
+        Dispatch-then-lost paths keep at once, but a missed path must
+        never report $0 for a request that may have been billed. The
+        run summary flags the swept count.
+        """
+        swept = 0
+        for entry in self.entries:
+            if isinstance(entry, dict) and entry.get("decision") == "reserved":
+                entry["decision"] = "kept-ambiguous"
+                entry["swept"] = True
+                if note:
+                    entry["sweep_note"] = str(note)
+                self.spent_usd += float(entry.get("reserved_usd") or 0.0)
+                swept += 1
+        return swept
 
     def reserve_search(self, label: str, *, estimate_usd: float) -> bool:
         """Reserve a search estimate (decision 4, option A: estimate, not bound).
@@ -844,10 +919,12 @@ class LedgerModelProvider:
             )
         try:
             result = await self._inner.complete_native_tool_turn(**kwargs)
-        except Exception as exc:
+        except (Exception, asyncio.CancelledError) as exc:
             # Conservative on ambiguous failures: the reservation stays
             # spent (keep), unless nothing was sent (release). Either way
             # the HTTP status is recorded when the failure carries one.
+            # CancelledError (tool timeout) is BaseException: without
+            # naming it a cancelled turn would stay "reserved" at $0.
             status: int | None = None
             for det in list(getattr(exc, "attempt_details", None) or []):
                 if isinstance(det, dict) and isinstance(det.get("http_status"), int):
@@ -911,7 +988,9 @@ class LedgerEmbedProvider:
             )
         try:
             result = await self._inner.embed_texts(texts)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
+            # Dispatched then lost: kept as spent (see the search
+            # provider above; CancelledError is BaseException).
             self._ledger.keep(label)
             raise
         self._ledger.reconcile(
@@ -1365,6 +1444,24 @@ def grade_attempt(
             and isinstance(refs, list)
             and all(isinstance(r, dict) and r.get("url") and r.get("title") for r in refs)
         )
+    if expected.get("asking_is_fail"):
+        # Discovery scenario: the user already asked how to make the
+        # dish and search permission was on — answering with
+        # web_answer passes, asking fails. Explicit fields (a bare
+        # "false" never has to mean "asked and failed").
+        asked = bool(question)
+        answered_web = bool(web_answer)
+        grades["asked"] = asked
+        grades["web_answer"] = answered_web
+        if answered_web and not asked:
+            grades["scenario_pass"] = True
+            grades["scenario_pass_reason"] = "web answer given, no question asked"
+        elif asked:
+            grades["scenario_pass"] = False
+            grades["scenario_pass_reason"] = "agent asked instead of answering with web_answer"
+        else:
+            grades["scenario_pass"] = False
+            grades["scenario_pass_reason"] = "no web answer given"
     if (
         expected.get("asked")
         or expected.get("answer_recorded")
@@ -1566,6 +1663,61 @@ class FakeRunProvider:
         # finishes evaluate it, like a real model would have to.
         return [{"ingredient": "pork", "decision": "used", "reason": "fake roast match"}]
 
+    @staticmethod
+    def _web_url_from_input(kwargs: Any) -> str | None:
+        """First search_web source URL from this turn's input items.
+
+        Honest fakes (2026-10-03 root-cause fix): the fake reads the
+        URL the tool output actually carried — the same summarized
+        function_call_output the real model receives — instead of a
+        hard-coded constant. None when no search output is present
+        (e.g. the summary drops sources, as the old code did).
+        """
+        items = kwargs.get("input_items") if isinstance(kwargs, dict) else None
+        for item in items or []:
+            if not isinstance(item, dict) or item.get("type") != "function_call_output":
+                continue
+            try:
+                output = json.loads(item.get("output") or "")
+            except (ValueError, TypeError):
+                continue
+            if (
+                not isinstance(output, dict)
+                or output.get("tool") != "search_web"
+                or not output.get("ok")
+            ):
+                continue
+            sources = output.get("sources") or []
+            if sources and isinstance(sources[0], dict) and sources[0].get("url"):
+                return str(sources[0]["url"])
+        return None
+
+    def _web_answer_finish(self, url: str | None, note: str) -> Any:
+        """web_answer citing the received URL, or an unmatchable ref.
+
+        With no URL (tool output carried none) the refs cannot match
+        the session sources, so validation rejects — the honest fake
+        fails loudly instead of citing a constant it never saw.
+        """
+        refs = [{"url": url, "title": "Okonomiyaki guide"}] if url else []
+        return self._parsed(
+            {
+                "decision": "finish",
+                "move_to": "recommend",
+                "result": {
+                    "web_answer": {
+                        "text": (
+                            "Okonomiyaki is a savoury Japanese pancake. "
+                            "A full guide is linked below."
+                        ),
+                        "web_refs": refs,
+                    }
+                },
+                "constraints_honored": [],
+                "note": note,
+            }
+        )
+
     async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
         self.calls += 1
         flow = self.scenario.get("fake_flow", "direct")
@@ -1725,25 +1877,24 @@ class FakeRunProvider:
             if self.calls == 1:
                 return self._tools(("c1", "search_web", {"query": "okonomiyaki recipe"}))
             # Discovery-only text (no numbers: numeric claims fail
-            # closed with no source text obtained). The ref URL must
-            # equal the fake search source URL below.
-            return self._parsed(
-                {
-                    "decision": "finish",
-                    "move_to": "recommend",
-                    "result": {
-                        "web_answer": {
-                            "text": (
-                                "Okonomiyaki is a savoury Japanese pancake. "
-                                "A full guide is linked below."
-                            ),
-                            "web_refs": [{"url": _FAKE_WEB_URL, "title": "Okonomiyaki guide"}],
-                        }
-                    },
-                    "constraints_honored": [],
-                    "note": "fake web discovery",
-                }
-            )
+            # closed with no source text obtained). The ref URL is
+            # read from the tool output received above, never a
+            # constant: without it the refs cannot validate.
+            return self._web_answer_finish(self._web_url_from_input(kwargs), "fake web discovery")
+        if flow == "web-triple":
+            # Limit-enforcement probe (2026-10-03 overrun fix): the
+            # model requests 3 searches in one session; the in-run
+            # session/campaign limits decide how many dispatch. The
+            # finish answers from whatever sources exist.
+            if self.calls <= 3:
+                return self._tools(
+                    (
+                        f"c{self.calls}",
+                        "search_web",
+                        {"query": f"okonomiyaki recipe part {self.calls}"},
+                    )
+                )
+            return self._web_answer_finish(self._web_url_from_input(kwargs), "fake web triple")
         if flow == "degraded":
             if self.calls == 1:
                 return self._tools(
@@ -1882,6 +2033,26 @@ _TRAJECTORY_ERROR_KEYS = (
     "request_sent",
 )
 
+# Search events projected into reviewable raw trajectories
+# (read-only): minimized as stored — call_id, minimized query, URLs,
+# classifications, outcome, tokens, estimate status.
+_TRAJECTORY_SEARCH_KEYS = {
+    "search_slot_claimed": ("call_id", "slots_used", "slots_max"),
+    "search_requested": ("call_id", "minimized_query", "permission"),
+    "search_results_retrieved": ("call_id", "urls", "web_search_call_ids", "retrieved_at"),
+    "evidence_evaluated": ("call_id", "evaluations"),
+    "search_outcome": ("call_id", "outcome", "reason"),
+    "search_operations": (
+        "call_id",
+        "latency_ms",
+        "model",
+        "input_tokens",
+        "output_tokens",
+        "estimate_status",
+        "error",
+    ),
+}
+
 
 def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[str, Any] | None:
     """One session event, trimmed for review (no prompts or secrets).
@@ -1890,7 +2061,10 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
     ``stop_reason``/``reason`` when present, else None) plus the
     per-turn ``input_tokens``/``output_tokens`` (None when the event
     carries no usage); validation rejects carry their error list
-    bounded to 5 x 300 characters.
+    bounded to 5 x 300 characters; search events carry their minimized
+    stored fields (call_id, query, URLs, classifications, outcome,
+    tokens, estimate status); search_web tool calls carry result
+    facts (source count plus classifications).
     """
     stop = payload.get("stop_reason")
     reason = payload.get("reason")
@@ -1903,6 +2077,10 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
             "type": event_type,
             **{k: payload.get(k) for k in _TRAJECTORY_TOOL_KEYS},
         }
+        if payload.get("tool") == "search_web" and isinstance(payload.get("result_facts"), dict):
+            # search_web carries its result facts (source count plus
+            # classifications), like the pairing tools' names.
+            projected["result_facts"] = payload["result_facts"]
         projected.setdefault("stop", stop)
         projected.update(usage)
         return projected
@@ -1951,6 +2129,14 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
             "plan_source": payload.get("plan_source"),
             "steps_source": payload.get("steps_source"),
             "stop_reason": payload.get("stop_reason"),
+            "stop": stop,
+            "reason": reason,
+            **usage,
+        }
+    if event_type in _TRAJECTORY_SEARCH_KEYS:
+        return {
+            "type": event_type,
+            **{k: payload.get(k) for k in _TRAJECTORY_SEARCH_KEYS[event_type]},
             "stop": stop,
             "reason": reason,
             **usage,
@@ -2063,6 +2249,11 @@ _PROVIDER_ERROR_STOPS = frozenset(
 )
 _CONFIG_ERROR_STOPS = frozenset({"generation_disabled"})
 
+#: Flow steps the runner implements. Anything else (e.g. a
+#: not-implemented "recommend-toggle-off") is refused instead of
+#: silently running as a plain recommend.
+KNOWN_FLOW_STEPS = frozenset({"recommend", "recommend-ask", "resume", "select-first", "plan"})
+
 
 def _final_answered(final: dict[str, Any] | None) -> bool:
     """True when the run produced an answer: options, a plan, a
@@ -2092,6 +2283,7 @@ def run_scenario_live(
     technique_resolver: Any = None,
     manual_review: bool = False,
     fresh_provider_per_run: bool = False,
+    search_limits: SearchRunLimits | None = None,
 ) -> dict[str, Any]:
     from culinary_copilot.agent.loop import (
         AgentDeps,
@@ -2105,6 +2297,27 @@ def run_scenario_live(
     created: list[str] = []
     attempts: list[dict[str, Any]] = []
     flow = list(scenario.get("flow", ["recommend"]))
+    unknown_steps = [step for step in flow if step not in KNOWN_FLOW_STEPS]
+    if unknown_steps:
+        # Refuse unknown flow steps instead of ignoring them: a step
+        # like "recommend-toggle-off" would otherwise run as a plain
+        # recommend and silently test the wrong thing.
+        detail = (
+            f"unknown flow steps: {', '.join(str(s) for s in unknown_steps)} "
+            f"(known: {', '.join(sorted(KNOWN_FLOW_STEPS))}); refusing"
+        )
+        return {
+            "key": scenario["key"],
+            "first_attempt": None,
+            "final_attempt": None,
+            "attempts": 0,
+            "stop_reason": "runner-error",
+            "status": "stopped: runner-error",
+            "run_stop": {"reason": "runner-error", "detail": detail},
+            "grades": {"graded": False, "reason": "unknown-flow-steps", "detail": detail},
+            "sessions": created,
+            "trajectory": [],
+        }
     last_final: dict[str, Any] | None = None
     last_stop = ""
     run_stop: dict[str, str] | None = None
@@ -2158,6 +2371,10 @@ def run_scenario_live(
             # gets its own loop-bound provider via _run_once.
             provider = provider_factory(scenario)
             tool_context = context_factory(store, scenario)
+            # In-run search limits travel on the tool context so
+            # search_web enforces them per dispatch (2026-10-03 fix).
+            if search_limits is not None:
+                tool_context.search_limits = search_limits
             if fresh_provider_per_run:
                 asyncio.run(_aclose_provider(provider))
                 provider = None
@@ -2444,7 +2661,10 @@ def _args(argv: list[str] | None = None) -> Any:
         "--max-campaign-searches",
         type=int,
         default=None,
-        help="paid searches this run may dispatch (campaign cap 4 across all runs; step 1 uses 1)",
+        help=(
+            f"paid searches this run may dispatch (campaign cap "
+            f"{PHASE5_CAMPAIGN_SEARCH_CAP} across all runs; step 1 uses 1)"
+        ),
     )
     parser.add_argument(
         "--stop-after-first-search",
@@ -2616,6 +2836,20 @@ def _run_all(
     store = PostgresSessionStore(engine)
     model = str(args.model or settings.llm_rec_model)
     ledger = SpendLedger(model=model, ceiling_usd=float(args.ceiling_usd or 0.0))
+    # In-run search limits (2026-10-03 overrun fix): preflight checks
+    # are not enough — the session slot max and the campaign/run
+    # dispatch bounds travel with the run and are enforced inside
+    # search_web. Fake runs start at prior 0 and never read the real
+    # campaign history.
+    max_this_run = getattr(args, "max_campaign_searches", None)
+    search_limits = SearchRunLimits(
+        max_per_session=int(
+            getattr(args, "search_max_per_live_session", PHASE5_MAX_SEARCHES_PER_SESSION)
+        ),
+        max_this_run=int(max_this_run) if max_this_run is not None else None,
+        campaign_cap=PHASE5_CAMPAIGN_SEARCH_CAP,
+        prior_campaign_searches=(count_campaign_searches(PHASE5_HISTORY) if not fake else 0),
+    )
     if history_path:
         # The cap covers the whole evaluation: this run may only spend
         # what prior recorded runs left.
@@ -2637,10 +2871,22 @@ def _run_all(
         _context_factory = _live_context_factory(effective, engine, ledger)
 
     for scenario in scenarios["scenarios"]:
+        if not fake and bool(scenario.get("offline_only")):
+            # Offline-only scenarios (e.g. the unimplemented live
+            # toggle) never run live; their coverage is deterministic.
+            scenario_reports.append({"key": scenario["key"], "status": "not_run: offline-only"})
+            continue
         try:
             if fake:
                 report = _run_fake_scenario(
-                    engine, store, effective, scenario, ledger, raw_dir, args.max_attempts
+                    engine,
+                    store,
+                    effective,
+                    scenario,
+                    ledger,
+                    raw_dir,
+                    args.max_attempts,
+                    search_limits=search_limits,
                 )
             else:
                 scenario_settings = _scenario_settings(effective, scenario)
@@ -2657,6 +2903,7 @@ def _run_all(
                     recipe_resolver=None,
                     manual_review=True,
                     fresh_provider_per_run=True,
+                    search_limits=search_limits,
                 )
         except Exception as exc:
             # Never die with a traceback and no summary: record the
@@ -2674,7 +2921,7 @@ def _run_all(
                 "grades": {"graded": False, "reason": "runner-error"},
                 "first_attempt": None,
             }
-        created_all.extend(report["sessions"])
+        created_all.extend(report.get("sessions") or [])
         report["searches_dispatched"] = _count_session_claims(store, report.get("sessions"))
         scenario_reports.append(report)
         (raw_dir / f"{scenario['key']}.json").write_text(
@@ -2735,6 +2982,12 @@ def _run_all(
         expected = expected_by_key.get(str(report.get("key", "")))
         return expected is not None and report.get("stop_reason") == expected
 
+    # Run-end sweep (2026-10-03 ledger fix): a dispatched-then-lost
+    # call keeps at once, but any entry still "reserved" here becomes
+    # kept-ambiguous at its reservation — $0 is never reported for a
+    # request that may have been billed. The summary flags the count.
+    swept_ambiguous = ledger.sweep_reserved(note="run end: unresolved reservation kept as spent")
+
     summary = {
         "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "fake": fake,
@@ -2744,7 +2997,7 @@ def _run_all(
         "model": model,
         "scenario_keys": [str(r.get("key", "")) for r in scenario_reports],
         "max_attempts": int(getattr(args, "max_attempts", MAX_ATTEMPTS) or MAX_ATTEMPTS),
-        "spend": ledger.summary(),
+        "spend": {**ledger.summary(), "swept_ambiguous": swept_ambiguous},
         "isolation": {"ok": isolated, "problems": isolation_problems},
         "stopped_early": stopped_early,
         "scenarios": [
@@ -2804,7 +3057,12 @@ class _FakeWebSearchProvider:
         self.calls: list[dict[str, Any]] = []
 
     async def complete_web_search(
-        self, *, instruction: str, query: str, max_output_tokens: int | None = None
+        self,
+        *,
+        instruction: str,
+        query: str,
+        max_output_tokens: int | None = None,
+        timeout: float | None = None,
     ) -> Any:
         from culinary_copilot.llm.client import WebSearchResult
 
@@ -2949,7 +3207,12 @@ class LedgeredSearchProvider:
         self.last_report: dict[str, Any] | None = None
 
     async def complete_web_search(
-        self, *, instruction: str, query: str, max_output_tokens: int | None = None
+        self,
+        *,
+        instruction: str,
+        query: str,
+        max_output_tokens: int | None = None,
+        timeout: float | None = None,
     ) -> Any:
         from culinary_copilot.llm.models import PRICING_VERSION
 
@@ -2966,8 +3229,16 @@ class LedgeredSearchProvider:
                 max_output_tokens=(
                     max_output_tokens if max_output_tokens is not None else self._max_output_tokens
                 ),
+                timeout=timeout,
             )
-        except Exception:
+        except (Exception, asyncio.CancelledError):
+            # Dispatched then lost (timeout, cancellation, provider
+            # error): the tool-timeout path cancels this coroutine
+            # with CancelledError, which is BaseException (not
+            # Exception) — without naming it the reservation would
+            # stay "reserved" at $0. The request was sent and may
+            # have been billed, so the estimate stays spent
+            # (kept-ambiguous), never $0.
             self._ledger.keep(label)
             raise
         reported_in = getattr(result, "input_tokens", None)
@@ -2999,6 +3270,8 @@ def _run_fake_scenario(
     ledger: SpendLedger,
     raw_dir: Path,
     max_attempts: int,
+    *,
+    search_limits: SearchRunLimits | None = None,
 ) -> dict[str, Any]:
     # The fake path takes Epicure enablement through the same
     # effective-settings code as the live path: a disabled environment
@@ -3028,6 +3301,7 @@ def _run_fake_scenario(
         max_attempts=max_attempts,
         recipe_resolver=_recipe_resolver,
         technique_resolver=_fake_technique_resolver,
+        search_limits=search_limits,
     )
 
 

@@ -169,6 +169,11 @@ async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str
             "next_action": next_action_for(reason),
         }
     max_slots = int(_settings_value(context, "search_max_per_session", 3) or 3)
+    limits = getattr(context, "search_limits", None)
+    if limits is not None and getattr(limits, "max_per_session", None) is not None:
+        # Live-run flag bound (2026-10-03 overrun fix): the claim's max
+        # is min(code limit, --search-max-per-live-session).
+        max_slots = min(max_slots, int(limits.max_per_session))
     # Registry call id via the per-call context copy (fix 3); uuid4
     # only for direct impl calls outside run_tool. Millisecond clocks
     # collide under parallel calls, so they are never used.
@@ -213,6 +218,29 @@ async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str
             ),
             "next_action": next_action_for(reason),
         }
+    if limits is not None:
+        # Campaign/run hook (2026-10-03 overrun fix): after the slot
+        # claim, before the provider call. A refused search returns
+        # search_budget_exhausted with no provider call; the claim is
+        # recorded as refused (the slot stays claimed).
+        allowed, limit_reason = limits.check_and_claim()
+        if not allowed:
+            try:
+                store.append_event(
+                    session_id,
+                    "search_outcome",
+                    {"call_id": call_id, "outcome": "refused", "reason": limit_reason},
+                )
+            except Exception:
+                pass
+            reason = REASON_SEARCH_BUDGET_EXHAUSTED
+            return {
+                "ok": False,
+                "error_type": "invalid_arguments",
+                "reason": reason,
+                "message": f"search budget exhausted: {limit_reason}; no provider call made",
+                "next_action": next_action_for(reason),
+            }
     provider = getattr(context, "search_provider", None)
     if provider is None:
         try:
@@ -238,9 +266,25 @@ async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str
     except Exception:
         instruction = "Summarize the search results for the query."
     max_output = int(_settings_value(context, "search_max_output_tokens", 1500) or 1500)
+    # Provider request timeout (2026-10-03 search proposal): at most
+    # the tool timeout, so an abandoned request cannot keep running
+    # long after the tool gave up. Defaults keep current behavior
+    # (tool 10 s, provider min(rec 20 s, 10 s)).
+    from culinary_copilot.tools.registry import tool_timeout_s as _tool_timeout_s
+
+    settings = getattr(context, "settings", None)
+    tool_timeout = _tool_timeout_s("search_web", settings)
+    try:
+        rec_timeout = float(getattr(settings, "llm_rec_timeout_s", tool_timeout))
+    except (TypeError, ValueError):
+        rec_timeout = tool_timeout
+    provider_timeout = min(tool_timeout, rec_timeout) if rec_timeout > 0 else tool_timeout
     try:
         result = await provider.complete_web_search(
-            instruction=instruction, query=query_min, max_output_tokens=max_output
+            instruction=instruction,
+            query=query_min,
+            max_output_tokens=max_output,
+            timeout=provider_timeout,
         )
     except Exception as exc:
         if getattr(exc, "runner_stop", False):

@@ -179,7 +179,12 @@ class ApplicationLlmProvider(Protocol):
         max_output_tokens: int | None = None,
     ) -> NativeTurnResult: ...
     async def complete_web_search(
-        self, *, instruction: str, query: str, max_output_tokens: int | None = None
+        self,
+        *,
+        instruction: str,
+        query: str,
+        max_output_tokens: int | None = None,
+        timeout: float | None = None,
     ) -> WebSearchResult: ...
 
 
@@ -659,7 +664,12 @@ class FakeApplicationProvider:
         )
 
     async def complete_web_search(
-        self, *, instruction: str, query: str, max_output_tokens: int | None = None
+        self,
+        *,
+        instruction: str,
+        query: str,
+        max_output_tokens: int | None = None,
+        timeout: float | None = None,
     ) -> WebSearchResult:
         """Offline fake search sub-request (scripted, records exact input).
 
@@ -949,7 +959,12 @@ class OpenAIApplicationProvider:
         ) from last_error
 
     async def complete_web_search(
-        self, *, instruction: str, query: str, max_output_tokens: int | None = None
+        self,
+        *,
+        instruction: str,
+        query: str,
+        max_output_tokens: int | None = None,
+        timeout: float | None = None,
     ) -> WebSearchResult:
         """One bounded hosted-search sub-request (Phase 5, part 2, owner item 2).
 
@@ -981,6 +996,14 @@ class OpenAIApplicationProvider:
             if max_output_tokens is not None
             else int(getattr(self.settings, "search_max_output_tokens", 1500))
         )
+        # The provider request's own timeout is at most the tool
+        # timeout (2026-10-03): callers pass min(tool, rec); unset
+        # falls back to the configured rec timeout.
+        request_timeout = (
+            min(float(timeout), float(self.settings.llm_rec_timeout_s))
+            if timeout is not None and timeout > 0
+            else self.settings.llm_rec_timeout_s
+        )
         started = time.perf_counter()
         attempt_log: list[dict[str, Any]] = []
         try:
@@ -997,7 +1020,7 @@ class OpenAIApplicationProvider:
                 store=False,
                 text_format=WebSearchParsed,
                 max_output_tokens=max_output,
-                timeout=self.settings.llm_rec_timeout_s,
+                timeout=request_timeout,
             )
         except Exception as exc:
             mapped = _map_sdk_error(exc)

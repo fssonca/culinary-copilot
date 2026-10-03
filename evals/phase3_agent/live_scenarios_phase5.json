@@ -40,6 +40,7 @@
         "stop_reason": "agent_sufficient_evidence",
         "search_offered": true,
         "web_answer": true,
+        "asking_is_fail": true,
         "max_searches": 2
       }
     },
@@ -60,7 +61,8 @@
       "expected": {
         "stop_reason": "agent_sufficient_evidence",
         "toggle_blocks_unclaimed": true
-      }
+      },
+      "offline_only": true
     },
     {
       "key": "live-ask-resume-p3l13",
@@ -85,5 +87,5 @@
       }
     }
   ],
-  "freeze_sha256": "f569d4325651acce7b18412e96ca52534b293e37822059f556ef5bc51b87e6f2"
+  "freeze_sha256": "af21603a1eec60d71eb51c2f130cbc9696321587511b997d358f5cdfc15bc75c"
 }

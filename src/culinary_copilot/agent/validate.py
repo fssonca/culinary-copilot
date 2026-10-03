@@ -19,6 +19,24 @@ The model proposes; these functions dispose, without a model call:
   ingredient lines against conservative vegetarian/vegan term lists
   (word boundaries; ambiguous broth/stock/bouillon/Worcestershire
   without vegetable/vegan stays unverified, never verified);
+- unnamed restriction check (P3-L-13): an allergy, intolerance or
+  dietary restriction mentioned without naming it (narrow patterns:
+  allergy/allergic, intolerance/intolerant, restriction,
+  can't/cannot eat) blocks a finish with options until a confirmed
+  answer names the specific allergen or diet;
+- allergen avoidance (P3-L-13, review rework): after a confirmed
+  answer names a mapped allergen (peanut, tree nuts, shellfish, fish,
+  egg, milk/dairy, wheat/gluten, soy, sesame), each option's
+  ``get_recipe`` ingredient lines are checked in three tiers —
+  violated (direct or hidden sources: flour, breadcrumbs, pasta,
+  mayonnaise, parmesan, soy/tamari sauce, oyster/fish sauce) drops
+  the option; unverified (bouillon, malt, custard, batter,
+  Worcestershire, caesar dressing, furikake, ...) keeps it but is
+  listed; otherwise ``"no_listed_terms_found"`` — never "checked",
+  since absence of a match never means safe. Every entry carries a
+  fixed incomplete-list disclaimer, and note/adaptation/constraint
+  text calling an option allergen-free is rejected unless a selected
+  source recipe says so;
 - plan integrity: the plan source equals the selected dish and the plan
   sections are non-empty;
 - minimum plan evidence (P3-L-09): ingredient-only sources set
@@ -276,6 +294,415 @@ def check_dietary_option(
         entry = {"status": "unverified", "value": label, "terms": list(unverified)}
     else:
         entry = {"status": "checked", "value": label}
+    return errors, entry
+
+
+#: Narrow unnamed-restriction patterns (P3-L-13): an allergy,
+#: intolerance or dietary restriction mentioned WITHOUT naming it
+#: ("a food allergy", "she can't eat some things") must be asked
+#: about before recommending — guessing is not allowed. Narrow and
+#: incomplete by design: paraphrases without these words (e.g.
+#: "dietary needs") are not caught here; the framing tells the model
+#: to ask for those too.
+UNNAMED_RESTRICTION_DESCRIPTIONS = (
+    "allergy/allergies/allergic",
+    "intolerance/intolerant",
+    "restriction/restrictions",
+    "can't eat/cannot eat",
+)
+_UNNAMED_RESTRICTION_RES = (
+    re.compile(r"\ballerg(?:y|ies|ic)\b", re.IGNORECASE),
+    re.compile(r"\bintoleran(?:ce|t)\b", re.IGNORECASE),
+    re.compile(r"\brestrictions?\b", re.IGNORECASE),
+    re.compile(r"\bcan(?:'t|’t|not) eat\b", re.IGNORECASE),
+)
+
+#: Fixed disclaimer carried by EVERY allergen entry: no status may
+#: imply safety. Allergens hide in derived ingredients the narrow
+#: term lists below do not name, so even "no_listed_terms_found"
+#: reads only as "no listed term matched", never "allergen-free".
+ALLERGEN_DISCLAIMER = "term list is incomplete; not an allergen-free guarantee"
+
+#: Dairy subset shared with the P3-L-07 vegan list (named cheeses and
+#: paneer included through the shared table, not duplicated here).
+_DAIRY_SHARED_TERMS = frozenset(t for t in VEGAN_EXTRA_TERMS if t not in {"egg", "eggs", "honey"})
+
+#: Single-word violated terms per allergen, matched with
+#: ``recommendations.policy.ingredient_term_hit`` (whole-word,
+#: plural-aware), the same matcher the P3-L-13 live grade uses.
+#: The milk/dairy set reuses the P3-L-07 vegan dairy list above and
+#: adds gruyere, custard, lactose and dairy; the fish and shellfish
+#: sets overlap the P3-L-07 vegetarian fish/seafood list (pinned by
+#: test, not duplicated from it).
+ALLERGEN_VIOLATED_TERMS: dict[str, frozenset[str]] = {
+    "peanut": frozenset({"peanut"}),
+    "tree nuts": frozenset(
+        {
+            "almond",
+            "walnut",
+            "cashew",
+            "pecan",
+            "pistachio",
+            "hazelnut",
+            "macadamia",
+            "praline",
+            "marzipan",
+            "nutella",
+        }
+    ),
+    "shellfish": frozenset(
+        {"shrimp", "prawn", "crab", "lobster", "scallop", "clam", "mussel", "oyster", "shellfish"}
+    ),
+    "fish": frozenset({"fish", "tuna", "salmon", "cod", "anchovy", "sardine", "trout"}),
+    "egg": frozenset({"egg", "mayonnaise", "aioli", "meringue"}),
+    "milk/dairy": _DAIRY_SHARED_TERMS | frozenset({"gruyere", "custard", "lactose", "dairy"}),
+    "wheat/gluten": frozenset(
+        {
+            "wheat",
+            "gluten",
+            "barley",
+            "rye",
+            "flour",
+            "bread",
+            "breadcrumb",
+            "panko",
+            "pasta",
+            "spaghetti",
+            "macaroni",
+            "noodle",
+            "udon",
+            "ramen",
+            "couscous",
+            "semolina",
+            "bulgur",
+            "farro",
+            "spelt",
+            "seitan",
+            "cracker",
+            "tortilla",
+            "beer",
+        }
+    ),
+    "soy": frozenset({"soy", "tofu", "miso", "edamame", "tamari", "tempeh"}),
+    "sesame": frozenset({"sesame", "tahini"}),
+}
+
+#: Multi-word violated phrases per allergen (labels without an entry
+#: have none). "fish sauce" and "oyster sauce" also match their
+#: single-word terms; they are listed explicitly so the table states
+#: the intent.
+ALLERGEN_VIOLATED_PHRASES: dict[str, tuple[str, ...]] = {
+    "tree nuts": ("brazil nut", "pine nut"),
+    "shellfish": ("oyster sauce",),
+    "fish": ("fish sauce",),
+    "milk/dairy": ("ice cream",),
+    "wheat/gluten": ("soy sauce",),
+    "soy": ("soy sauce",),
+}
+
+#: Single-word unverified terms per allergen: kept, but the entry
+#: lists the term and the note may not claim the option was checked
+#: clean (same "verified" rule as P3-L-07).
+ALLERGEN_UNVERIFIED_TERMS: dict[str, frozenset[str]] = {
+    "wheat/gluten": frozenset({"bouillon", "malt", "seasoning", "oats"}),
+    "fish": frozenset({"worcestershire"}),
+    "egg": frozenset({"custard", "pasta", "batter"}),
+    "soy": frozenset({"lecithin"}),
+    "sesame": frozenset({"furikake"}),
+}
+
+#: Multi-word unverified phrases per allergen.
+ALLERGEN_UNVERIFIED_PHRASES: dict[str, tuple[str, ...]] = {
+    "fish": ("caesar dressing",),
+    "shellfish": ("seafood stock", "xo sauce"),
+    "soy": ("vegetable oil",),
+    "sesame": ("za'atar",),
+}
+
+#: Fish words shared conceptually with the P3-L-07 vegetarian
+#: fish/seafood list (kept literal here; overlap pinned by test).
+_FISH_OVERLAP_TERMS = frozenset({"fish", "tuna", "salmon", "cod", "anchovy", "sardine", "trout"})
+
+
+def _alt_flour_phrases() -> tuple[str, ...]:
+    """Alternative-flour exemptions: the flour compounds shared with
+    ``recommendations.policy.COMPOUND_EXCEPTIONS`` (rice, almond,
+    coconut, chickpea, oat, buckwheat) plus corn, potato and tapioca.
+    A "flour" hit on a line naming one of these is not wheat."""
+    from culinary_copilot.recommendations.policy import COMPOUND_EXCEPTIONS
+
+    shared = sorted(c for c in COMPOUND_EXCEPTIONS if c.endswith(" flour"))
+    return tuple(shared + ["corn flour", "potato flour", "tapioca flour"])
+
+
+def _phrase_hit(line: str, phrase: str) -> bool:
+    """Case-insensitive whole-word phrase match, plural-aware on the
+    last word ("brazil nut" hits "brazil nuts", "corn tortilla" hits
+    "corn tortillas"). Single-word terms keep using
+    ``ingredient_term_hit``; phrases (and spellings with apostrophes
+    like "za'atar") match here against the raw line."""
+    words = [w for w in re.split(r"\s+", phrase.strip().lower()) if w]
+    if not words:
+        return False
+    parts = [re.escape(w) for w in words[:-1]]
+    last = re.escape(words[-1]) + r"(?:s|es)?"
+    return re.search(r"\b" + r"\s+".join(parts + [last]) + r"\b", line.lower()) is not None
+
+
+def _allergen_violated_exempt(*, label: str, display: str, lowered: str) -> bool:
+    """Narrow wheat/gluten exemptions for a matched violated term.
+
+    A gluten-free-qualified line never violates ("gluten-free bread"
+    is not a wheat hit); "flour" is exempt on alternative-flour
+    lines; "noodle" on rice/glass-noodle lines; "tortilla" on corn-
+    tortilla lines; "soy sauce" on tamari (or gluten-free) lines.
+    """
+    if label != "wheat/gluten":
+        return False
+    if re.search(r"gluten[-\s]?free", lowered):
+        return True
+    if display == "flour" and any(_phrase_hit(lowered, p) for p in _alt_flour_phrases()):
+        return True
+    if display == "noodle" and (
+        _phrase_hit(lowered, "rice noodle") or _phrase_hit(lowered, "glass noodle")
+    ):
+        return True
+    if display == "tortilla" and _phrase_hit(lowered, "corn tortilla"):
+        return True
+    if display == "soy sauce" and (
+        "tamari" in lowered or re.search(r"gluten[-\s]?free", lowered) is not None
+    ):
+        return True
+    return False
+
+
+def _wheat_cube_unverified(lowered: str) -> bool:
+    """Stock or broth cubes (but not plain stock/broth) are wheat-unverified."""
+    from culinary_copilot.recommendations.policy import ingredient_term_hit
+
+    return ingredient_term_hit(lowered, "cube") and (
+        ingredient_term_hit(lowered, "stock") or ingredient_term_hit(lowered, "broth")
+    )
+
+
+#: Extra name words that mark a restriction as NAMED without being
+#: ingredient terms themselves ("tree nut allergy", "nut allergy").
+_ALLERGEN_NAME_WORDS = frozenset({"tree", "nut", "nuts"})
+
+#: Named diet terms: "I'm vegetarian" names the restriction, so the
+#: unnamed rule does not trigger (same for vegan).
+NAMED_DIET_TERMS = frozenset({"vegetarian", "vegan"})
+
+
+def _named_avoidance_terms() -> set[str]:
+    """Every word whose presence names the restriction (not unnamed)."""
+    terms: set[str] = set(NAMED_DIET_TERMS) | set(_ALLERGEN_NAME_WORDS)
+    for label_terms in ALLERGEN_VIOLATED_TERMS.values():
+        terms.update(label_terms)
+    return terms
+
+
+def mentions_restriction(text: str) -> bool:
+    """True when the text matches a narrow unnamed-restriction pattern."""
+    return any(rx.search(text or "") is not None for rx in _UNNAMED_RESTRICTION_RES)
+
+
+def names_specific_avoidance(text: str) -> bool:
+    """True when the text names a specific allergen or diet term."""
+    from culinary_copilot.recommendations.policy import ingredient_term_hit
+
+    lowered = str(text or "")
+    return any(ingredient_term_hit(lowered, term) for term in sorted(_named_avoidance_terms()))
+
+
+def _flatten_constraint_texts(constraints: dict[str, Any]) -> list[str]:
+    """Constraint values as texts (keys never trigger the rule)."""
+    texts: list[str] = []
+    for value in (constraints or {}).values():
+        if isinstance(value, str):
+            texts.append(value)
+        elif isinstance(value, list):
+            texts.extend(str(v) for v in value if str(v).strip())
+        elif isinstance(value, dict):
+            texts.extend(str(v) for v in value.values() if str(v).strip())
+    return texts
+
+
+def unresolved_unnamed_restriction(
+    request_texts: list[str],
+    constraints: dict[str, Any] | None,
+    confirmed_answers: list[Any] | None,
+) -> bool:
+    """True while an unnamed allergy/restriction needs a question first.
+
+    Detects a narrow-pattern mention in the request texts or session
+    constraint values with no specific allergen or diet term named
+    anywhere in them, and no confirmed answer naming one. A named
+    mention ("peanut allergy", "I'm vegetarian") or a naming answer
+    ("peanuts") resolves it.
+    """
+    texts = [str(t) for t in (request_texts or []) if str(t or "").strip()]
+    texts.extend(_flatten_constraint_texts(constraints or {}))
+    if not any(mentions_restriction(text) for text in texts):
+        return False
+    if any(names_specific_avoidance(text) for text in texts):
+        return False
+    for answer in confirmed_answers or []:
+        text = answer.get("answer") if isinstance(answer, dict) else answer
+        if names_specific_avoidance(str(text or "")):
+            return False
+    return True
+
+
+def allergens_named_in_answers(answer_texts: list[str]) -> list[str]:
+    """Mapped allergen labels named in the answer texts (map order)."""
+    from culinary_copilot.recommendations.policy import ingredient_term_hit
+
+    labels: list[str] = []
+    for label in ALLERGEN_VIOLATED_TERMS:
+        words = ALLERGEN_VIOLATED_TERMS[label]
+        phrases = ALLERGEN_VIOLATED_PHRASES.get(label, ())
+        if any(
+            ingredient_term_hit(str(text or ""), term)
+            for text in (answer_texts or [])
+            for term in sorted(words)
+        ) or any(
+            _phrase_hit(str(text or ""), phrase)
+            for text in (answer_texts or [])
+            for phrase in phrases
+        ):
+            labels.append(label)
+    return labels
+
+
+#: Model-text patterns that call an option allergen-free: a bare
+#: "allergen-free", any "<allergen>-free" ("peanut-free",
+#: "gluten-free", "nut-free"), or "safe ... allergy" ("safe for her
+#: allergy"). Narrow and deterministic, no model judge.
+_ALLERGEN_SAFETY_RES = (
+    re.compile(
+        r"\b(?:peanut|tree[\s-]?nuts?|nut|shellfish|fish|egg|milk|dairy|wheat|gluten|soy|sesame|allergen)[\s-]?free\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bsafe\b[\s\S]{0,60}\ballerg(?:y|ies|ic)\b", re.IGNORECASE),
+)
+
+
+def allergen_safety_claim(text: str) -> str | None:
+    """The matched allergen-free/safe-for-allergy claim, or None.
+
+    Catches note, adaptation or constraint text that calls an option
+    allergen-free. A recipe source saying so itself is the only
+    exemption (see :func:`allergen_claim_allowed`).
+    """
+    for rx in _ALLERGEN_SAFETY_RES:
+        match = rx.search(text or "")
+        if match:
+            return match.group(0).strip()[:80]
+    return None
+
+
+def allergen_claim_allowed(claim: str, selection_texts: list[str]) -> bool:
+    """True when a selected source recipe says the claim itself.
+
+    The claim text (e.g. "peanut-free") must appear in the selected
+    options' source documents; anything else is rejected even when no
+    listed term matched, because the term list is incomplete.
+    """
+    lowered = (claim or "").strip().lower()
+    return bool(lowered) and any(
+        lowered in str(text or "").lower() for text in (selection_texts or [])
+    )
+
+
+def check_allergen_option(
+    index: int, option: dict[str, Any], doc: dict[str, Any], label: str
+) -> tuple[list[str], dict[str, Any]]:
+    """Allergen-avoidance check for one option (P3-L-13, review rework).
+
+    Three tiers per label, same drop pattern as
+    :func:`check_dietary_option`: a violated term (direct or hidden
+    source, e.g. "flour", "mayonnaise", "soy sauce", "oyster sauce")
+    drops the option with a readable reason; an unverified term
+    (e.g. "bouillon", "malt", "custard", "worcestershire", "caesar
+    dressing", "furikake") keeps the option but is listed; anything
+    else reports ``"no_listed_terms_found"`` — never "checked", since
+    absence of a match never means safe. Unknown labels report
+    ``"not_checked"`` with the label. Every entry carries
+    :data:`ALLERGEN_DISCLAIMER`. Dairy reuses the plant-milk /
+    plant-butter scrub so "almond milk" never flags dairy.
+    """
+    label = str(label or "")
+    violated_words = ALLERGEN_VIOLATED_TERMS.get(label)
+    if violated_words is None:
+        return [], {"status": "not_checked", "value": label, "disclaimer": ALLERGEN_DISCLAIMER}
+    from culinary_copilot.recommendations.policy import ingredient_term_hit
+
+    errors: list[str] = []
+    hits: list[str] = []
+    unverified: list[str] = []
+    for line in _ingredient_line_texts(doc):
+        lowered = line.lower()
+        scrubbed = lowered
+        if label == "milk/dairy":
+            for rx in _NON_DAIRY_RES:
+                scrubbed = rx.sub(" ", scrubbed)
+        match: str | None = None
+        for term in sorted(violated_words):
+            if ingredient_term_hit(scrubbed, term) and not _allergen_violated_exempt(
+                label=label, display=term, lowered=lowered
+            ):
+                match = term
+                break
+        if match is None:
+            for phrase in ALLERGEN_VIOLATED_PHRASES.get(label, ()):
+                if _phrase_hit(lowered, phrase) and not _allergen_violated_exempt(
+                    label=label, display=phrase, lowered=lowered
+                ):
+                    match = phrase
+                    break
+        if match is not None:
+            excerpt = line.strip()[:80]
+            errors.append(
+                f"option {index}: contains {label} allergen {match!r} in ingredient line "
+                f"{excerpt!r} (confirmed allergy answer); drop the option or substitute"
+            )
+            if match not in hits:
+                hits.append(match)
+            continue
+        for term in sorted(ALLERGEN_UNVERIFIED_TERMS.get(label, frozenset())):
+            if ingredient_term_hit(scrubbed, term) and term not in unverified:
+                unverified.append(term)
+        for phrase in ALLERGEN_UNVERIFIED_PHRASES.get(label, ()):
+            if _phrase_hit(lowered, phrase) and phrase not in unverified:
+                unverified.append(phrase)
+        if label == "wheat/gluten" and _wheat_cube_unverified(lowered):
+            if "stock/broth cubes" not in unverified:
+                unverified.append("stock/broth cubes")
+    if hits:
+        entry: dict[str, Any] = {
+            "status": "violated",
+            "value": label,
+            "terms": hits,
+            "unverified_terms": list(unverified),
+            "disclaimer": ALLERGEN_DISCLAIMER,
+        }
+    elif unverified:
+        entry = {
+            "status": "unverified",
+            "value": label,
+            "terms": [],
+            "unverified_terms": list(unverified),
+            "disclaimer": ALLERGEN_DISCLAIMER,
+        }
+    else:
+        entry = {
+            "status": "no_listed_terms_found",
+            "value": label,
+            "terms": [],
+            "unverified_terms": [],
+            "disclaimer": ALLERGEN_DISCLAIMER,
+        }
     return errors, entry
 
 
@@ -729,7 +1156,14 @@ def validate_web_refs(refs: Any, *, session_sources: dict[str, Any]) -> list[str
             errors.append(f"web ref {index}: missing title (citations stay clickable)")
             continue
         if url not in session_sources:
-            errors.append(f"web ref {index}: {url!r} was not returned in this session")
+            # 2026-10-03 step-4 fix: list the session's exact source
+            # URLs (up to 5) so the model can correct the ref next
+            # turn instead of guessing another URL.
+            known = sorted(str(u) for u in session_sources.keys() if str(u or "").strip())[:5]
+            errors.append(
+                f"web ref {index}: {url!r} was not returned in this session; "
+                f"cite one of the session source urls: {known}"
+            )
     return errors
 
 
@@ -757,24 +1191,38 @@ def web_claim_context_ok(*, claim_subject: str, source_text: str | None) -> bool
 
 
 __all__ = [
+    "ALLERGEN_DISCLAIMER",
+    "ALLERGEN_UNVERIFIED_PHRASES",
+    "ALLERGEN_UNVERIFIED_TERMS",
+    "ALLERGEN_VIOLATED_PHRASES",
+    "ALLERGEN_VIOLATED_TERMS",
     "AMBIGUOUS_DIET_TERMS",
+    "NAMED_DIET_TERMS",
     "RAW_PROTEIN_TERMS",
     "MODEL_STEPS_MARKERS",
     "SAFETY_DOC_IDS",
+    "UNNAMED_RESTRICTION_DESCRIPTIONS",
     "VEGAN_EXTRA_TERMS",
     "VEGAN_VIOLATION_TERMS",
     "VEGETARIAN_VIOLATION_TERMS",
     "RecipeResolver",
     "TECHNIQUE_OPTION_KEYS",
     "TechniqueResolver",
+    "allergen_claim_allowed",
+    "allergen_safety_claim",
+    "allergens_named_in_answers",
+    "check_allergen_option",
     "check_dietary_option",
     "check_plan_evidence",
     "dietary_values",
     "doc_directions",
     "doc_text",
     "hard_constraint_keys",
+    "mentions_restriction",
+    "names_specific_avoidance",
     "quantity_in_source",
     "session_web_sources",
+    "unresolved_unnamed_restriction",
     "validate_one_option",
     "validate_options",
     "validate_plan",
