@@ -302,6 +302,16 @@ Phase 6 page requirements (Checkpoint B condition 6, offline spec):
   Citation links open with rel="noopener noreferrer".
 - Keep "no build tooling".
 
+Status (Phase 6 implemented offline): the page is served at `/ui`
+(`src/culinary_copilot/web/`, native ES modules, no build tooling)
+with the toggle, streamed stages, option selection, plan view,
+question answering, typed outcome/error cards, and the demo page;
+`GET /` redirects to `/ui/`; `/ui`-only CSP/nosniff/no-referrer
+headers; the `web_ref` label enrichment is additive in
+`agent/loop.py` via `agent/validate.py::web_label_for`; offline tests
+in `tests/test_web_ui.py`; manual steps in `docs/ui-walkthrough.md`.
+Live-run verification stays deferred to Phase 7.
+
 ## 7. Scenario evals and bounded live run
 
 ```text

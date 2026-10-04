@@ -3232,13 +3232,28 @@ async def _handle_finish(
     elif wants_web:
         web_final = result.web_answer
         assert web_final is not None
+        # Label enrichment (Phase 6, additive): each web_ref carries the
+        # classification recorded for that exact URL in this session
+        # (same source set validate_web_refs checks against);
+        # "unclassified" when none is recorded. The model-facing
+        # WebAnswer schema and the validation are unchanged.
+        from culinary_copilot.agent.validate import session_web_sources, web_label_for
+
+        label_sources = session_web_sources(store, session_id)
         final = {
             "note": note,
             "note_source": "model",
             "note_claims": "unverified",
             "web_answer": {
                 "text": web_final.text,
-                "web_refs": [{"url": ref.url, "title": ref.title} for ref in web_final.web_refs],
+                "web_refs": [
+                    {
+                        "url": ref.url,
+                        "title": ref.title,
+                        "label": web_label_for(label_sources, ref.url),
+                    }
+                    for ref in web_final.web_refs
+                ],
                 "evidence_class": "external",
             },
         }

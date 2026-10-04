@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Culinary Copilot</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="page">
+<header class="app-header">
+<h1>Culinary Copilot</h1>
+<div class="header-row">
+<span class="chip" id="phase-chip">phase: —</span>
+<span class="budgets" id="budgets">steps — · tools —</span>
+<span class="session-id" id="session-label">session —</span>
+<button type="button" class="secondary" id="new-session">New session</button>
+</div>
+<div class="toggle-wrap">
+<input type="checkbox" id="internet-toggle">
+<div>
+<label for="internet-toggle">Allow internet search</label>
+<p class="toggle-text" id="toggle-help">answers use only the built-in recipe and technique library</p>
+</div>
+</div>
+</header>
+<main>
+<div class="transcript" id="transcript" aria-live="polite"></div>
+</main>
+<section class="composer" aria-label="Message composer">
+<div id="answer-box" hidden>
+<p class="question-text" id="answer-question"></p>
+<div class="option-buttons" id="answer-options"></div>
+</div>
+<label for="composer-input" id="composer-label">Message</label>
+<textarea id="composer-input" placeholder="Ask for a meal, a plan, or a technique"></textarea>
+<div class="composer-row">
+<button type="button" id="send-button">Send</button>
+</div>
+<p class="error-text" id="form-error" role="alert"></p>
+</section>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,302 @@
+/* Culinary Copilot minimal UI (Phase 6). No external assets. */
+:root {
+  --ink: #1c1a17;
+  --muted: #6b6259;
+  --line: #e3ddd3;
+  --card: #ffffff;
+  --wash: #faf8f4;
+  --accent: #2f6f3e;
+  --warn: #8a5a00;
+  --danger: #a4262c;
+  --chip: #eef2ea;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--wash);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 16px 16px 48px;
+}
+
+.app-header {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.app-header h1 {
+  font-size: 1.25rem;
+  margin: 0 0 8px;
+}
+
+.header-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.chip {
+  display: inline-block;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.85rem;
+}
+
+.budgets {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.session-id {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.toggle-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-top: 10px;
+  background: var(--card);
+}
+
+.toggle-text {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.turn {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  padding: 12px;
+}
+
+.user-message {
+  white-space: pre-wrap;
+  background: var(--wash);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.activity {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+}
+
+.activity summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.activity-log {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  margin-top: 8px;
+}
+
+.card h2,
+.card h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.card .small {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.card ul,
+.card ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.prewrap {
+  white-space: pre-wrap;
+}
+
+.badge {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 0.78rem;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.badge.verified {
+  background: #e7f2e7;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.badge.unverified {
+  background: #fdf3dd;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.badge.adaptation {
+  background: #ece7fb;
+}
+
+.badge.source-label {
+  background: var(--chip);
+}
+
+.web-banner {
+  border: 1px solid var(--warn);
+  background: #fdf3dd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.citation-list {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.citation-list .host {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.composer {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  padding: 12px;
+  position: sticky;
+  bottom: 12px;
+}
+
+.composer textarea,
+.composer input[type="text"] {
+  width: 100%;
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.composer textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.composer-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+button {
+  font: inherit;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.question-text {
+  white-space: pre-wrap;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.option-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.error-text {
+  color: var(--danger);
+}
+
+.notice {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--wash);
+  padding: 8px 10px;
+  margin-top: 8px;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.demo-label {
+  border: 1px solid var(--line);
+  background: #ece7fb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.demo-section {
+  margin-bottom: 24px;
+}
+
+.demo-section > h2 {
+  font-size: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}

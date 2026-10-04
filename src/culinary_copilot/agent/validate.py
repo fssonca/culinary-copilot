@@ -1106,14 +1106,24 @@ def validate_technique_refs(
     return errors, resolved
 
 
+_WEB_LABELS = frozenset(
+    {"official_guidance", "research_publication", "culinary_source", "unclassified"}
+)
+
+
 def session_web_sources(store: Any, session_id: str) -> dict[str, dict[str, Any]]:
     """Successful search_web sources for the session, keyed by URL.
 
     Reads search_results_retrieved-style evidence: the tool result is
     not stored in tool_call events (digest only), so this helper reads
-    the search_results_retrieved events' URL lists. Fail-closed: store
-    errors yield an empty mapping. Provenance note: these are provider
-    citation metadata (URLs), not verified page text.
+    the search_results_retrieved events' URL lists. Classifications come
+    from the evidence_evaluated events recorded for the exact same URL
+    (``{"url", "classification"}`` per evaluation); a URL with no
+    recorded classification carries no ``classification`` key and callers
+    treat it as ``"unclassified"``. Exact-URL matching only, no
+    normalization. Fail-closed: store errors yield an empty mapping.
+    Provenance note: these are provider citation metadata (URLs), not
+    verified page text.
     """
     out: dict[str, dict[str, Any]] = {}
     try:
@@ -1129,7 +1139,39 @@ def session_web_sources(store: Any, session_id: str) -> dict[str, dict[str, Any]
             for url in urls:
                 if isinstance(url, str) and url and url not in out:
                     out[url] = {"url": url}
+    for event in events:
+        if getattr(event, "event_type", "") != "evidence_evaluated":
+            continue
+        payload = getattr(event, "payload", None) or {}
+        evaluations = payload.get("evaluations")
+        if not isinstance(evaluations, list):
+            continue
+        for item in evaluations:
+            if not isinstance(item, dict):
+                continue
+            url = item.get("url")
+            classification = item.get("classification")
+            if not (isinstance(url, str) and url and url in out):
+                continue
+            if isinstance(classification, str) and classification in _WEB_LABELS:
+                out[url]["classification"] = classification
     return out
+
+
+def web_label_for(session_sources: dict[str, Any], url: str) -> str:
+    """Publisher-signal label for one web URL in this session.
+
+    Uses the classification recorded for that exact URL in
+    ``session_sources`` (the same mapping :func:`validate_web_refs`
+    checks refs against); ``"unclassified"`` when none is recorded or
+    the recorded value is not a known label.
+    """
+    try:
+        entry = (session_sources or {}).get(url)
+    except AttributeError:
+        return "unclassified"
+    label = entry.get("classification") if isinstance(entry, dict) else None
+    return label if isinstance(label, str) and label in _WEB_LABELS else "unclassified"
 
 
 def validate_web_refs(refs: Any, *, session_sources: dict[str, Any]) -> list[str]:
@@ -1223,6 +1265,7 @@ __all__ = [
     "quantity_in_source",
     "session_web_sources",
     "unresolved_unnamed_restriction",
+    "web_label_for",
     "validate_one_option",
     "validate_options",
     "validate_plan",

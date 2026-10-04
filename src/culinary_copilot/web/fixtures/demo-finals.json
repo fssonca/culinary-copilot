@@ -1,0 +1,135 @@
+{
+  "label": "synthetic demo data — not model output",
+  "options": {
+    "options": [
+      {
+        "dataset_id": "demo/synthetic",
+        "source_id": "demo-lentil-soup-1",
+        "title": "Demo Lentil Soup",
+        "quantities": [
+          {"ingredient": "red lentils", "amount": "200", "unit": "g"},
+          {"ingredient": "onion", "amount": "1", "unit": "count"}
+        ],
+        "adaptations": [
+          {"description": "swap water for vegetable broth for depth", "label": "adaptation"}
+        ]
+      },
+      {
+        "dataset_id": "demo/synthetic",
+        "source_id": "demo-chickpea-stew-2",
+        "title": "Demo Chickpea Stew",
+        "quantities": [
+          {"ingredient": "chickpeas", "amount": "400", "unit": "g"}
+        ],
+        "adaptations": []
+      }
+    ],
+    "note": "Both demo options use pantry staples and stay under thirty minutes of active work.",
+    "note_source": "model",
+    "note_claims": "unverified",
+    "epicure_lines": [
+      "used onion: returned by Epicure and present in the soup base",
+      "rejected chocolate: not returned for this savoury request"
+    ],
+    "constraints_honored": ["dietary_constraints"],
+    "constraint_check": [
+      {
+        "index": 0,
+        "source_id": "demo-lentil-soup-1",
+        "status": "unverified",
+        "value": "vegan",
+        "terms": ["broth"],
+        "disclaimer": "term list is incomplete; not an allergen-free guarantee"
+      },
+      {
+        "index": 1,
+        "source_id": "demo-chickpea-stew-2",
+        "status": "checked",
+        "value": "vegan"
+      }
+    ],
+    "dropped_options": [
+      {"index": 2, "title": "Demo Beef Chili", "source_id": "demo-beef-chili-3", "error": "violates dietary constraint 'vegan'"}
+    ]
+  },
+  "plan": {
+    "plan": {
+      "source": {"dataset_id": "demo/synthetic", "source_id": "demo-lentil-soup-1"},
+      "mise_en_place": ["Rinse the lentils.", "Dice the onion."],
+      "steps": ["Simmer the lentils with onion until tender.", "Season and serve hot."],
+      "plating": "Ladle into warm bowls and finish with herbs.",
+      "quantities": [
+        {"ingredient": "red lentils", "amount": "200", "unit": "g"}
+      ],
+      "adaptations": [
+        {"description": "steps are a model adaptation; the source lists ingredients only", "label": "adaptation"}
+      ],
+      "technique_refs": [{"doc_id": "demo-tech-simmer", "chunk_id": 2}],
+      "steps_source": "model_adaptation"
+    },
+    "note_source": "model"
+  },
+  "technique_answer": {
+    "note": "Demo technique guidance with corpus citations.",
+    "note_source": "model",
+    "note_claims": "verified",
+    "technique_answer": {
+      "text": "Keep the pot at a gentle simmer rather than a rolling boil so the lentils hold their shape.",
+      "technique_refs": [{"doc_id": "demo-tech-simmer", "chunk_id": 2}],
+      "attribution": [
+        {
+          "doc_id": "demo-tech-simmer",
+          "chunk_id": 2,
+          "attribution_text": "Demo Simmer Guide, CC BY-SA 4.0",
+          "licence_url": "https://example.org/licence/cc-by-sa"
+        }
+      ]
+    }
+  },
+  "web_answer": {
+    "note": "Demo discovery answer.",
+    "note_source": "model",
+    "note_claims": "unverified",
+    "web_answer": {
+      "text": "These demo pages describe the dish; check quantities and safety on the source pages.",
+      "web_refs": [
+        {"url": "https://www.foodsafety.gov/demo/soup-basics", "title": "Demo Soup Basics", "label": "official_guidance"},
+        {"url": "https://demo-kitchen.example.org/lentil-notes", "title": "Demo Lentil Notes", "label": "culinary_source"},
+        {"url": "https://unlabelled.example.net/a-post", "title": "An Unlabelled Post", "label": "unclassified"}
+      ],
+      "evidence_class": "external"
+    }
+  },
+  "question": {
+    "question": {
+      "question_id": "q-demo-1",
+      "question_text": "Which onion do you have at home?",
+      "options": ["yellow onion", "red onion", "no onion"]
+    }
+  },
+  "outcomes": [
+    {"reason": "agent_max_steps", "stop_reason": "agent_max_steps", "message": "", "next_action": "change_request"},
+    {"reason": "agent_tool_budget_exhausted", "stop_reason": "agent_tool_budget_exhausted", "message": "", "next_action": "change_request"},
+    {"reason": "agent_token_budget_exhausted", "stop_reason": "agent_token_budget_exhausted", "message": "", "next_action": "change_request"},
+    {"reason": "agent_wall_clock_exceeded", "stop_reason": "agent_wall_clock_exceeded", "message": "", "next_action": "retry"},
+    {"reason": "agent_no_progress", "stop_reason": "agent_no_progress", "message": "", "next_action": "change_request"},
+    {"reason": "agent_validation_failed", "stop_reason": "agent_validation_failed", "message": "", "next_action": "change_request"},
+    {"reason": "tool_timeout", "stop_reason": "tool_timeout", "message": "", "next_action": "retry"},
+    {"reason": "tool_permission_denied", "stop_reason": "tool_permission_denied", "message": "", "next_action": "change_request"},
+    {"reason": "search_budget_exhausted", "stop_reason": "search_budget_exhausted", "message": "", "next_action": "change_request"},
+    {"reason": "search_not_performed", "stop_reason": "search_not_performed", "message": "", "next_action": "retry"},
+    {"reason": "search_unverified", "stop_reason": "search_unverified", "message": "", "next_action": "change_request"},
+    {"reason": "unknown_question", "stop_reason": "unknown_question", "message": "", "next_action": "change_request"},
+    {"reason": "unknown_option", "stop_reason": "unknown_option", "message": "", "next_action": "change_request"},
+    {"reason": "stale_revision", "stop_reason": "stale_revision", "message": "", "next_action": "refetch_and_retry"},
+    {"reason": "unknown_session", "stop_reason": "unknown_session", "message": "", "next_action": "change_request"},
+    {"reason": "session_unavailable", "stop_reason": "session_unavailable", "message": "", "next_action": "retry"},
+    {"reason": "internal_error", "stop_reason": "internal_error", "message": "", "next_action": "contact_operator"}
+  ],
+  "error": {
+    "status": 503,
+    "reason": "session_unavailable",
+    "message": "Session store unavailable",
+    "next_action": "retry"
+  }
+}

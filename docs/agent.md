@@ -221,14 +221,22 @@ removed), and the next run substitutes (labelled `adaptation`,
   discovery answer (`text` 1–1200 chars plus 1–5 `web_refs` with
   clickable `url` + `title`), labelled `evidence_class: "external"`.
   Every `web_ref.url` must equal a source URL from a successful
-  `search_web` in the same session (resumed runs count). Web evidence
-  never becomes an option, a quantity, or a plan source. No source
-  text actually obtained exists (provider `results` is image-only per
-  docs), so time/temperature claims fail closed: a web answer carrying
-  numeric claims is rejected — drop the number and point at the page.
-  Creates a `missing_recipe` investigation candidate only when the
-  request is about a recipe that local retrieval failed to find (zero
-  `search_recipes` + web ok), never for technique or general answers.
+  `search_web` in the same session (resumed runs count). The client
+  final adds one additive `label` per `web_ref` (Phase 6): the
+  `classification` recorded for that exact URL in the session's
+  `evidence_evaluated` events (`official_guidance` /
+  `research_publication` / `culinary_source`, else `"unclassified"`),
+  read through the same `session_web_sources` set the validator
+  checks refs against (`agent/validate.py::web_label_for`). The
+  model-facing `WebAnswer` schema and the validation are unchanged.
+  Web evidence never becomes an option, a quantity, or a plan source.
+  No source text actually obtained exists (provider `results` is
+  image-only per docs), so time/temperature claims fail closed: a web
+  answer carrying numeric claims is rejected — drop the number and
+  point at the page. Creates a `missing_recipe` investigation
+  candidate only when the request is about a recipe that local
+  retrieval failed to find (zero `search_recipes` + web ok), never for
+  technique or general answers.
 - `plan`: `cooking_plan` (mise en place, steps, plating) from the
   selected source, with `scale_recipe` / `convert_units` results where
   asked. The plan source must equal the selected dish **and** come from

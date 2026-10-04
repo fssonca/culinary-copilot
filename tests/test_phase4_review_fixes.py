@@ -398,7 +398,15 @@ async def _stream_then_disconnect(app: Any, body: dict[str, Any], spec: str) -> 
 
 
 @pytest.mark.parametrize("spec", ["2.3", "2.4"])
-def test_client_disconnect_cancels_workflow_and_records_telemetry(spec: str) -> None:
+@pytest.mark.parametrize("middleware", ["absent", "present"])
+def test_client_disconnect_cancels_workflow_and_records_telemetry(
+    spec: str, middleware: str
+) -> None:
+    """Disconnect cancels the workflow with or without the /ui security
+    headers middleware installed (a permanent regression for the Phase 6
+    app wiring: the middleware must not swallow disconnects)."""
+    from culinary_copilot.api.app import _ui_security_headers
+
     cancelled = {"hit": False}
 
     class _Slow:
@@ -411,6 +419,8 @@ def test_client_disconnect_cancels_workflow_and_records_telemetry(spec: str) -> 
 
     store, state, group = _store_with_group()
     app = _app(store, _settings(), _Slow())
+    if middleware == "present":
+        app.add_middleware(_ui_security_headers)
     with _telemetry() as records, _patched_repo()[0], _patched_repo()[1]:
         chunks = _run(_stream_then_disconnect(app, _body(state, group), spec))
     text = b"".join(chunks).decode()
