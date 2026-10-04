@@ -2377,15 +2377,62 @@ def test_projection_carries_errors_stop_reason(tmp_path: Path) -> None:
 
 
 def test_no_answer_run_reports_no_answer_status(engine, tmp_path: Path) -> None:
+    assert live_run._final_answered({"options": [{"title": "x"}]}) is True
+    assert live_run._final_answered({"plan": {"steps": []}}) is True
+    assert live_run._final_answered({"question": {"question_id": "q"}}) is False
+    assert live_run._final_answered(None) is False
+    assert live_run._final_answered({}) is False
+
+
+def test_question_stop_reports_no_answer_and_na_constraint(engine, tmp_path: Path) -> None:
+    # Checkpoint B condition 6 via the runner: a stop that only asks is
+    # "completed: no-answer", and constraint adherence is "n/a" when
+    # nothing was offered.
     from culinary_copilot.config import Settings
     from culinary_copilot.llm.client import NativeTurnResult
     from culinary_copilot.services.session_store import PostgresSessionStore
 
-    assert live_run._final_answered({"options": [{"title": "x"}]}) is True
-    assert live_run._final_answered({"plan": {"steps": []}}) is True
-    assert live_run._final_answered({"question": {"question_id": "q"}}) is True
-    assert live_run._final_answered(None) is False
-    assert live_run._final_answered({}) is False
+    class _Ask:
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+            return NativeTurnResult(
+                tool_calls=[],
+                parsed={
+                    "decision": "ask_user",
+                    "question": {"question_id": "q1", "question_text": "Which allergy?"},
+                    "note": "need the name",
+                },
+                chain_items=[],
+                input_tokens=5,
+                output_tokens=5,
+            )
+
+    settings = Settings(_env_file=None, epicure_enabled=True)
+    store = PostgresSessionStore(engine)
+    scenario = {
+        "key": "ask-only",
+        "request": "Dinner for a friend with an allergy.",
+        "session": {"constraints": {"dietary_constraints": ["vegan"]}},
+        "settings": {},
+        "scripted_answers": [],
+        "flow": ["recommend"],
+        "fake_flow": "direct",
+        "expected": {"stop_reason": "agent_needs_user_input"},
+    }
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=scenario,
+        ledger=_ledger(),
+        provider_factory=lambda s: _Ask(),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=1,
+        recipe_resolver=None,
+    )
+    assert report["stop_reason"] == "agent_needs_user_input"
+    assert report["status"] == "completed: no-answer (agent_needs_user_input)"
+    assert report["grades"]["constraint_adherence"] == "n/a"
 
     settings = Settings(_env_file=None, epicure_enabled=True)
     store = PostgresSessionStore(engine)

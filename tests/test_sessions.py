@@ -106,7 +106,7 @@ def test_session_defaults_match_checkpoint_budgets() -> None:
     assert state.revision == 1
     assert state.internet_search_allowed is False
     assert state.tool_calls_remaining == DEFAULT_TOOL_CALLS_REMAINING == 12
-    assert state.steps_remaining == DEFAULT_STEPS_REMAINING == 8
+    assert state.steps_remaining == DEFAULT_STEPS_REMAINING == 12
 
 
 def test_confirmed_answers_merge_never_loses() -> None:

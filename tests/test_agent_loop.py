@@ -1633,6 +1633,43 @@ def test_offered_tools_pure() -> None:
     assert "search_recipes" not in {d.name for d in excluded}
 
 
+def test_offered_search_modes_follow_embeddings_setting() -> None:
+    # Phase 7 live fix: vector is absent from the offered enum without
+    # embeddings, present with them; requesting it anyway fails closed.
+    import json as _json
+
+    from culinary_copilot.config import Settings
+    from culinary_copilot.tools.registry import strict_parameters_schema
+
+    state = SessionState(id="ses-m")
+    off = {
+        d.name: d
+        for d in offered_tools(
+            state=state,
+            excluded=set(),
+            timeout_s=10.0,
+            settings=Settings(_env_file=None, embeddings_enabled=False),
+        )
+    }
+    off_mode = strict_parameters_schema(off["search_recipes"].args_model)["properties"]["mode"]
+    assert "vector" not in _json.dumps(off_mode)
+    with pytest.raises(Exception):
+        off["search_recipes"].args_model.model_validate({"query": "soup", "mode": "vector"})
+    on = {
+        d.name: d
+        for d in offered_tools(
+            state=state,
+            excluded=set(),
+            timeout_s=10.0,
+            settings=Settings(_env_file=None, embeddings_enabled=True),
+        )
+    }
+    assert (
+        on["search_recipes"].args_model.model_validate({"query": "soup", "mode": "vector"}).mode
+        == "vector"
+    )
+
+
 def test_next_actions_for_loop_reasons() -> None:
     # Budgets are per session and never reset: start a new session.
     assert next_action_for("agent_max_steps") == "change_request"
@@ -3195,6 +3232,207 @@ def test_note_unsupported_pairing_rejected_then_returned_passes(engine) -> None:
     assert result.final.get("note_claims") == "verified"
 
 
+def test_note_dish_name_from_request_and_titles_supported(engine) -> None:
+    # Phase 7 live fix (plan-safety): "curry" was flagged although the
+    # user asked for it and the option titles named it. Request text
+    # and selected option titles are support sources now.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    core = _VocabEpicureCore({"curry", "saffron", "pork", "chicken"})
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "creamy chicken curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                    note="creamy chicken curry for tonight",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        epicure_core=core,
+        request_text="Give me the creamy chicken curry recipe.",
+    )
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert rejects == []
+    assert result.final is not None
+    assert result.final.get("note_claims") == "verified"
+
+
+def test_note_genuinely_unsupported_pairing_still_rejected(engine) -> None:
+    # Same support sources, but "saffron" and "curry powder" appear in
+    # neither pairings, ingredients, request nor titles: still rejected.
+    # Phrase matching stays narrow: "curry" in the request does not
+    # cover "curry powder".
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    core = _VocabEpicureCore({"curry", "curry powder", "saffron", "pork", "chicken"})
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "creamy chicken curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                    note="creamy chicken curry with saffron and curry powder",
+                ),
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                    note="creamy chicken curry with pork",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        epicure_core=core,
+        request_text="Give me the creamy chicken curry recipe.",
+    )
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    errors = rejects[0].payload["errors"]
+    assert any("unsupported pairing" in e and "saffron" in e for e in errors)
+    assert any("unsupported pairing" in e and "curry powder" in e for e in errors)
+    assert not any("'curry'" in e for e in errors)
+
+
+def _saffron_title_run(engine, *, stored_request: str | None) -> tuple[Any, list[Any]]:
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    if stored_request is not None:
+        record_user_message(store, state.id, text=stored_request)
+    core = _VocabEpicureCore({"curry", "saffron", "pork", "chicken"})
+    titled = [
+        _opt(title="Creamy Chicken Curry with Saffron", quantities=[]),
+        _opt(source_id="lentil-2", title="Red Lentil Soup", quantities=[]),
+    ]
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "creamy chicken curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    titled,
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                    note="creamy chicken curry with saffron",
+                ),
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                    note="creamy chicken curry for tonight",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True), epicure_core=core)
+    result = _run(run_agent(state.id, deps=deps))
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    return result, rejects
+
+
+def test_note_pairing_not_supported_by_model_written_title(engine) -> None:
+    # Option titles are model-supplied and unvalidated: a title naming
+    # "saffron" must not vouch for a saffron pairing. Only the resolved
+    # source document's title counts.
+    result, rejects = _saffron_title_run(engine, stored_request="creamy chicken curry")
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert len(rejects) == 1
+    errors = rejects[0].payload["errors"]
+    assert any("unsupported pairing" in e and "saffron" in e for e in errors)
+    assert not any("'curry'" in e for e in errors)
+
+
+def test_note_dish_name_supported_by_stored_user_message(engine) -> None:
+    # API path: no explicit request_text; the latest stored user
+    # message (same text the pairing-cue guard reads) supports "curry".
+    # The model-written saffron title still supports nothing.
+    result, rejects = _saffron_title_run(engine, stored_request="I'd like a curry tonight")
+    assert result.stop_reason == "agent_sufficient_evidence"
+    errors = [e for r in rejects for e in r.payload["errors"]]
+    assert not any("'curry'" in e for e in errors)
+    assert any("saffron" in e for e in errors)
+
+
 def test_technique_time_claim_needs_cited_chunk(engine) -> None:
     store = PostgresSessionStore(engine)
     state = _session(store)
@@ -3804,7 +4042,9 @@ def test_growing_turns_reach_toolless_final_before_budget_stop(engine) -> None:
             )
 
     provider = _GrowingProvider()
-    deps = _deps(store, provider)
+    # Pinned explicitly: the scripted turn sizes are calibrated to a 30k
+    # input ceiling (the default was raised to 60k on 2026-10-04).
+    deps = _deps(store, provider, settings=_settings(agent_input_token_ceiling=30000))
     assert deps.settings.agent_input_token_ceiling == 30000
     assert deps.settings.agent_output_token_ceiling == 12000
     result = _run(run_agent(state.id, deps=deps))
@@ -3813,7 +4053,7 @@ def test_growing_turns_reach_toolless_final_before_budget_stop(engine) -> None:
         "a tool-less final turn ran before the input budget stopped the session"
     )
     assert len(provider.seen_tools) <= 8
-    # Budgets themselves are unchanged.
+    # Budgets themselves are unchanged by the run.
     assert deps.settings.agent_input_token_ceiling == 30000
     assert deps.settings.agent_output_token_ceiling == 12000
 

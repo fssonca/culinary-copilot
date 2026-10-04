@@ -470,6 +470,7 @@ def offered_tools(
     excluded: set[str],
     timeout_s: float,
     epicure_enabled: bool = True,
+    settings: Any = None,
 ) -> list[ToolDefinition]:
     """Registry tools offered to the model for this step.
 
@@ -478,8 +479,12 @@ def offered_tools(
     call); tools that returned ``tool_not_configured`` in this session
     are not offered again. The four Epicure pairing tools share one
     backend, so when ``epicure_enabled`` is false none of them is
-    offered at all.
+    offered at all. Search mode enums and descriptions are built from
+    settings, so vector is absent when embeddings are off (Phase 7
+    live fix); requesting it anyway fails closed with a typed error.
     """
+    from culinary_copilot.tools import search_tools, technique_tools
+
     out: list[ToolDefinition] = []
     for definition in all_tool_definitions(timeout_s=timeout_s):
         if definition.name in excluded:
@@ -491,6 +496,8 @@ def offered_tools(
         if definition.name in _PAIRING_TOOLS and not epicure_enabled:
             continue
         out.append(definition)
+    out = search_tools.with_configured_search_modes(out, settings)
+    out = technique_tools.with_configured_technique_modes(out, settings)
     return out
 
 
@@ -938,7 +945,13 @@ _TASK_FRAMING = (
     "without naming it, ask which one before recommending — the "
     "question must come before any search for safe options; never "
     "guess the restriction. Never call a dish safe or free of an "
-    "allergen; say which listed ingredients were checked. When the user asks for a dish the corpus "
+    "allergen; say which listed ingredients were checked. Constraint "
+    "words (allergens, diets like 'peanut-free' or 'vegan') are not "
+    "searchable text: search by dish or ingredients, then check "
+    "constraints on fetched recipes with get_recipe — a 0-result "
+    "search never proves an option unsafe, and a recipe fetched "
+    "earlier in this session (see the evidence digest) is already "
+    "retrieved. When the user asks for a dish the corpus "
     "does not have and a web search returned sources, answer with "
     "web_answer citing them (a discovery answer if no verified source "
     "text exists). Do not ask whether they want a web result. Ask only "
@@ -1577,6 +1590,7 @@ async def run_agent(
             excluded=excluded,
             timeout_s=timeout_s,
             epicure_enabled=bool(getattr(settings, "epicure_enabled", False)),
+            settings=settings,
         )
         if final_turn:
             # No tools are sent on the final turn: the request carries
@@ -2760,6 +2774,7 @@ async def _handle_finish(
                 for n in session_pairing_names(store, session_id, pairing_lines)
             }
             selection_texts: list[str] = []
+            selection_titles: list[str] = []
             for option in selections:
                 try:
                     selection_doc = resolve(
@@ -2770,13 +2785,31 @@ async def _handle_finish(
                     selection_doc = None
                 if isinstance(selection_doc, dict):
                     selection_texts.append(doc_text(selection_doc))
+                    if selection_doc.get("title"):
+                        selection_titles.append(str(selection_doc["title"]))
             vocabulary = _session_vocabulary(deps)
             if vocabulary:
+                # Dish names from the request and the source titles are
+                # legitimate support too (Phase 7 live fix: "curry" was
+                # flagged although the user asked for it and the recipe
+                # titles named it). Phrase-level matching keeps this
+                # narrow: only the exact phrase counts.
+                # Titles come from the resolved source documents, never
+                # from the model-supplied option titles (those are not
+                # validated, so they cannot vouch for a pairing). The
+                # request is the same text the pairing-cue guard reads.
+                support_texts = list(selection_texts) + selection_titles
+                request_support = effective_request_text(
+                    getattr(deps, "request_text", None),
+                    user_messages_from_events(store, session_id),
+                )
+                if request_support and request_support.strip():
+                    support_texts.append(request_support)
                 for term in _extract_vocab_terms(model_note_text, vocabulary):
                     checkable_claims += 1
                     if not (
                         any(_term_in_text(term, name) for name in pairing_names)
-                        or any(_term_in_text(term, text) for text in selection_texts)
+                        or any(_term_in_text(term, text) for text in support_texts)
                     ):
                         grounding_errors.append(
                             f"note names unsupported pairing {term!r} (not in Epicure "

@@ -1,18 +1,26 @@
 {
-  "version": "live-scenarios-phase7-2026-10-04",
-  "note": "Phase 7 prepare-only (no run authorized). Synthetic requests. Runner schema (key, request, session, settings, scripted_answers, flow, fake_flow, expected); flows use the runner's select-first and resume steps. Do not touch the frozen v1, v2 or phase5 scenario files.",
+  "version": "live-scenarios-phase7-v2-2026-10-04",
+  "note": "Phase 7 prepare-only (no run authorized). Synthetic requests. Runner schema (key, request, session, settings, scripted_answers, flow, fake_flow, expected); flows use the runner's select-first and resume steps. v2 gives live-chicken-e2e a scripted accept answer so the flow can reach select and plan (the 30-minute request is kept: the guard behaviour is worth seeing). v1 freeze_sha256 5d9e17a540b75c3273b90d4ffe26b55c8170cae041d4ff170f80f857491d162e kept as history. Do not touch the frozen v1, v2 or phase5 scenario files.",
   "scenarios": [
     {
       "key": "live-chicken-e2e",
-      "title": "Chicken dinner end to end: options, select first, plan",
+      "title": "Chicken dinner end to end: ask, accept, options, select, plan",
       "request": "I want a chicken dinner for tonight, about 30 minutes.",
       "session": {},
       "settings": {},
-      "scripted_answers": [],
-      "flow": ["recommend", "select-first", "plan"],
-      "fake_flow": "full-requery",
+      "scripted_answers": [
+        {
+          "question_id": "q-accept",
+          "answer": "yes, that option"
+        }
+      ],
+      "flow": ["recommend-ask", "resume", "select-first", "plan"],
+      "fake_flow": "full-ask-accept",
       "expected": {
         "stop_reason": "agent_sufficient_evidence",
+        "asked": true,
+        "answer_recorded": true,
+        "resumed_used_answer": true,
         "plan": true,
         "min_options": 2
       }
@@ -130,5 +138,5 @@
       }
     }
   ],
-  "freeze_sha256": "5d9e17a540b75c3273b90d4ffe26b55c8170cae041d4ff170f80f857491d162e"
+  "freeze_sha256": "0a5cd96b5a8e1e5794a3358a102caef3da54a447bab512003924516f71d58ed2"
 }

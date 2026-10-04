@@ -157,7 +157,7 @@ def test_create_defaults_permission_off_and_links_clarification(engine) -> None:
     assert created.revision == 1
     assert created.internet_search_allowed is False
     assert created.tool_calls_remaining == 12
-    assert created.steps_remaining == 8
+    assert created.steps_remaining == 12
     assert created.clarification_request_id == "req-abc"
     assert created.clarification_group_id == "grp-abc"
     reread = store.get(created.id)
@@ -332,7 +332,7 @@ def test_create_uses_configured_budgets_and_always_discover(engine) -> None:
     body = client.post("/api/v1/sessions", json={}).json()
     assert body["current_phase"] == "discover"
     assert body["tool_calls_remaining"] == 12
-    assert body["steps_remaining"] == 8
+    assert body["steps_remaining"] == 12
 
     custom = _api_client(
         engine, settings=_Settings(_env_file=None, session_max_tool_calls=5, session_max_steps=3)

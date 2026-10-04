@@ -1080,6 +1080,30 @@ def _effective_settings(settings: Any) -> Any:
     )
 
 
+def count_recipe_embeddings(db_url: str) -> int | None:
+    """Read-only recipe-embedding count (None when unverifiable).
+
+    A missing ``recipe_embeddings`` table means zero rows. Any other
+    failure (unreachable database) is None: the run fails later at the
+    isolation snapshot, never silently.
+    """
+    from sqlalchemy import create_engine, text
+
+    try:
+        engine = create_engine(db_url)
+        with engine.connect() as conn:
+            total = conn.execute(text("SELECT count(*) FROM recipe_embeddings")).scalar()
+        engine.dispose()
+        return int(total or 0)
+    except Exception as exc:
+        message = str(exc)
+        if "recipe_embeddings" in message and (
+            "does not exist" in message or "no such table" in message.lower()
+        ):
+            return 0
+        return None
+
+
 def preflight(
     args: Any,
     settings: Any,
@@ -1087,6 +1111,7 @@ def preflight(
     history_path: Path | str | None = None,
     *,
     probe: Any | None = None,
+    recipe_embeddings: int | None = None,
 ) -> tuple[bool, list[str], dict[str, Any]]:
     """Refuse (False) on any failed check; records versions and corpus state.
 
@@ -1096,6 +1121,8 @@ def preflight(
     per-scenario Epicure check (every scenario except
     ``live-epicure-unavailable`` must inherit an enabled Epicure);
     ``probe`` overrides the cache-only Epicure probe (tests only).
+    ``recipe_embeddings`` overrides the live recipe-embedding count
+    (tests only; None queries the database when the check applies).
     """
     problems: list[str] = []
     record: dict[str, Any] = {}
@@ -1195,6 +1222,30 @@ def preflight(
         )
     record["search_reservation_status"] = SEARCH_RESERVATION_STATUS
     live_mode = bool(getattr(args, "live", False))
+    # Checkpoint 0 lets the agent choose vector mode, and every earlier
+    # live run enabled it: refuse a live run with embeddings off while
+    # the database already has recipe embeddings (Phase 7 live fix).
+    embeddings_on = bool(getattr(settings, "embeddings_enabled", False))
+    record["embeddings_enabled"] = embeddings_on
+    if live_mode and not embeddings_on:
+        known = recipe_embeddings
+        if known is None:
+            try:
+                db_url = args.database_url or settings.database_url.get_secret_value()
+            except Exception:
+                db_url = ""
+            known = count_recipe_embeddings(db_url) if db_url else None
+        record["recipe_embeddings"] = known
+        if known is None:
+            problems.append(
+                "recipe embedding state unverifiable: set EMBEDDINGS_ENABLED=true "
+                "or point --database-url at the run database"
+            )
+        elif known > 0:
+            problems.append(
+                f"EMBEDDINGS_ENABLED is false but the database has {known} recipe "
+                "embeddings: enable embeddings or run against a database without them"
+            )
     selected = list((scenarios or {}).get("scenarios", []) or [])
     search_selected = any(
         bool((s.get("session", {}) or {}).get("internet_search_allowed")) for s in selected
@@ -1253,14 +1304,18 @@ def preflight(
             f"--acknowledge-live-run {PHASE7_ACK_VALUE} (checkpoint C)"
         )
     if live_mode and search_selected:
-        estimate_breach = find_unacknowledged_estimate_breach(PHASE5_HISTORY)
+        # Breach check reads the selected pool's history (Phase 7 known
+        # gap, fixed): a Phase 7 breach must block Phase 7 runs. Module
+        # globals stay patchable in tests (not the BUDGET_POOLS dict).
+        breach_history = PHASE7_HISTORY if pool == "phase7" else PHASE5_HISTORY
+        estimate_breach = find_unacknowledged_estimate_breach(breach_history)
         record["search_estimate_breach"] = estimate_breach
         if estimate_breach is not None:
             problems.append(
                 "campaign history records an unacknowledged search estimate breach "
                 f"(run {estimate_breach.get('run_utc')}, {estimate_breach.get('label')}); "
                 "no search run until an owner acknowledges it (LIVE_PLAN.md: add a "
-                "matching entry to estimate_acknowledgments in data/phase5-live/spend-history.json)"
+                f"matching entry to estimate_acknowledgments in {breach_history})"
             )
     prior_spend = recorded_spend_total(Path(history_path)) if history_path else 0.0
     remaining_budget = float(args.ceiling_usd) - prior_spend
@@ -1424,7 +1479,12 @@ def grade_attempt(
     grades["termination"] = stop_reason == expected.get("stop_reason")
     hard = set((scenario.get("session", {}).get("constraints") or {}).keys())
     honored = set((final or {}).get("constraints_honored") or [])
-    grades["constraint_adherence"] = "n/a" if empty_run else (not hard or hard <= honored)
+    # A question stop that offered nothing (no options, no plan) gets no
+    # adherence verdict: the constraints were never applied to anything.
+    nothing_offered = not options and not plan
+    grades["constraint_adherence"] = (
+        "n/a" if empty_run or nothing_offered else (not hard or hard <= honored)
+    )
     retrieved, _full = recipe_session_evidence(store=store, session_id=session_id)
     grades["evidence_support"] = (
         "n/a"
@@ -1626,8 +1686,10 @@ class FakeRunProvider:
     Per-flow scripts (calls count turns across resume runs in one attempt):
     full: tools, options finish, then plan finishes; full-requery: as
     full, but the plan run re-queries techniques first (per-run
-    evidence); ask: tools, ask, tools, options finish; direct: tools,
-    single finish; empty: tools, ask; technique: tools, skip finish.
+    evidence); full-ask-accept: tools, ask offering the found option,
+    resume to options on the scripted answer, then select and plan;
+    ask: tools, ask, tools, options finish; direct: tools, single
+    finish; empty: tools, ask; technique: tools, skip finish.
     """
 
     def __init__(self, scenario: dict[str, Any]) -> None:
@@ -1830,6 +1892,80 @@ class FakeRunProvider:
             if self.calls == 3:
                 return self._tools(
                     ("c6", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            return self._parsed(
+                {
+                    "decision": "finish",
+                    "move_to": "plan",
+                    "result": {
+                        "plan": {
+                            "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                            "mise_en_place": ["dice chicken"],
+                            "steps": ["brown chicken", "serve"],
+                            "plating": "in bowls",
+                            "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                            "adaptations": [],
+                            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                        }
+                    },
+                    "constraints_honored": [],
+                    "note": "fake plan",
+                }
+            )
+        if flow == "full-ask-accept":
+            # End-to-end with a follow-up accept: tools, ask offering
+            # the found option, resume to options on the scripted
+            # answer, then select and plan (plan run re-queries
+            # techniques first, as a real model does after select).
+            if self.calls == 1:
+                return self._tools(
+                    ("c1", "search_recipes", query),
+                    ("c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    ("c5", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            if self.calls == 2:
+                scripted = list(self.scenario.get("scripted_answers", []))
+                question_id = scripted[0]["question_id"] if scripted else "q-fake"
+                return self._parsed(
+                    {
+                        "decision": "ask_user",
+                        "question": {
+                            "question_id": question_id,
+                            "question_text": (
+                                "I found Creamy Chicken Curry; shall I proceed with it?"
+                            ),
+                            "options": ["yes, that option", "no, suggest another"],
+                        },
+                        "note": "fake accept ask",
+                    }
+                )
+            if self.calls == 3:
+                return self._tools(
+                    ("c6", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c7", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                    ("c8", "find_balanced_pairings", {"ingredient": "chicken"}),
+                )
+            if self.calls == 4:
+                return self._options_finish(
+                    [
+                        self._opt(
+                            "curry-1",
+                            "Creamy Chicken Curry",
+                            [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                        ),
+                        self._opt(
+                            "lentil-2",
+                            "Red Lentil Soup",
+                            [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+                        ),
+                    ],
+                    epicure_lines=self._lines(),
+                )
+            if self.calls == 5:
+                return self._tools(
+                    ("c9", "search_techniques", {"query": "safe internal temperatures"}),
                 )
             return self._parsed(
                 {
@@ -2341,15 +2477,16 @@ KNOWN_FLOW_STEPS = frozenset({"recommend", "recommend-ask", "resume", "select-fi
 
 def _final_answered(final: dict[str, Any] | None) -> bool:
     """True when the run produced an answer: options, a plan, a
-    technique answer, a web answer, or an accepted final (a clarifying
-    question the owner can answer)."""
+    technique answer, or a web answer. A stop that only asks the user
+    a question is "asked the user (awaiting input)", never "answered"
+    (checkpoint B condition 6)."""
     if not isinstance(final, dict):
         return False
     if final.get("options") or final.get("plan") or final.get("technique_answer"):
         return True
     if final.get("web_answer"):
         return True
-    return bool(final.get("question"))
+    return False
 
 
 def run_scenario_live(

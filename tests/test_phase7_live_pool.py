@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "evals" / "phase3_agent"))
 
 import live_run
@@ -102,8 +104,83 @@ def test_phase7_search_cap_enforced_inside_run() -> None:
     assert "run limit reached" in reason
 
 
+def test_preflight_refuses_embeddings_off_with_db_embeddings() -> None:
+    # Phase 7 live fix (vegan run): Checkpoint 0 lets the agent choose
+    # vector, so a live run with embeddings off misrepresents while the
+    # database has recipe embeddings.
+    args = _args(live=True)
+    ok, problems, record = live_run.preflight(
+        args, _settings(), {"scenarios": []}, history_path=None, recipe_embeddings=16033
+    )
+    assert ok is False
+    assert any("EMBEDDINGS_ENABLED is false" in p for p in problems)
+    assert record["recipe_embeddings"] == 16033
+
+
+def test_preflight_embeddings_gate_passes_when_on_or_empty() -> None:
+    from culinary_copilot.config import Settings as _Settings
+
+    on = live_run._effective_settings(_Settings(_env_file=None, embeddings_enabled=True))
+    ok, problems, _ = live_run.preflight(
+        _args(live=True), on, {"scenarios": []}, history_path=None, recipe_embeddings=16033
+    )
+    assert not any("EMBEDDINGS_ENABLED is false" in p for p in problems)
+    ok, problems, _ = live_run.preflight(
+        _args(live=False), _settings(), {"scenarios": []}, history_path=None
+    )
+    assert not any("EMBEDDINGS_ENABLED is false" in p for p in problems)
+
+
 def test_phase7_ledger_refuses_over_cap() -> None:
     ledger = live_run.SpendLedger(model="gpt-6-luna", ceiling_usd=0.01)
     assert ledger.reserve(label="t1", input_tokens=100, max_output=100) is True
     # A reservation that does not fit the remainder refuses inside the run.
     assert ledger.reserve(label="t2", input_tokens=10_000_000, max_output=10_000_000) is False
+
+
+def test_phase7_estimate_breach_reads_pool_history(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Known gap, fixed: the breach check reads the selected pool's
+    # history, so a Phase 7 breach blocks Phase 7 runs.
+    import json as _json
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    breach = {
+        "ceiling_usd": 0.50,
+        "runs": [
+            {
+                "run_utc": "2026-10-04T10:00:00Z",
+                "attempt": 1,
+                "model": "gpt-6-luna",
+                "entries": [
+                    {
+                        "label": "search-1",
+                        "decision": "search_estimate_exceeded",
+                        "usd": 0.03,
+                        "kind": "search",
+                    }
+                ],
+            }
+        ],
+    }
+    phase7_history = tmp_path / "phase7-spend-history.json"
+    phase7_history.write_text(_json.dumps(breach), encoding="utf-8")
+    monkeypatch.setattr(live_run, "PHASE7_HISTORY", phase7_history)
+    args = _args(acknowledge_live_run=live_run.PHASE7_ACK_VALUE)
+    scenarios = {
+        "scenarios": [
+            {
+                "key": "s",
+                "session": {"internet_search_allowed": True},
+                "settings": {},
+                "scripted_answers": [],
+                "flow": ["recommend"],
+                "expected": {"stop_reason": "agent_sufficient_evidence"},
+            }
+        ]
+    }
+    ok, problems, _ = live_run.preflight(args, _settings(), scenarios, history_path=None)
+    assert ok is False
+    assert any("unacknowledged search estimate breach" in p for p in problems)
+    assert any(str(phase7_history) in p for p in problems)

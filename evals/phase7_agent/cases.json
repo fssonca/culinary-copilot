@@ -1,6 +1,6 @@
 {
-  "version": "phase7-cases-v2-2026-10-04",
-  "note": "SYNTHETIC scripted model turns, not model output. v2 tightens scoring: adversarial cases pin the rejection text, dietary cases pin forbidden options and constraint_check statuses, allergy resume pins per-option checks, oat pins the run final, saw_error is strict. v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored dietary/adversarial cases on the stop reason alone; its aggregate is kept in results.json history. Later edits need a new version, never a silent change.",
+  "version": "phase7-cases-v3-2026-10-04",
+  "note": "SYNTHETIC scripted model turns, not model output. v3 adds p7-vector-unconfigured (unconfigured vector mode fails closed, model recovers with fulltext) and p7-resume-uses-evidence (resumed run finishes on the earlier run's retrieved recipe). v2 tightens scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored dietary/adversarial cases on the stop reason alone; aggregates are kept in results.json history. Later edits need a new version, never a silent change.",
   "cases": [
     {
       "id": "p7-epicure-default",
@@ -529,6 +529,47 @@
       "expected": {"stop_reason": "agent_needs_user_input", "shape": "question", "retrieval_miss": true},
       "required_tools": ["search_techniques"],
       "allowed_tools": ["search_techniques", "search_recipes"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-vector-unconfigured",
+      "criteria": ["vector-unconfigured", "regression-live-vegan"],
+      "adversarial": false,
+      "request": "I want a chicken dinner for tonight.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken dinner", "mode": "vector"}], ["c2", "search_recipes", {"query": "chicken dinner"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}], ["c5", "find_balanced_pairings", {"ingredient": "chicken"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used in final options"}], "note": "packet finish after vector refused"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 2, "saw_error": "tool_invalid_arguments"},
+      "required_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-resume-uses-evidence",
+      "criteria": ["resume-evidence", "regression-live-peanut"],
+      "adversarial": false,
+      "request": "Something with chicken; I might have yogurt.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken"}], ["c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}]]],
+        ["parsed", {"decision": "ask_user", "question": {"question_id": "q-yogurt", "question_text": "Do you have plain yogurt?", "options": ["yes", "no"]}, "note": "curry needs yogurt"}]
+      ],
+      "answer": {"question_id": "q-yogurt", "answer": "no"},
+      "resume_turns": [
+        ["tools", [["c3", "find_balanced_pairings", {"ingredient": "chicken"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used"}], "note": "packet finish on earlier evidence"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 1},
+      "required_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
       "forbidden_tools": ["search_web"]
     },
     {

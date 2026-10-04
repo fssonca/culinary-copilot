@@ -4,8 +4,10 @@
 at cutoff 0.66 per Checkpoint 0 decision 2). When ``mode`` is omitted,
 ``RETRIEVAL_MODE`` applies (code default ``fulltext``). The embedding
 provider starts only when ``EMBEDDINGS_ENABLED`` is set, with a
-model/dimension check; vector mode without embeddings returns a typed
-``unavailable`` result and never falls back to full-text. The response
+model/dimension check; the offered mode enum is built from settings
+(vector absent without embeddings). Vector mode without embeddings
+returns a typed ``unavailable`` result pointing back at full-text and
+never falls back silently. The response
 logs and returns which mode actually ran.
 
 ``get_recipe`` fetches one canonical ``(dataset_id, source_id)`` document.
@@ -27,6 +29,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from culinary_copilot.domain.recommendations import (
+    NEXT_RETRY,
     REASON_TOOL_NOT_CONFIGURED,
     REASON_TOOL_UNAVAILABLE,
     next_action_for,
@@ -50,6 +53,31 @@ class SearchRecipesArgs(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     mode: Literal["fulltext", "vector"] | None = None
     limit: int = Field(default=5, ge=1, le=50)
+
+
+class SearchRecipesArgsFulltext(BaseModel):
+    """``search_recipes`` arguments when vector mode is not configured.
+
+    Same fields, but the mode enum carries only ``"fulltext"`` so the
+    offered schema never invites vector (Phase 7 live fix: the vegan
+    run asked for vector with embeddings off).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=500)
+    mode: Literal["fulltext"] | None = None
+    limit: int = Field(default=5, ge=1, le=50)
+
+
+def embeddings_configured(settings: Any) -> bool:
+    """True when query embeddings are enabled in settings."""
+    return bool(settings is not None and getattr(settings, "embeddings_enabled", False))
+
+
+def search_modes(settings: Any) -> tuple[str, ...]:
+    """Modes actually configured: vector only with embeddings enabled."""
+    return ("fulltext", "vector") if embeddings_configured(settings) else ("fulltext",)
 
 
 class GetRecipeArgs(BaseModel):
@@ -188,9 +216,18 @@ async def search_recipes_impl(args: SearchRecipesArgs, context: ToolContext) -> 
     from culinary_copilot.embeddings.provider import DisabledEmbeddingProvider
 
     if provider is None or isinstance(provider, DisabledEmbeddingProvider):
-        return _not_configured(
-            "search_recipes not configured: vector mode needs EMBEDDINGS_ENABLED with a provider"
-        )
+        # Phase 7 live fix: point back at full-text (retry with new
+        # args, not a config change). No silent fallback.
+        return {
+            "ok": False,
+            "error_type": "unavailable",
+            "reason": REASON_TOOL_NOT_CONFIGURED,
+            "message": (
+                "search_recipes not configured: vector mode needs "
+                'EMBEDDINGS_ENABLED with a provider; retry the search with mode "fulltext"'
+            ),
+            "next_action": NEXT_RETRY,
+        }
     model = str(_settings_value(context, "embedding_model", "text-embedding-3-small"))
     dimension = int(_settings_value(context, "embedding_dimension", 1536))
     try:
@@ -286,15 +323,58 @@ async def get_recipe_impl(args: GetRecipeArgs, context: ToolContext) -> dict[str
     return {"ok": True, "recipe": dict(doc)}
 
 
+def search_recipes_description(settings: Any = None) -> str:
+    """Description built from settings: vector named only when configured.
+
+    No settings means unknown configuration: keep the full description
+    (the offer path always passes real settings).
+    """
+    if settings is None or "vector" in search_modes(settings):
+        return (
+            "Full-text or vector (cutoff 0.66) recipe search; mode omitted follows RETRIEVAL_MODE."
+        )
+    return (
+        'Full-text recipe search (only mode "fulltext" is configured; '
+        "vector needs EMBEDDINGS_ENABLED); "
+        "mode omitted runs full-text."
+    )
+
+
+def with_configured_search_modes(
+    definitions: list[ToolDefinition], settings: Any
+) -> list[ToolDefinition]:
+    """Swap search definitions for settings-built ones (offer path only).
+
+    The mode enum and description are built from settings, so vector
+    is absent when embeddings are off. Default definitions (no
+    settings) keep the full schema, so direct run_tool callers still
+    reach the implementation's typed error.
+    """
+    from dataclasses import replace
+
+    if settings is None or "vector" in search_modes(settings):
+        return list(definitions)
+    out: list[ToolDefinition] = []
+    for definition in definitions:
+        if definition.name == "search_recipes":
+            out.append(
+                replace(
+                    definition,
+                    description=search_recipes_description(settings),
+                    args_model=SearchRecipesArgsFulltext,
+                )
+            )
+        else:
+            out.append(definition)
+    return out
+
+
 def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
     """Search-tool definitions (timeout server-set, never caller-set)."""
     return [
         ToolDefinition(
             name="search_recipes",
-            description=(
-                "Full-text or vector (cutoff 0.66) recipe search; "
-                "mode omitted follows RETRIEVAL_MODE."
-            ),
+            description=search_recipes_description(None),
             args_model=SearchRecipesArgs,
             timeout_s=float(timeout_s),
             idempotent=True,
@@ -315,10 +395,15 @@ __all__ = [
     "TOOL_VECTOR_CUTOFF",
     "GetRecipeArgs",
     "SearchRecipesArgs",
+    "SearchRecipesArgsFulltext",
     "build_embed_provider",
+    "embeddings_configured",
     "get_recipe_impl",
     "resolve_search_mode",
     "resolve_vector_cutoff",
+    "search_modes",
+    "search_recipes_description",
     "search_recipes_impl",
     "tool_definitions",
+    "with_configured_search_modes",
 ]

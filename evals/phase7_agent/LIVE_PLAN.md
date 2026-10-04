@@ -32,19 +32,21 @@ check below).
 ## Scenarios
 
 `evals/phase7_agent/live_scenarios.json`
-(version `live-scenarios-phase7-2026-10-04`, synthetic requests,
+(version `live-scenarios-phase7-v2-2026-10-04`, synthetic requests,
 runner schema: key, request, session, settings, scripted_answers,
 flow, fake_flow, expected; flows use the runner's `select-first` and
 `resume` steps; search on for `live-search-once`, off for
 `live-search-toggle`):
 
-- file sha256: `f202afb67cc0f01b18b588f38a3884eaf3eb20da6528c2c8139f399ea5d0577d`
+- file sha256: `fdc5a39520d00654681b4908977b2260e1918a03a3e6094b04491e2877ec9853`
 - freeze sha256 (`load_scenarios` canonical-body check):
+  `0a5cd96b5a8e1e5794a3358a102caef3da54a447bab512003924516f71d58ed2`
+- v1 freeze sha256 kept as history:
   `5d9e17a540b75c3273b90d4ffe26b55c8170cae041d4ff170f80f857491d162e`
 
 | Key | Flow | Fake flow | Expected stop |
 |---|---|---|---|
-| live-chicken-e2e | recommend, select-first, plan | full-requery | sufficient, plan |
+| live-chicken-e2e | recommend-ask, resume (accept), select-first, plan | full-ask-accept | sufficient, asked + recorded + resumed, plan |
 | live-yogurt-ask | recommend-ask, resume | ask | sufficient, asked + recorded + resumed |
 | live-peanut-allergy | recommend-ask, resume | ask-allergy | sufficient, allergy check |
 | live-vegan-conflict | recommend | direct | sufficient, min 1 option |
@@ -61,6 +63,7 @@ The toggle scenario holds permission off from the start; the fake
 ## Exact command (after explicit owner "run it")
 
 ```sh
+HF_HUB_OFFLINE=1 LLM_RECOMMENDATION_ENABLED=true EPICURE_ENABLED=true EMBEDDINGS_ENABLED=true \
 uv run python evals/phase3_agent/live_run.py --live --yes \
   --budget-pool phase7 \
   --acknowledge-live-run phase7-checkpoint-c-2026-10-04 \
@@ -86,25 +89,25 @@ alongside `--live --ceiling-usd`. Removed flags that do not exist:
 
 - `--ceiling-usd 0.15` (pool cap $0.50, a proposal for the owner in
   checkpoint C, not a decision): `main` refuses a ceiling above the
-  pool cap (`live_run.py:2872`); the run ledger starts at ceiling
-  minus recorded prior (`live_run.py:2955`); every model turn reserves
+  pool cap (`live_run.py:2933`); the run ledger starts at ceiling
+  minus recorded prior (`live_run.py:3016`); every model turn reserves
   input plus maximum output via `SpendLedger.reserve`
   (`live_run.py:533`) called by `LedgerModelProvider` (`live_run.py:909`),
   and unaffordable turns stop the scenario as budget-exhausted.
   Tests: `test_phase7_refuses_ceiling_above_cap`,
   `test_phase7_ledger_refuses_over_cap`.
 - `--acknowledge-live-run`: preflight refuses any other value
-  (`live_run.py:1252`). It is an authorization, enforced at
+  (`live_run.py:1303`). It is an authorization, enforced at
   preflight by nature. Tests: `test_phase7_refuses_without_ack`,
   `test_phase7_accepts_with_ack`.
 - `--acknowledge-search-estimate`: preflight refuses live search runs
-  without the exact value (`live_run.py:1205`); search spend itself is
+  without the exact value (`live_run.py:1260`); search spend itself is
   bounded in-run (next rows). Tests:
   `test_preflight_ack_required_when_search_selected`,
   `test_preflight_ack_rejects_wrong_value` (`tests/test_phase5_runs.py`).
 - `--search-max-per-live-session 1`: built into `SearchRunLimits`
-  (`live_run.py:2943`), attached to the tool context
-  (`live_run.py:2461`), enforced per dispatch inside `search_web`
+  (`live_run.py:3004`), attached to the tool context
+  (`live_run.py:2522`), enforced per dispatch inside `search_web`
   after the slot claim (`src/culinary_copilot/tools/stub_tools.py:233`).
   Tests: `test_phase7_search_cap_enforced_inside_run`,
   `test_session_limit_allows_one_of_three`.
@@ -117,15 +120,22 @@ alongside `--live --ceiling-usd`. Removed flags that do not exist:
   `test_preflight_refuses_when_campaign_cap_reached`.
 - Search estimate: reconciled against the $0.025 estimate in-run;
   overrun raises `SearchEstimateExceeded` and stops the campaign at
-  once (`live_run.py:2616`); preflight refuses while a breach is
+  once (`live_run.py:2677`); preflight refuses while a breach is
   unacknowledged. Tests: `test_ledgered_search_over_estimate_stops`,
   `test_preflight_refuses_unacknowledged_estimate_breach`.
 - `--max-attempts 1`: the scenario loop runs at most one attempt
-  (`live_run.py:2448`); provider-internal retries are forced to zero
+  (`live_run.py:2509`); provider-internal retries are forced to zero
   (`live_run.py:1076`).
 - `--expect-db-name` / `--expect-db-host`: `main` requires both
-  (`live_run.py:2875`); preflight refuses a mismatch
-  (`live_run.py:1296`).
+  (`live_run.py:2936`); preflight refuses a mismatch
+  (`live_run.py:1353`).
+- Environment (first line of the command, checked by
+  `tests/test_phase7_live_plan.py`): `HF_HUB_OFFLINE=1` (preflight
+  refuses otherwise), `LLM_RECOMMENDATION_ENABLED=true`,
+  `EPICURE_ENABLED=true`, and `EMBEDDINGS_ENABLED=true`. Preflight
+  refuses a live run with embeddings off while the database has
+  recipe embeddings (`live_run.py:1246`) — the vegan-run
+  misconfiguration cannot recur.
 - `--scenarios-file` / `--scenarios`: `load_scenarios` verifies the
   freeze hash (`live_run.py:883`); `tests/test_phase7_live_plan.py`
   parses this exact command block with the runner's own parser and
@@ -134,16 +144,19 @@ alongside `--live --ceiling-usd`. Removed flags that do not exist:
 
 ## Estimates
 
-Per-turn reservation ($0.0036, the ceiling basis): the runner reserves
-each model turn at its upper bound — `estimate_request_tokens`
-(byte length of the serialized input items, tools array and text
-schema plus overhead, `live_run.py:269`) of priced input plus the full
+Per-turn reservation (the ceiling basis): the runner reserves each
+model turn at its upper bound — `estimate_request_tokens` (byte
+length of the serialized input items, tools array and text schema
+plus overhead, `live_run.py:269`) of priced input plus the full
 per-turn maximum output (`llm_rec_max_output_tokens = 6500`,
 `config.py:82`). At gpt-6-luna prices ($0.10/1M input, $0.50/1M
-output, `llm/models.py:58`): 6500 output tokens reserve $0.00325 and a
-typical ~2–3k-token agent-turn input reserves ~$0.0002–0.0003, rounded
-up to the $0.0036 planning figure. Search reservation $0.025 per
-dispatch (decision 4, option A estimate, acknowledged overrun risk).
+output, `llm/models.py:58`), the 40 observed Phase 7 turns reserved a
+mean of $0.00524 and a max of $0.00578 (reserved inputs ~17–25k
+tokens: the tools array and directive schema dominate). Pre-run
+planning used $0.0036 per turn, which understated the input side;
+with 40 turns the ledger reserved $0.2345 in total and reconciled it
+down to $0.0292 spent. Search reservation $0.025 per dispatch
+(decision 4, option A estimate, acknowledged overrun risk).
 
 Actual reconciled costs (expected-cost basis): 40 model turns across
 `data/phase3-live` (14 turns, $0.0055) and `data/phase5-live` (26
@@ -151,16 +164,16 @@ turns, $0.0098) reconcile to a mean of ~$0.00038 per turn and a max of
 ~$0.00054; 6 reconciled searches total $0.0667, mean ~$0.0111 per
 search; embeddings negligible ($0.000001 over 4 calls).
 
-Totals for the 7 scenarios (25 turns, 1 search):
+Planning totals for the 7 scenarios (25 turns, 1 search):
 
 | Basis | Turns | Searches | Total |
 |---|---|---|---|
 | Reservation (ceiling) | 25 × $0.0036 = $0.0900 | 1 × $0.025 = $0.0250 | **$0.1150** |
 | Expected (actuals) | 25 × $0.0004 ≈ $0.0100 | 1 × $0.011 ≈ $0.0110 | **≈ $0.0210** |
 
-`--ceiling-usd 0.15` covers the $0.1150 reservation with margin, under
-the proposed $0.50 pool cap. Remaining Milestone 3 budget: about $0.77
-of $1.00 ($0.1304 + $0.1015 recorded).
+`--ceiling-usd 0.15` covered the run with margin, under the $0.50
+pool cap (now a decision, see the owner record). Remaining Milestone
+3 budget: about $0.74 of $1.00 ($0.1304 + $0.1015 + $0.0292 recorded).
 
 ## Optional owner manual UI check (NOT ledger-covered)
 
@@ -172,10 +185,10 @@ permission-on search. This exercises HTTP/SSE and the page, which the
 runner never touches — and it is NOT covered by the runner's ledger,
 so its spend must be recorded by hand.
 
-Worst case per UI session, from the session budgets (30k input /
-12k output tokens, at most 3 code-limit searches): 30000/1e6 × $0.10
-+ 12000/1e6 × $0.50 + 3 × $0.025 = $0.003 + $0.006 + $0.075 =
-**$0.084**. A few messages stay far below this; record the actual
+Worst case per UI session, from the session budgets (60k input /
+12k output tokens since 2026-10-04, at most 3 code-limit searches):
+60000/1e6 × $0.10 + 12000/1e6 × $0.50 + 3 × $0.025 = $0.006 + $0.006
++ $0.075 = **$0.087**. A few messages stay far below this; record the actual
 usage from the server logs by hand.
 
 ## Open items (not in this run, no runner support)
@@ -190,9 +203,12 @@ usage from the server logs by hand.
 ## Fake dry run (offline, disposable DB, no model calls)
 
 2026-10-04, `--fake` on disposable `culinary_check_phase7dry`
-(created and dropped by the run; never `culinary_copilot`):
-7 answered, 0 no-answer, 0 stopped, 0 not_run of 7; 7 matched
+(created and dropped by the run; never `culinary_copilot`), scenarios
+v2: 7 answered, 0 no-answer, 0 stopped, 0 not_run of 7; 7 matched
 expected stop; isolation ok True; spent $0.0000.
+`live-chicken-e2e` went ask → accept (`q-accept`) → options →
+select → plan in the fake, proving the v2 flow reaches select and
+plan.
 
 | Scenario | Status | Stop |
 |---|---|---|

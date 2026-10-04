@@ -29,11 +29,12 @@ SESSION_STALE_REASON = "stale_revision"
 SESSION_INVALID_TRANSITION_REASON = "invalid_phase_transition"
 
 # Defaults mirror the Checkpoint 0 budgets (owner decision 2026-09-28):
-# MAX_STEPS 8, 12 tool calls per session. Internet search is off by default
+# 12 tool calls per session; MAX_STEPS raised 8 -> 12 by the owner on
+# 2026-10-04 (P3-L-12). Internet search is off by default
 # and enforced in the backend (Phase 5 wires the tool; Phase 1 only stores
 # the permission).
 DEFAULT_TOOL_CALLS_REMAINING = 12
-DEFAULT_STEPS_REMAINING = 8
+DEFAULT_STEPS_REMAINING = 12
 DEFAULT_PHASE = "discover"
 
 

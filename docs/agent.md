@@ -86,8 +86,9 @@ the run the same way, never as a schema failure. Measured: fixed part
 ~2600/turn, realistic 4-turn session ~11.3k in (real doc sizes from
 `data/recipe-import/normalized.jsonl`, never the app DB), recorded live
 structured outputs up to ~2k/call. Ceilings (30000 in / 12000 out)
-cover ~2.6x measured and a full 8-step session; overshoot is impossible
-since 8 steps bound totals by construction.
+covered ~2.6x measured and a full 8-step session. On 2026-10-04 the
+owner raised steps to 12 and input to 60k: the Phase 7 live run measured
+3k-4.5k input per turn, so 30k ran out after ~8 turns.
 
 ## Stop reasons, statuses and `next_action`
 

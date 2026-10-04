@@ -135,11 +135,13 @@ class Settings(BaseSettings):
     # only when full-text returned at least one result.
     retrieval_vector_cutoff: float | None = None
     retrieval_fulltext_gate: bool = False
-    # Agent sessions (Milestone 3, Phase 1, Checkpoint 0 budgets): MAX_STEPS 8,
-    # 12 tool calls per session. Phase 1 stores the remaining budgets on the
-    # session row (defaults below); the bounded loop in Phase 3 enforces them.
+    # Agent sessions (Milestone 3, Phase 1, Checkpoint 0 budgets): 12 tool
+    # calls per session; MAX_STEPS raised 8 -> 12 by the owner on 2026-10-04
+    # (P3-L-12: recommend plus plan did not fit live; see
+    # docs/phase7-owner-decisions.md). Phase 1 stores the remaining budgets
+    # on the session row (defaults below); the bounded loop enforces them.
     session_max_tool_calls: int = 12
-    session_max_steps: int = 8
+    session_max_steps: int = 12
     # Permission-gated web search (Milestone 3, Phase 5, part 2, offline).
     # Per-session search slots (owner decision 3: 3 in code, 2 in the live
     # check via runner flag). Enforced by an atomic slot claim in
@@ -308,11 +310,12 @@ class Settings(BaseSettings):
     # (chars/4; the repo has no token estimator). Measured: fixed part
     # ~2600/turn, realistic 4-turn session ~11.3k in (real doc sizes from
     # data/recipe-import/normalized.jsonl), recorded live structured
-    # outputs up to ~2k/call. Input 30k covers ~2.6x measured and a full
-    # 8-step session; output 12k covers ~6 max-recorded turns; the
-    # per-turn output cap (min 6500 configured max, 500 useful minimum)
-    # keeps single turns sane. Overshoot is impossible: 8 steps bound
-    # totals by construction. See evals/phase3_agent/. Read by
-    # agent/loop.py before every turn.
-    agent_input_token_ceiling: int = 30_000
+    # outputs up to ~2k/call; the per-turn output cap (min 6500
+    # configured max, 500 useful minimum) keeps single turns sane. Input
+    # raised 30k -> 60k by the owner on 2026-10-04 with the 12-step
+    # budget: the Phase 7 live run measured 3k-4.5k input per turn, so
+    # 30k ran out after ~8 turns (docs/phase7-owner-decisions.md).
+    # Output 12k covers ~6 max-recorded turns. See evals/phase3_agent/
+    # and evals/phase7_agent/. Read by agent/loop.py before every turn.
+    agent_input_token_ceiling: int = 60_000
     agent_output_token_ceiling: int = 12_000

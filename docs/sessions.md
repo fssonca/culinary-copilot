@@ -22,8 +22,9 @@ questions, Epicure outcome or skip reason, suggestions, selected dish,
 cooking plan, current phase, evidence/source references,
 internet-search permission (default off), remaining tool budget
 (`tool_calls_remaining` / `steps_remaining`, server-set from
-`SESSION_MAX_TOOL_CALLS` / `SESSION_MAX_STEPS`: defaults 12 / 8 —
-Checkpoint 0 budgets: MAX_STEPS 8, 12 tool calls per session).
+`SESSION_MAX_TOOL_CALLS` / `SESSION_MAX_STEPS`: defaults 12 / 12 —
+Checkpoint 0 budgets, with MAX_STEPS raised from 8 to 12 by the owner
+on 2026-10-04, see `docs/phase7-owner-decisions.md`).
 
 ## Phases and allowed transitions
 

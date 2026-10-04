@@ -48,15 +48,26 @@ def test_plan_command_parses_and_matches_scenarios() -> None:
     block = _command_block()
     for flag in REMOVED_FLAGS:
         assert flag not in block, flag
+    first = block.splitlines()[0]
+    for var in (
+        "HF_HUB_OFFLINE=1",
+        "LLM_RECOMMENDATION_ENABLED=true",
+        "EPICURE_ENABLED=true",
+        "EMBEDDINGS_ENABLED=true",
+    ):
+        assert var in first, var
     argv = shlex.split(block.replace("\\\n", " "))
-    assert argv[:4] == [
+    env_prefix = [t for t in argv if "=" in t and not t.startswith("-")]
+    assert len(env_prefix) == 4, argv
+    rest = argv[len(env_prefix) :]
+    assert rest[:4] == [
         "uv",
         "run",
         "python",
         "evals/phase3_agent/live_run.py",
-    ], argv[:4]
+    ], rest[:4]
     # The runner's own parser: unknown flags fail here, not at run time.
-    args = live_run._args(argv[4:])
+    args = live_run._args(rest[4:])
     assert args.budget_pool == "phase7"
     assert int(args.max_attempts) == 1
     assert int(args.search_max_per_live_session) == 1

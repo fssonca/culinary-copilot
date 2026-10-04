@@ -335,7 +335,7 @@ error. Telemetry (`obs/recommendations.py`) records both transports.
 ```mermaid
 flowchart TD
     UI["/ui page (static, no build)"] -->|message / select / answers / toggle| AgentAPI["Agent endpoints (run, stream, answers, select, permission)"]
-    AgentAPI --> Loop["Bounded agent loop (8 steps / 12 calls / 90 s)"]
+    AgentAPI --> Loop["Bounded agent loop (12 steps / 12 calls / 90 s)"]
     Loop -->|"native function calling, parallel in call order"| Tools["Typed registry"]
     Tools --> Recipes["search_recipes / get_recipe (full-text default)"]
     Tools --> Epicure["Epicure pairings/substitutions (local, CPU)"]

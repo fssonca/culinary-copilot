@@ -1,7 +1,7 @@
 {
   "cases_file": "cases.json",
-  "cases_version": "phase7-cases-v2-2026-10-04",
-  "cases_sha256": "ccff3910a0bfe61b3cd4b3f64a84f4f93e0aff39ca3a69eea49eaa40b8d6ed59",
+  "cases_version": "phase7-cases-v3-2026-10-04",
+  "cases_sha256": "26187f375fb41005f4a52be2b12f2df91aae9797d2b3133051f9a25c5c3e4b27",
   "history_v1": {
     "cases_version": "phase7-cases-v1-2026-10-04",
     "cases_sha256": "5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b",
@@ -36,14 +36,14 @@
   },
   "note": "offline system results (loop control, tools, validators), not model judgement; latency/tokens/cost not measured offline",
   "aggregate": {
-    "total": 28,
-    "scored": 28,
-    "completed": 28,
+    "total": 30,
+    "scored": 30,
+    "completed": 30,
     "task_completion_rate": 1.0,
     "expected_fail_total": 0,
     "expected_fail_completed": 0,
     "stop_reason_distribution": {
-      "agent_sufficient_evidence": 19,
+      "agent_sufficient_evidence": 21,
       "agent_validation_failed": 2,
       "agent_needs_user_input": 3,
       "agent_max_steps": 1,
@@ -52,9 +52,9 @@
       "agent_wall_clock_exceeded": 1
     },
     "invalid_transitions_total": 1,
-    "tool_argument_validity_mean": 0.9928571428571429,
+    "tool_argument_validity_mean": 0.9866666666666667,
     "unnecessary_call_rate_mean": 0.0,
-    "epicure_compliance_rate": 0.9642857142857143,
+    "epicure_compliance_rate": 0.9666666666666667,
     "source_reference_correctness_rate": 1.0,
     "unsupported_claim_cases": 0,
     "adversarial_total": 4,
@@ -820,6 +820,59 @@
       "task_completion": true,
       "steps": 2,
       "tool_calls": 1,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-vector-unconfigured",
+      "criteria": [
+        "vector-unconfigured",
+        "regression-live-vegan"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "saw_error": "tool_invalid_arguments"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 0.8,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-resume-uses-evidence",
+      "criteria": [
+        "resume-evidence",
+        "regression-live-peanut"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 3,
       "invalid_transitions": 0,
       "tool_argument_validity": 1.0,
       "unnecessary_call_rate": 0.0,
