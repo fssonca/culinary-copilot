@@ -13,7 +13,7 @@ Each tool has a name, pydantic argument and result schemas
 caller-set), an idempotency flag, and a cost class
 (`free` / `paid` / `network`).
 
-Timeout precedence (owner decision 2026-10-04): every tool uses
+Timeout precedence (owner decision 2026-10-03): every tool uses
 `TOOL_TIMEOUT_S` (default 10 s per Checkpoint 0) except `search_web`,
 which resolves explicit `SEARCH_WEB_TIMEOUT_S` first, then explicit
 `TOOL_TIMEOUT_S`, then its 30 s default. So the 30 s search default
@@ -37,6 +37,7 @@ the `reason` carries the distinction:
 | `unavailable` | `tool_unavailable` | `retry` | **transient only**: DB or provider errors |
 | `unavailable` | `tool_internal_error` | `contact_operator` | defect: an exception escaped an implementation |
 | `permission_denied` | `tool_permission_denied` | `change_request` | `search_web` while permission is off |
+| `unavailable` | `search_unverified` | `change_request` | `search_web` with no provider source evidence, or no parsed source matching it (outcomes `no_provider_sources` / `no_verified_sources`); same query fails the same way |
 | `invalid_arguments` (scale) | `scale_missing_servings` | `change_request` | source servings unknown |
 | `invalid_arguments` (convert) | `convert_unsupported_unit` | `change_request` | unknown or cross-group units; `count` never converts |
 
@@ -197,14 +198,31 @@ Epicure tools.
    and is recorded as outcome `error`; a tool-level cancellation of
    the provider call is recorded as outcome `cancelled` plus
    operations (no results, ledger unchanged) and still surfaces as
-   a tool timeout upstream.
+   a tool timeout    upstream.
+- Citation provenance (Checkpoint B condition 1): accepted references
+  come from the provider's own evidence (`url_citation` annotations
+  and/or `web_search_call.action.sources`, collected in
+  `llm/client.py`), never from URLs in the search model's generated
+  JSON. A parsed source is kept only when its normalized URL is in
+  the provider URL set; the rest are dropped before the agent or the
+  session ever sees them. Normalization (`_provenance_key`, both
+  sides): `minimize_url` (strips query and fragment — citation URLs
+  often carry `?utm_source` parameters), lowercase scheme and host,
+  no trailing slash except the root. No provider URLs at all, or no
+  surviving source, is a typed failure with no evidence (no summary,
+  no sources; slot stays spent; outcomes `no_provider_sources` /
+  `no_verified_sources`, reason `search_unverified`). Titles prefer
+  the citation title when one exists; `excerpt_model` stays labelled
+  model text. `search_results_retrieved` carries audit fields:
+  `provider_url_count`, `unverified_dropped`, `provider_urls`
+  (minimized, at most 10).
 
 ## New settings (all read, none dead)
 
 | Setting | Default | Read by |
 |---|---|---|
 | `TOOL_TIMEOUT_S` | `10` | `tools/registry.py::_timeout_for` on every call (explicit value also binds `search_web` unless `SEARCH_WEB_TIMEOUT_S` is set explicitly) |
-| `SEARCH_WEB_TIMEOUT_S` | `30` (owner decision 2026-10-04, `search_web` only) | `tools/registry.py::tool_timeout_s` for `search_web` (explicit setting, then explicit `TOOL_TIMEOUT_S`, then this default); `tools/stub_tools.py` bounds the provider request at min(this, `LLM_REC_TIMEOUT_S` = 20 s) |
+| `SEARCH_WEB_TIMEOUT_S` | `30` (owner decision 2026-10-03, `search_web` only) | `tools/registry.py::tool_timeout_s` for `search_web` (explicit setting, then explicit `TOOL_TIMEOUT_S`, then this default); `tools/stub_tools.py` bounds the provider request at min(this, `LLM_REC_TIMEOUT_S` = 20 s) |
 | `TECHNIQUE_RETRIEVAL_MODE` | `fulltext` | `tools/technique_tools.py::resolve_technique_mode` on every call |
 | `EPICURE_COOC_MODEL_ID` / `EPICURE_COOC_REVISION` | `Kaikaku/epicure-cooc` / `03edd31…` | `tools/epicure_tools.py::build_epicure_variants` |
 | `EPICURE_CHEM_MODEL_ID` / `EPICURE_CHEM_REVISION` | `Kaikaku/epicure-chem` / `2461ef3…` | same as above |

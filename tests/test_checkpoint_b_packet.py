@@ -270,7 +270,7 @@ def test_privacy_groups_and_digest_exclusion() -> None:
     groups = {(g["source"], g["minimized"]): g for g in report["free_text_groups"]}
     assert groups[("db event tool_call", True)]["fields"] == 1
     assert groups[("db event user_message", False)]["fields"] == 1
-    assert "verified 2026-10-04" in _packet.phone_hit_disposition(
+    assert "verified 2026-10-03" in _packet.phone_hit_disposition(
         [
             {
                 "pattern": "phone",
@@ -369,3 +369,42 @@ def test_packet_is_rerunnable_and_deterministic(tmp_path: Path) -> None:
             assert first == second, name
     finally:
         _drop_db(db_name, engine)
+
+
+def test_session_outcome_labels_derive_from_stop_reason() -> None:
+    """Checkpoint B condition 6: agent_needs_user_input is 'asked the
+    user (awaiting input)', never 'completed: answered'."""
+    label = _packet.session_outcome_label
+    assert (
+        label(
+            {"stop_reason": "agent_needs_user_input", "grades": {"asked": True}}, "agent_question"
+        )
+        == "asked the user (awaiting input)"
+    )
+    web = label(
+        {"stop_reason": "agent_sufficient_evidence", "grades": {"web_answer": True}},
+        "agent_finished",
+    )
+    assert "one demonstrated discovery answer" in web and "not a reliability result" in web
+    assert (
+        label({"stop_reason": "agent_token_budget_exhausted", "grades": {}}, "agent_step")
+        == "stopped: token budget exhausted (no answer)"
+    )
+    assert (
+        label({"stop_reason": "agent_no_progress", "grades": {}}, "agent_step")
+        == "stopped: no progress (no answer)"
+    )
+    mismatch = label(
+        {"stop_reason": "agent_needs_user_input", "grades": {"asked": True}}, "agent_step"
+    )
+    assert "final event agent_step" in mismatch
+
+
+def test_provenance_text_prefers_prefixed_missing() -> None:
+    assert _packet.provenance_text({}) == "provenance: not recorded (pre-fix)"
+    assert _packet.provenance_text({"provider_url_count": 0, "unverified_dropped": 0}) == (
+        "provenance: 0 provider URLs, 0 dropped"
+    )
+    assert _packet.provenance_text({"provider_url_count": 3, "unverified_dropped": 1}) == (
+        "provenance: 3 provider URLs, 1 dropped"
+    )

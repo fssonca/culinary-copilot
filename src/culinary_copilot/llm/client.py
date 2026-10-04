@@ -504,6 +504,79 @@ class WebSearchResult(BaseModel):
     attempt_details: list[dict[str, Any]] = Field(default_factory=list)
 
 
+def _field(node: Any, name: str) -> Any:
+    """Read one field from an SDK object or a recorded plain-dict shape."""
+    if isinstance(node, dict):
+        return node.get(name)
+    return getattr(node, name, None)
+
+
+def _collect_web_search_evidence(
+    response: Any,
+) -> tuple[bool, list[str], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Provider evidence for citation provenance (Checkpoint B 1g).
+
+    Returns (performed, web_search_call_ids, citations, action_sources).
+    Accepts both SDK objects and recorded plain-dict response shapes;
+    the old code collected action sources and call ids only from SDK
+    objects, so a recorded dict shape silently lost them.
+    """
+    performed = False
+    call_ids: list[str] = []
+    citations: list[dict[str, Any]] = []
+    action_sources: list[dict[str, Any]] = []
+    for item in _field(response, "output") or []:
+        if _field(item, "type") != "web_search_call":
+            continue
+        action = _field(item, "action") or {}
+        if _field(action, "type") != "search":
+            continue
+        performed = True
+        item_id = str(_field(item, "id") or "")
+        if item_id:
+            call_ids.append(item_id)
+        for source in _field(action, "sources") or []:
+            url = _field(source, "url")
+            if url:
+                action_sources.append({"type": "url", "url": str(url)[:500]})
+    for item in _field(response, "output") or []:
+        if _field(item, "type") != "message":
+            continue
+        for block in _field(item, "content") or []:
+            for annotation in _field(block, "annotations") or []:
+                if _field(annotation, "type") != "url_citation":
+                    continue
+                citations.append(
+                    {
+                        "url": str(_field(annotation, "url") or "")[:500],
+                        "title": str(_field(annotation, "title") or "")[:300],
+                        "start_index": _field(annotation, "start_index"),
+                        "end_index": _field(annotation, "end_index"),
+                    }
+                )
+    return performed, call_ids, citations, action_sources
+
+
+def _evidence_for_parsed(
+    parsed: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Consistent fake evidence: citations + action_sources derived
+    from parsed source URLs (Checkpoint B 1f)."""
+    urls: list[str] = []
+    titles: dict[str, str] = {}
+    if isinstance(parsed, dict):
+        for item in parsed.get("sources", []) or []:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url", "") or "")
+            if url and url not in urls:
+                urls.append(url)
+                titles[url] = str(item.get("title", "") or "")
+    citations = [{"url": url, "title": titles[url]} for url in urls]
+    action_sources = [{"type": "url", "url": url} for url in urls]
+    return citations, action_sources
+
+
 #: Fixed server instruction for the search sub-request (owner item 2).
 #: Agent history is never included; only this instruction plus the
 #: minimized query is sent.
@@ -543,7 +616,15 @@ def web_search_request_body(*, instruction: str, query: str) -> dict[str, Any]:
 
 
 class FakeApplicationProvider:
-    """Offline fake for tests. Scripted outcomes, records call count."""
+    """Offline fake for tests. Scripted outcomes, records call count.
+
+    Provider evidence stays consistent with the parsed sources by
+    default: when a scripted web_search entry carries parsed sources
+    but no citations/action_sources, both are derived from those
+    source URLs (explicit script evidence is kept as-is, so divergent
+    cases stay expressible). The default result has no sources, hence
+    no evidence.
+    """
 
     def __init__(self, script: list[dict[str, Any] | BaseException] | None = None) -> None:
         self.script = list(script or [])
@@ -694,12 +775,16 @@ class FakeApplicationProvider:
             payload = dict(next_item)
             if "web_search" in payload:
                 web = dict(payload["web_search"])
+                citations = list(web.get("citations", []))
+                action_sources = list(web.get("action_sources", []))
+                if not citations and not action_sources:
+                    citations, action_sources = _evidence_for_parsed(web.get("parsed"))
                 return WebSearchResult(
                     performed=bool(web.get("performed", True)),
                     parsed=web.get("parsed"),
                     web_search_call_ids=list(web.get("call_ids", [])),
-                    citations=list(web.get("citations", [])),
-                    action_sources=list(web.get("action_sources", [])),
+                    citations=citations,
+                    action_sources=action_sources,
                     model="fake",
                     latency_ms=1,
                     attempts=1,
@@ -1040,30 +1125,7 @@ class OpenAIApplicationProvider:
         latency_ms = int((time.perf_counter() - started) * 1000)
         usage = _extract_usage(response)
         response_id = getattr(response, "id", None)
-        call_ids: list[str] = []
-        performed = False
-        citations: list[dict[str, Any]] = []
-        action_sources: list[dict[str, Any]] = []
-        for item in getattr(response, "output", None) or []:
-            item_type = getattr(item, "type", None)
-            if item_type != "web_search_call":
-                if isinstance(item, dict) and item.get("type") == "web_search_call":
-                    action = item.get("action", {}) or {}
-                    if action.get("type") == "search":
-                        performed = True
-                continue
-            action = getattr(item, "action", None)
-            action_type = getattr(action, "type", None) if action is not None else None
-            if action_type == "search":
-                performed = True
-                item_id = str(getattr(item, "id", "") or "")
-                if item_id:
-                    call_ids.append(item_id)
-                raw_sources = getattr(action, "sources", None) or []
-                for source in raw_sources:
-                    url = getattr(source, "url", None)
-                    if url:
-                        action_sources.append({"type": "url", "url": str(url)[:500]})
+        performed, call_ids, citations, action_sources = _collect_web_search_evidence(response)
         parsed_model = getattr(response, "output_parsed", None)
         if parsed_model is not None:
             try:
@@ -1072,21 +1134,6 @@ class OpenAIApplicationProvider:
                 parsed = dict(parsed_model)
         else:
             parsed = None
-        for item in getattr(response, "output", None) or []:
-            if getattr(item, "type", None) != "message":
-                continue
-            content = getattr(item, "content", None) or []
-            for block in content:
-                for annotation in getattr(block, "annotations", None) or []:
-                    if getattr(annotation, "type", None) == "url_citation":
-                        citations.append(
-                            {
-                                "url": str(getattr(annotation, "url", "") or "")[:500],
-                                "title": str(getattr(annotation, "title", "") or "")[:300],
-                                "start_index": getattr(annotation, "start_index", None),
-                                "end_index": getattr(annotation, "end_index", None),
-                            }
-                        )
         return WebSearchResult(
             performed=performed,
             parsed=parsed,

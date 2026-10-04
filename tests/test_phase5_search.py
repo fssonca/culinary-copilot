@@ -22,6 +22,7 @@ from culinary_copilot.config import Settings
 from culinary_copilot.domain.recommendations import (
     REASON_SEARCH_BUDGET_EXHAUSTED,
     REASON_SEARCH_NOT_PERFORMED,
+    REASON_SEARCH_UNVERIFIED,
     next_action_for,
 )
 from culinary_copilot.llm.client import (
@@ -107,7 +108,14 @@ class _FakeStore:
 
 
 class _FakeSearchProvider:
-    """Scripted bounded sub-request provider (offline)."""
+    """Scripted bounded sub-request provider (offline).
+
+    Provider evidence stays consistent with the parsed sources by
+    default (Checkpoint B 1f): a scripted WebSearchResult carrying
+    parsed sources but no citations/action_sources gets both derived
+    from those URLs. Tests for divergent evidence construct the
+    result directly instead.
+    """
 
     def __init__(self, script: list[Any] | None = None) -> None:
         self.script = list(script or [])
@@ -121,6 +129,8 @@ class _FakeSearchProvider:
         max_output_tokens: int | None = None,
         timeout: float | None = None,
     ) -> WebSearchResult:
+        from culinary_copilot.llm.client import _evidence_for_parsed
+
         self.calls.append(
             {"instruction": instruction, "query": query, "max_output": max_output_tokens}
         )
@@ -128,6 +138,11 @@ class _FakeSearchProvider:
             item = self.script.pop(0)
             if isinstance(item, BaseException):
                 raise item
+            if isinstance(item, WebSearchResult) and not item.citations and not item.action_sources:
+                citations, action_sources = _evidence_for_parsed(item.parsed)
+                item = item.model_copy(
+                    update={"citations": citations, "action_sources": action_sources}
+                )
             return item
         return WebSearchResult(
             performed=True,
@@ -342,6 +357,240 @@ def test_provider_receives_fixed_instruction_not_history() -> None:
     _call("ramen with my secret", _ctx(store, provider))
     assert provider.calls[0]["instruction"] == WEB_SEARCH_INSTRUCTION
     assert "agent history" not in provider.calls[0]["instruction"].lower()
+
+
+# --- citation provenance (Checkpoint B condition 1) --------------------------
+
+_REAL_URL = "https://www.fda.gov/food-safety/guide"
+_EVIL_URL = "https://evil.example/invented-guide"
+
+
+def _src(url: str, title: str = "Parsed title") -> dict[str, Any]:
+    return {"url": url, "title": title, "excerpt_model": "excerpt text here", "published_at": None}
+
+
+def _prov_result(
+    parsed_sources: list[dict[str, Any]],
+    citations: list[dict[str, Any]],
+    action_sources: list[dict[str, Any]],
+) -> WebSearchResult:
+    return WebSearchResult(
+        performed=True,
+        parsed={"summary": "ok", "sources": parsed_sources},
+        web_search_call_ids=["ws_1"],
+        citations=citations,
+        action_sources=action_sources,
+        model="fake",
+        latency_ms=1,
+        attempts=1,
+    )
+
+
+class _RawProvider(_FakeSearchProvider):
+    """Returns scripted results verbatim (no evidence auto-fill), for
+    divergent-evidence regressions."""
+
+    async def complete_web_search(self, **kwargs: Any) -> WebSearchResult:
+        self.calls.append({"query": kwargs.get("query")})
+        item = self.script.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+
+def _retrieved_payload(store: _FakeStore) -> dict[str, Any]:
+    return next(e["payload"] for e in store.events if e.get("type") == "search_results_retrieved")
+
+
+def test_invented_url_dropped_and_ref_rejected() -> None:
+    """An invented parsed URL (absent from provider evidence) never
+    reaches the agent or the session; a final answer citing it fails
+    the web_refs check."""
+    store = _FakeStore(allowed=True)
+    result = _call(
+        "ramen",
+        _ctx(
+            store,
+            _RawProvider(
+                [
+                    _prov_result(
+                        [_src(_REAL_URL), _src(_EVIL_URL)],
+                        [{"url": _REAL_URL, "title": "Guide"}],
+                        [{"type": "url", "url": _REAL_URL}],
+                    )
+                ]
+            ),
+        ),
+    )
+    assert result["ok"] is True
+    assert [s["url"] for s in result["sources"]] == [_REAL_URL]
+    assert _retrieved_payload(store)["unverified_dropped"] == 1
+    sources = session_web_sources(store, "ses-test")
+    assert _EVIL_URL not in sources
+    assert (
+        validate_web_refs([{"url": _EVIL_URL, "title": "Invented"}], session_sources=sources) != []
+    )
+    assert validate_web_refs([{"url": _REAL_URL, "title": "Guide"}], session_sources=sources) == []
+
+
+def test_missing_provider_metadata_yields_no_evidence() -> None:
+    """No provider URLs at all: typed failure, distinct outcome, slot spent."""
+    store = _FakeStore(allowed=True)
+    result = _call(
+        "ramen",
+        _ctx(store, _RawProvider([_prov_result([_src(_REAL_URL)], [], [])])),
+    )
+    assert result["ok"] is False
+    assert result["reason"] == REASON_SEARCH_UNVERIFIED
+    assert result["next_action"] == next_action_for(REASON_SEARCH_UNVERIFIED)
+    assert "sources" not in result and "summary" not in result
+    assert store.claims == 1, "slot stays spent"
+    outcomes = [
+        e["payload"].get("outcome") for e in store.events if e.get("type") == "search_outcome"
+    ]
+    assert outcomes == ["no_provider_sources"]
+
+
+def test_all_parsed_unverified_yields_no_evidence() -> None:
+    """Provider evidence exists but no parsed source matches it."""
+    store = _FakeStore(allowed=True)
+    result = _call(
+        "ramen",
+        _ctx(
+            store,
+            _RawProvider(
+                [
+                    _prov_result(
+                        [_src(_EVIL_URL)],
+                        [{"url": _REAL_URL, "title": "Guide"}],
+                        [{"type": "url", "url": _REAL_URL}],
+                    )
+                ]
+            ),
+        ),
+    )
+    assert result["ok"] is False
+    assert result["reason"] == REASON_SEARCH_UNVERIFIED
+    outcomes = [
+        e["payload"].get("outcome") for e in store.events if e.get("type") == "search_outcome"
+    ]
+    assert outcomes == ["no_verified_sources"]
+    assert store.claims == 1, "slot stays spent"
+
+
+def test_utm_tagged_citation_matches_clean_url() -> None:
+    """Citation URLs often carry ?utm_source: normalization strips
+    query/fragment, and the citation title is preferred."""
+    store = _FakeStore(allowed=True)
+    utm = _REAL_URL + "?utm_source=chatgpt.com"
+    result = _call(
+        "ramen",
+        _ctx(
+            store,
+            _RawProvider(
+                [
+                    _prov_result(
+                        [_src(_REAL_URL, title="Parsed title")],
+                        [{"url": utm, "title": "Cited title"}],
+                        [],
+                    )
+                ]
+            ),
+        ),
+    )
+    assert result["ok"] is True
+    assert result["sources"][0]["url"] == _REAL_URL
+    assert result["sources"][0]["title"] == "Cited title"
+
+
+def test_mixed_sources_keep_only_matched_with_audit_counts() -> None:
+    store = _FakeStore(allowed=True)
+    second = "https://www.nih.gov/health-guide"
+    result = _call(
+        "ramen",
+        _ctx(
+            store,
+            _RawProvider(
+                [
+                    _prov_result(
+                        [_src(_REAL_URL), _src(second), _src(_EVIL_URL)],
+                        [{"url": _REAL_URL, "title": "A"}, {"url": second, "title": "B"}],
+                        [{"type": "url", "url": second}],
+                    )
+                ]
+            ),
+        ),
+    )
+    assert result["ok"] is True
+    assert [s["url"] for s in result["sources"]] == [_REAL_URL, second]
+    payload = _retrieved_payload(store)
+    assert payload["provider_url_count"] == 2
+    assert payload["unverified_dropped"] == 1
+    # First-seen order: action_sources before citations.
+    assert payload["provider_urls"] == [second, _REAL_URL]
+
+
+def test_collect_web_search_evidence_from_recorded_shape() -> None:
+    """Checkpoint B 1g: dict-form web_search_call sources/call ids and
+    dict-form citations are collected (the old code dropped them)."""
+    from types import SimpleNamespace
+
+    from culinary_copilot.llm.client import _collect_web_search_evidence
+
+    response = {
+        "output": [
+            {
+                "type": "web_search_call",
+                "id": "ws_dict",
+                "action": {"type": "search", "sources": [{"url": "https://a.example/x"}]},
+            },
+            SimpleNamespace(
+                type="web_search_call",
+                id="ws_obj",
+                action=SimpleNamespace(
+                    type="search", sources=[SimpleNamespace(url="https://b.example/y")]
+                ),
+            ),
+            {
+                "type": "message",
+                "content": [
+                    {
+                        "annotations": [
+                            {
+                                "type": "url_citation",
+                                "url": "https://c.example/z?utm_source=x",
+                                "title": "C",
+                            }
+                        ]
+                    }
+                ],
+            },
+            SimpleNamespace(
+                type="message",
+                content=[
+                    SimpleNamespace(
+                        annotations=[
+                            SimpleNamespace(
+                                type="url_citation",
+                                url="https://d.example/w",
+                                title="D",
+                                start_index=0,
+                                end_index=5,
+                            )
+                        ]
+                    )
+                ],
+            ),
+        ]
+    }
+    performed, call_ids, citations, action_sources = _collect_web_search_evidence(response)
+    assert performed is True
+    assert call_ids == ["ws_dict", "ws_obj"]
+    assert [s["url"] for s in action_sources] == ["https://a.example/x", "https://b.example/y"]
+    assert [(c["url"], c["title"]) for c in citations] == [
+        ("https://c.example/z?utm_source=x", "C"),
+        ("https://d.example/w", "D"),
+    ]
 
 
 def test_fabricated_excerpt_never_verified() -> None:
@@ -1173,7 +1422,7 @@ def test_tool_error_paths_keep_minimized_args() -> None:
 
 
 def test_search_provider_timeout_bounded_by_tool_timeout() -> None:
-    """Owner decision 2026-10-04: search_web defaults to a 30 s tool
+    """Owner decision 2026-10-03: search_web defaults to a 30 s tool
     timeout; the provider request's own timeout is at most the tool
     timeout (defaults: tool 30, provider min(rec 20, 30) = 20)."""
     seen_timeouts: list[Any] = []
@@ -1229,7 +1478,7 @@ def test_search_provider_timeout_bounded_by_tool_timeout() -> None:
 
 
 def test_search_web_timeout_precedence() -> None:
-    """Owner decision 2026-10-04 precedence for search_web: explicit
+    """Owner decision 2026-10-03 precedence for search_web: explicit
     SEARCH_WEB_TIMEOUT_S, then explicit TOOL_TIMEOUT_S, then the 30 s
     search default. Other tools keep the 10 s general default."""
     from culinary_copilot.tools.registry import tool_timeout_s

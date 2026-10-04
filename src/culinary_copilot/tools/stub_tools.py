@@ -35,6 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from culinary_copilot.domain.recommendations import (
     REASON_SEARCH_BUDGET_EXHAUSTED,
     REASON_SEARCH_NOT_PERFORMED,
+    REASON_SEARCH_UNVERIFIED,
     REASON_TOOL_INTERNAL_ERROR,
     REASON_TOOL_INVALID_ARGUMENTS,
     REASON_TOOL_NOT_CONFIGURED,
@@ -109,6 +110,27 @@ def _min_error(text: str) -> str:
         return "ProviderError"
 
 
+def _provenance_key(url: str) -> str:
+    """Normalized URL for provider-evidence matching (Checkpoint B 1).
+
+    Both sides go through the same normalization: _min_url (strips
+    query and fragment — citation URLs often carry ?utm_source
+    parameters), lowercase scheme and host, no trailing slash except
+    the root ("" path becomes "/"). Raises _MinimizationFailed, so a
+    minimizer failure stays fail-closed with the rest of shaping.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    minimized = _min_url(url)
+    parts = urlsplit(minimized)
+    path = parts.path
+    if len(path) > 1:
+        path = path.rstrip("/")
+    if not path:
+        path = "/"
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, "", ""))
+
+
 def _classify(url: str, context: ToolContext) -> str:
     try:
         from culinary_copilot.search.labels import classify_source, parse_domain_list
@@ -120,6 +142,45 @@ def _classify(url: str, context: ToolContext) -> str:
         return classify_source(url, official=official, research=research, culinary=culinary)
     except Exception:
         return "unclassified"
+
+
+def _unverified_result(
+    store: Any,
+    session_id: str,
+    call_id: str,
+    started: float,
+    outcome: str,
+    message: str,
+) -> dict[str, Any]:
+    """Typed failure with no evidence (Checkpoint B 1c): no summary, no
+    sources. The slot stays spent. Event writes stay fail-closed."""
+    try:
+        store.append_event(session_id, "search_outcome", {"call_id": call_id, "outcome": outcome})
+        store.append_event(
+            session_id,
+            "search_operations",
+            {
+                "call_id": call_id,
+                "latency_ms": round((time.monotonic() - started) * 1000, 2),
+            },
+        )
+    except Exception:
+        reason = REASON_TOOL_UNAVAILABLE
+        return {
+            "ok": False,
+            "error_type": "unavailable",
+            "reason": reason,
+            "message": "search_web unavailable: event write failed",
+            "next_action": next_action_for(reason),
+        }
+    reason = REASON_SEARCH_UNVERIFIED
+    return {
+        "ok": False,
+        "error_type": "unavailable",
+        "reason": reason,
+        "message": message,
+        "next_action": next_action_for(reason),
+    }
 
 
 async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str, Any]:
@@ -266,7 +327,7 @@ async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str
     except Exception:
         instruction = "Summarize the search results for the query."
     max_output = int(_settings_value(context, "search_max_output_tokens", 1500) or 1500)
-    # Provider request timeout (owner decision 2026-10-04): at most
+    # Provider request timeout (owner decision 2026-10-03): at most
     # the tool timeout, so an abandoned request cannot keep running
     # long after the tool gave up. Defaults: tool 30 s, provider
     # min(rec 20 s, 30 s) = 20 s.
@@ -377,26 +438,60 @@ async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str
             "next_action": next_action_for(reason),
         }
     parsed = getattr(result, "parsed", None) or {}
-    # Fail-closed shaping (review fix 1): any minimizer failure yields
-    # no evidence — a typed error with call_id-only events, never raw
-    # or partially-minimized text.
+    # Citation provenance (Checkpoint B condition 1): a parsed source
+    # is accepted only when its normalized URL appears in the
+    # provider's own evidence (action_sources URLs plus citation
+    # URLs). Invented URLs are dropped here and never reach the agent
+    # or the session. Fail-closed shaping (review fix 1) still
+    # applies: any minimizer failure yields no evidence at all.
     try:
         summary = _min_summary(str(parsed.get("summary", "") or ""), 1000)
         raw_sources = parsed.get("sources", []) if isinstance(parsed, dict) else []
-        citations = list(getattr(result, "citations", None) or [])
-        citation_by_url = {str(c.get("url", "")): c for c in citations if isinstance(c, dict)}
+        provider_keys: set[str] = set()
+        provider_urls: list[str] = []
+        citation_title_by_key: dict[str, str] = {}
+
+        def _collect_evidence_url(raw: Any) -> None:
+            if isinstance(raw, dict):
+                found = str(raw.get("url", "") or "")
+            else:
+                found = str(getattr(raw, "url", "") or "")
+            if not found:
+                return
+            key = _provenance_key(found)
+            if key not in provider_keys:
+                provider_keys.add(key)
+                if len(provider_urls) < 10:
+                    provider_urls.append(_min_url(found))
+
+        for entry in list(getattr(result, "action_sources", None) or []):
+            _collect_evidence_url(entry)
+        for entry in list(getattr(result, "citations", None) or []):
+            _collect_evidence_url(entry)
+            if isinstance(entry, dict):
+                url = str(entry.get("url", "") or "")
+                title = str(entry.get("title", "") or "")
+                if url and title:
+                    citation_title_by_key.setdefault(_provenance_key(url), title)
         retrieved_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         sources: list[dict[str, Any]] = []
+        unverified_dropped = 0
         for item in raw_sources[:5]:
             if not isinstance(item, dict):
                 continue
             url = _min_url(str(item.get("url", "") or ""))
             if not url:
                 continue
-            citation = citation_by_url.get(url, {})
+            if _provenance_key(url) not in provider_keys:
+                unverified_dropped += 1
+                continue
             excerpt = _min_summary(str(item.get("excerpt_model", "") or ""), 500)
             title = _min_summary(str(item.get("title", "") or ""), 300)
-            citation_title = _min_summary(str(citation.get("title", "") or ""), 300)
+            citation_title = _min_summary(
+                str(citation_title_by_key.get(_provenance_key(url), "") or ""), 300
+            )
+            if citation_title:
+                title = citation_title
             sources.append(
                 {
                     "url": url,
@@ -430,6 +525,25 @@ async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str
             "message": "search_web refused: result minimization failed; no evidence kept",
             "next_action": next_action_for(reason),
         }
+    if not provider_keys:
+        return _unverified_result(
+            store,
+            session_id,
+            call_id,
+            started,
+            "no_provider_sources",
+            "search_web unverified: provider returned no source evidence; no evidence kept",
+        )
+    if not sources:
+        return _unverified_result(
+            store,
+            session_id,
+            call_id,
+            started,
+            "no_verified_sources",
+            f"search_web unverified: {unverified_dropped} parsed source(s) "
+            "matched no provider evidence; no evidence kept",
+        )
     try:
         logged_urls = [s["url"] for s in sources]
         call_ids = list(getattr(result, "web_search_call_ids", None) or [])
@@ -441,6 +555,9 @@ async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str
                 "urls": logged_urls,
                 "web_search_call_ids": call_ids[:5],
                 "retrieved_at": retrieved_at,
+                "provider_url_count": len(provider_keys),
+                "unverified_dropped": unverified_dropped,
+                "provider_urls": provider_urls,
             },
         )
         store.append_event(
@@ -492,8 +609,11 @@ def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
             description=(
                 "Search the web for the minimized query (permission-gated, "
                 "at most 3 per session). Returns a bounded summary plus up "
-                "to 5 sources with model-written excerpts (never verified "
-                "quotations) and publisher-signal classifications."
+                "to 5 verified sources: a parsed source is kept only when "
+                "its URL matches the provider's own evidence "
+                "(url_citation/action sources), with model-written excerpts "
+                "(never verified quotations) and publisher-signal "
+                "classifications."
             ),
             args_model=SearchWebArgs,
             timeout_s=timeout_s,

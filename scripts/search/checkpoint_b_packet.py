@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checkpoint B review packet (Phase 5, owner decision 2026-10-04).
+"""Checkpoint B review packet (Phase 5, owner decision 2026-10-03).
 
 Read-only and rerunnable: it SELECTs live sessions from the
 application database, derives completeness / privacy / gap / spend
@@ -304,12 +304,62 @@ def chain_rows(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list
             "source_count": len(retrieved.get("urls") or []),
             "classifications": classes,
             "urls": list(retrieved.get("urls") or []),
+            # Provenance audit (Checkpoint B 1d): None when the event
+            # predates the check (the 7 live searches did not store
+            # action_sources).
+            "provider_url_count": retrieved.get("provider_url_count"),
+            "unverified_dropped": retrieved.get("unverified_dropped"),
         }
         if is_refused:
             refused.append(row)
         else:
             rows.append(row)
     return rows, refused
+
+
+def session_outcome_label(row: dict[str, Any], final_event_type: str) -> str:
+    """Outcome label derived from the stop reason, corroborated by the
+    final session event (Checkpoint B condition 6).
+
+    A session that stopped with agent_needs_user_input asked the user
+    and is never 'completed: answered'. A mismatch between the stop
+    reason and the final event is surfaced, not silently resolved.
+    """
+    grades = row.get("grades") or {}
+    stop = str(row.get("stop_reason") or "")
+    if grades.get("web_answer") is True and stop == "agent_sufficient_evidence":
+        label = (
+            "web_answer accepted — one demonstrated discovery answer "
+            "after fixes, not a reliability result"
+        )
+        expected = "agent_finished"
+    elif stop == "agent_needs_user_input":
+        label = "asked the user (awaiting input)"
+        expected = "agent_question"
+    elif stop == "agent_token_budget_exhausted":
+        label = "stopped: token budget exhausted (no answer)"
+        expected = ""
+    elif stop == "agent_no_progress":
+        label = "stopped: no progress (no answer)"
+        expected = ""
+    elif grades.get("asked"):
+        label = "asked instead of answering"
+        expected = ""
+    else:
+        label = str(row.get("status") or "")
+        expected = ""
+    if expected and final_event_type and final_event_type != expected:
+        return f"{label} [final event {final_event_type} ≠ expected {expected}]"
+    return label
+
+
+def provenance_text(chain: dict[str, Any]) -> str:
+    """Provenance audit rendering: 'not recorded (pre-fix)' when the
+    event predates the citation check."""
+    count = chain.get("provider_url_count")
+    if count is None:
+        return "provenance: not recorded (pre-fix)"
+    return f"provenance: {count} provider URLs, {chain.get('unverified_dropped')} dropped"
 
 
 def _first_seq(bucket: dict[str, Any], events: list[dict[str, Any]]) -> int:
@@ -483,7 +533,7 @@ def phone_hit_disposition(hits: list[dict[str, Any]]) -> str:
         and not others
     ):
         return (
-            "Disposition (verified 2026-10-04): all 4 phone-pattern matches sit in "
+            "Disposition (verified 2026-10-03): all 4 phone-pattern matches sit in "
             "the technique-source attribution metadata of "
             "data/phase3-live/live-technique-question.json (whole-file scan). Each "
             "match was extracted with its surrounding context and all four are the "
@@ -592,10 +642,17 @@ def compute_spend(phase5_path: Path, phase3_path: Path) -> dict[str, Any]:
         raw = json.loads(path.read_text(encoding="utf-8"))
         runs = raw.get("runs") or []
         total = 0.0
+        reconciled = 0.0
+        reservation = 0.0
         searches: list[dict[str, Any]] = []
         for run in runs:
             for entry in run.get("entries") or []:
-                total += float(entry.get("usd") or 0.0)
+                usd = float(entry.get("usd") or 0.0)
+                total += usd
+                if str(entry.get("decision") or "") == "reconciled":
+                    reconciled += usd
+                else:
+                    reservation += usd
                 if str(entry.get("kind") or "") == "search":
                     searches.append(
                         {
@@ -609,6 +666,8 @@ def compute_spend(phase5_path: Path, phase3_path: Path) -> dict[str, Any]:
             "pool": pool_name,
             "ceiling_usd": raw.get("ceiling_usd"),
             "total_usd": round(total, 6),
+            "reconciled_usd": round(reconciled, 6),
+            "reservation_usd": round(reservation, 6),
             "searches": searches,
         }
 
@@ -635,6 +694,7 @@ def write_review(
     mapping_warnings: list[str],
     chains: dict[str, list[dict[str, Any]]],
     refused: dict[str, list[dict[str, Any]]],
+    final_events: dict[str, str],
     privacy: dict[str, Any],
     gaps_phase5: list[dict[str, Any]],
     gaps_phase3: list[dict[str, Any]],
@@ -670,12 +730,7 @@ def write_review(
     add("| Session (suffix) | Run | Scenario | Stop | Outcome |")
     add("|---|---|---|---|---|")
     for row in session_rows:
-        grades = row.get("grades") or {}
-        outcome = (
-            "web_answer accepted"
-            if grades.get("web_answer") is True
-            else ("asked instead of answering" if grades.get("asked") else row.get("status", ""))
-        )
+        outcome = session_outcome_label(row, final_events.get(row["session_id"], ""))
         add(
             f"| {row['session_id'][-6:]} | {row['file']} | {row['scenario']} "
             f"| {row['stop_reason']} | {outcome} |"
@@ -693,7 +748,11 @@ def write_review(
         "search_requested, search_results_retrieved, evidence_evaluated, "
         "search_outcome, search_operations, and the search_web tool_call "
         "(correlated by call_id). Costs are reconciled ledger figures "
-        "from the spend histories, including the appended correction."
+        "from the spend histories, including the appended correction. "
+        "The 7 live searches predate the citation provenance check and "
+        "did not store action_sources, so their URL provenance cannot "
+        "be verified after the fact (this does not mean the live links "
+        "were invented); their audit fields show 'not recorded (pre-fix)'."
     )
     add("")
     for row in session_rows:
@@ -715,7 +774,8 @@ def write_review(
                 f"  latency {chain.get('latency_ms')} ms; tokens "
                 f"in/out {chain.get('input_tokens')}/{chain.get('output_tokens')}; "
                 f"cost {cost_text}; slots {chain.get('slots_used')}/{chain.get('slots_max')}; "
-                f"sources {chain.get('source_count')} {chain.get('classifications')}.{note}"
+                f"sources {chain.get('source_count')} {chain.get('classifications')}; "
+                f"{provenance_text(chain)}.{note}"
             )
             if chain.get("missing"):
                 add(f"  MISSING EVENTS: {', '.join(chain['missing'])}.")
@@ -878,8 +938,15 @@ def write_review(
     phase3 = spend["phase3"]
     n_entries = len(phase5["searches"])
     n_corrections = sum(1 for s in phase5["searches"] if str(s["label"]).endswith("-correction"))
+    search_reconciled = sum(
+        float(s["usd"] or 0.0) for s in phase5["searches"] if s["decision"] == "reconciled"
+    )
     add(
-        f"- Phase 5 pool: ${phase5['total_usd']:.4f} of ${phase5['ceiling_usd']} "
+        f"- Phase 5 pool, budget accounting (not invoiced spend): reconciled "
+        f"${phase5['reconciled_usd']:.5f} (searches ${search_reconciled:.5f} + "
+        f"model/embedding ${phase5['reconciled_usd'] - search_reconciled:.5f}) + "
+        f"timeout reservation ${phase5['reservation_usd']:.5f} = "
+        f"${phase5['total_usd']:.4f} of ${phase5['ceiling_usd']} "
         f"({n_entries - n_corrections} dispatched searches, {n_entries} ledger entries)."
     )
     for search in phase5["searches"]:
@@ -897,6 +964,14 @@ def write_review(
     add(f"- Milestone 3 total: ${spend['milestone3_total_usd']:.4f}.")
     add("")
     add("## 7. Checkpoint B questions for the owner (unanswered)")
+    add("")
+    add(
+        "Owner decisions: docs/phase5-owner-decisions.md, section "
+        '"Checkpoint B: owner decisions (2026-10-03)". The questions '
+        "below restate the packet context for the owner; they are not "
+        "answered here."
+    )
+    add("")
     add("")
     for title, context, recommendation in checkpoint_questions(spend):
         add(f"{title}")
@@ -942,7 +1017,10 @@ def checkpoint_questions(spend: dict[str, Any]) -> list[tuple[str, str, str]]:
             "estimate; one timed out and is kept-ambiguous at $0.025. The "
             "wrapper enforces permission, slot limits, minimization and "
             "the 30 s tool / 20 s provider timeouts; the agent sees only "
-            "the checked summary plus up to 5 sources.",
+            "the checked summary plus up to 5 sources. Provenance caveat: "
+            "the 7 live searches predate the citation check and did not "
+            "store action_sources, so their URL provenance cannot be "
+            "verified after the fact.",
             "approve the wrapper as the Phase 5 provider path.",
         ),
         (
@@ -1087,6 +1165,10 @@ def build_packet(
         "mapping_warnings": mapping_warnings,
         "chains": chains,
         "refused": refused,
+        "final_events": {
+            sid: (events[-1].get("event_type", "") if events else "")
+            for sid, events in sessions_events.items()
+        },
         "privacy": privacy,
         "gaps_phase5": gaps_phase5,
         "gaps_phase3": gaps_phase3,
@@ -1161,6 +1243,7 @@ def main(argv: list[str] | None = None) -> int:
         mapping_warnings=packet["mapping_warnings"],
         chains=packet["chains"],
         refused=packet["refused"],
+        final_events=packet["final_events"],
         privacy=packet["privacy"],
         gaps_phase5=packet["gaps_phase5"],
         gaps_phase3=packet["gaps_phase3"],

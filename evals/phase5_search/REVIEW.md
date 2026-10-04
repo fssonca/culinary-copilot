@@ -1,6 +1,6 @@
 # Checkpoint B review packet (Phase 5 search)
 
-Generated 2026-10-03T23:36:21Z by scripts/search/checkpoint_b_packet.py (read-only, rerunnable). Full exports under data/phase5-search/checkpoint-b/ (gitignored). No model output is quoted verbatim below: answer text, titles, excerpts and summaries are paraphrased or counted; URLs are operational facts from the logs.
+Generated 2026-10-04T00:26:02Z by scripts/search/checkpoint_b_packet.py (read-only, rerunnable). Full exports under data/phase5-search/checkpoint-b/ (gitignored). No model output is quoted verbatim below: answer text, titles, excerpts and summaries are paraphrased or counted; URLs are operational facts from the logs.
 
 ## 1. Sessions in scope
 
@@ -8,13 +8,13 @@ Every live session from the Phase 5 runs and the P3-L-13 runs on 2026-10-03. Ses
 
 | Session (suffix) | Run | Scenario | Stop | Outcome |
 |---|---|---|---|---|
-| 8668f0 | live-summary-p3l13-attempt1.json | live-ask-resume-p3l13 | agent_token_budget_exhausted | completed: no-answer (agent_token_budget_exhausted) |
-| b0b52b | live-summary-phase5-step1.json | live-search-missing-dish | agent_needs_user_input | completed: answered |
-| 0e4b06 | live-summary-p3l13-attempt2.json | live-ask-resume-p3l13 | agent_needs_user_input | completed: answered |
-| 27eb83 | live-summary-phase5-step2.json | live-search-missing-dish | agent_needs_user_input | completed: answered |
-| 67127c | live-summary-phase5-step3.json | live-search-missing-dish | agent_needs_user_input | asked instead of answering |
-| ec7a89 | live-summary-phase5-step4.json | live-search-missing-dish | agent_no_progress | completed: no-answer (agent_no_progress) |
-| eb6463 | live-summary-phase5-step5.json | live-search-missing-dish | agent_sufficient_evidence | web_answer accepted |
+| 8668f0 | live-summary-p3l13-attempt1.json | live-ask-resume-p3l13 | agent_token_budget_exhausted | stopped: token budget exhausted (no answer) |
+| b0b52b | live-summary-phase5-step1.json | live-search-missing-dish | agent_needs_user_input | asked the user (awaiting input) |
+| 0e4b06 | live-summary-p3l13-attempt2.json | live-ask-resume-p3l13 | agent_needs_user_input | asked the user (awaiting input) |
+| 27eb83 | live-summary-phase5-step2.json | live-search-missing-dish | agent_needs_user_input | asked the user (awaiting input) |
+| 67127c | live-summary-phase5-step3.json | live-search-missing-dish | agent_needs_user_input | asked the user (awaiting input) |
+| ec7a89 | live-summary-phase5-step4.json | live-search-missing-dish | agent_no_progress | stopped: no progress (no answer) |
+| eb6463 | live-summary-phase5-step5.json | live-search-missing-dish | agent_sufficient_evidence | web_answer accepted — one demonstrated discovery answer after fixes, not a reliability result |
 
 Mapping notes:
 - ses-live-live-search--a1-b0b52b: id absent from data/phase3-live (trail overwritten by a later run; mapped from DB + summary)
@@ -25,41 +25,41 @@ Mapping notes:
 
 ## 2. Search log completeness
 
-Required per dispatched search: search_slot_claimed, search_requested, search_results_retrieved, evidence_evaluated, search_outcome, search_operations, and the search_web tool_call (correlated by call_id). Costs are reconciled ledger figures from the spend histories, including the appended correction.
+Required per dispatched search: search_slot_claimed, search_requested, search_results_retrieved, evidence_evaluated, search_outcome, search_operations, and the search_web tool_call (correlated by call_id). Costs are reconciled ledger figures from the spend histories, including the appended correction. The 7 live searches predate the citation provenance check and did not store action_sources, so their URL provenance cannot be verified after the fact (this does not mean the live links were invented); their audit fields show 'not recorded (pre-fix)'.
 
 ### 8668f0 (live-summary-p3l13-attempt1.json, live-ask-resume-p3l13)
 - no searches dispatched in this session.
 
 ### b0b52b (live-summary-phase5-step1.json, live-search-missing-dish)
 - call call_XGUFFdD: search_slot_claimed: present, search_requested: present, search_results_retrieved: present, evidence_evaluated: present, search_outcome: present, search_operations: present, tool_call: present.
-  latency 7185.08 ms; tokens in/out 8846/508; cost $0.01114 (reconciled); slots 1/3; sources 3 {'unclassified/kept': 3}.
+  latency 7185.08 ms; tokens in/out 8846/508; cost $0.01114 (reconciled); slots 1/3; sources 3 {'unclassified/kept': 3}; provenance: not recorded (pre-fix).
 
 ### 0e4b06 (live-summary-p3l13-attempt2.json, live-ask-resume-p3l13)
 - no searches dispatched in this session.
 
 ### 27eb83 (live-summary-phase5-step2.json, live-search-missing-dish)
 - call call_eXP8DQo: search_slot_claimed: present, search_requested: present, search_results_retrieved: present, evidence_evaluated: present, search_outcome: present, search_operations: present, tool_call: present.
-  latency 7424.14 ms; tokens in/out 8981/550; cost $0.01117 (reconciled); slots 1/3; sources 3 {'unclassified/kept': 3}.
+  latency 7424.14 ms; tokens in/out 8981/550; cost $0.01117 (reconciled); slots 1/3; sources 3 {'unclassified/kept': 3}; provenance: not recorded (pre-fix).
 - call call_hwHItju: search_slot_claimed: present, search_requested: present, search_results_retrieved: present, evidence_evaluated: present, search_outcome: present, search_operations: present, tool_call: present.
-  latency 4102.04 ms; tokens in/out 8876/279; cost $0.01103 (reconciled); slots 2/3; sources 1 {'unclassified/kept': 1}.
+  latency 4102.04 ms; tokens in/out 8876/279; cost $0.01103 (reconciled); slots 2/3; sources 1 {'unclassified/kept': 1}; provenance: not recorded (pre-fix).
 - call call_eej9S9w: search_slot_claimed: present, search_requested: present, search_results_retrieved: present, evidence_evaluated: present, search_outcome: present, search_operations: present, tool_call: present.
-  latency 5691.89 ms; tokens in/out 8848/432; cost $0.01110 (reconciled); slots 3/3; sources 3 {'unclassified/kept': 3}.
+  latency 5691.89 ms; tokens in/out 8848/432; cost $0.01110 (reconciled); slots 3/3; sources 3 {'unclassified/kept': 3}; provenance: not recorded (pre-fix).
 
 ### 67127c (live-summary-phase5-step3.json, live-search-missing-dish)
 - call call_BO0g0PO: search_slot_claimed: present, search_requested: present, search_results_retrieved: MISSING, evidence_evaluated: MISSING, search_outcome: MISSING, search_operations: MISSING, tool_call: present.
-  latency None ms; tokens in/out None/None; cost $0.02500 (kept-ambiguous); slots 1/1; sources 0 {}. NOTE: search-1-correction: kept-ambiguous after timeout.
+  latency None ms; tokens in/out None/None; cost $0.02500 (kept-ambiguous); slots 1/1; sources 0 {}; provenance: not recorded (pre-fix). NOTE: search-1-correction: kept-ambiguous after timeout.
   MISSING EVENTS: search_results_retrieved, evidence_evaluated, search_outcome, search_operations.
 - call call_v7r6KMm: REFUSED search_budget_exhausted (tool_call only, no slot, no provider call).
 
 ### ec7a89 (live-summary-phase5-step4.json, live-search-missing-dish)
 - call call_cWjnQ3I: search_slot_claimed: present, search_requested: present, search_results_retrieved: present, evidence_evaluated: present, search_outcome: present, search_operations: present, tool_call: present.
-  latency 6428.66 ms; tokens in/out 9032/481; cost $0.01114 (reconciled); slots 1/1; sources 3 {'unclassified/kept': 3}.
+  latency 6428.66 ms; tokens in/out 9032/481; cost $0.01114 (reconciled); slots 1/1; sources 3 {'unclassified/kept': 3}; provenance: not recorded (pre-fix).
 - call call_Kk0m2mu: REFUSED search_budget_exhausted (tool_call only, no slot, no provider call).
 - call call_0ZzHNRu: REFUSED search_budget_exhausted (tool_call only, no slot, no provider call).
 
 ### eb6463 (live-summary-phase5-step5.json, live-search-missing-dish)
 - call call_iGUtOxj: search_slot_claimed: present, search_requested: present, search_results_retrieved: present, evidence_evaluated: present, search_outcome: present, search_operations: present, tool_call: present.
-  latency 8454.18 ms; tokens in/out 8949/473; cost $0.01113 (reconciled); slots 1/1; sources 3 {'unclassified/kept': 3}.
+  latency 8454.18 ms; tokens in/out 8949/473; cost $0.01113 (reconciled); slots 1/1; sources 3 {'unclassified/kept': 3}; provenance: not recorded (pre-fix).
 
 Completeness findings: the timed-out search (step 3) holds only slot + request + tool_call — results, evaluation, outcome and operations were never recorded because the tool-level timeout fired outside the implementation. That gap is historical: step 3 ran under the old 10 s tool / 10 s provider timeouts, and it stays shown as is. Under the new defaults the provider's own 20 s timeout fires before the 30 s tool timeout and is logged as outcome 'error'; search_web_impl now also records outcome 'cancelled' when tool-level cancellation interrupts the provider call. Every other dispatched search has the full chain; the three refusals (one step-3 retry after the timeout, two step-4) are tool_call-only by design.
 
@@ -69,7 +69,7 @@ Method: the email / phone / street-address / "my <Name>" patterns from search/mi
 
 - detector hits: 4 across 1 field report(s). Any hit needs a manual disposition: the detectors also match digit strings such as revision ids, so a count alone is not a PII verdict.
   - phone: 4 in file:data/phase3-live/live-technique-question.json :: (whole file)
-- Disposition (verified 2026-10-04): all 4 phone-pattern matches sit in the technique-source attribution metadata of data/phase3-live/live-technique-question.json (whole-file scan). Each match was extracted with its surrounding context and all four are the same repeated 10-digit Wikipedia revision identifier, not a phone number. No email, address or name hits anywhere.
+- Disposition (verified 2026-10-03): all 4 phone-pattern matches sit in the technique-source attribution metadata of data/phase3-live/live-technique-question.json (whole-file scan). Each match was extracted with its surrounding context and all four are the same repeated 10-digit Wikipedia revision identifier, not a phone number. No email, address or name hits anywhere.
 - URLs checked: 14; query/fragment issues: 0.
 - recorded args are minimized too: tool_call.args is stored only because the live runner sets record_tool_args=True (the ToolContext default is False, digest only). Every live search_web tool_call row carries args as minimize_tool_args JSON — the same scrubber as minimized_query — verified from the stored rows. The default application path stores args_digest (truncated sha256 hex) only, never free text.
 - stored free text that is NOT minimized (owner judges risk):
@@ -91,7 +91,7 @@ Method: the email / phone / street-address / "my <Name>" patterns from search/mi
   | db event tool_call | 7 | 89 | yes |
   | db event tool_call | 14 | 64 | no |
   | db event user_message | 7 | 87 | no |
-  | packet exports | 98 | 30976 | mixed |
+  | packet exports | 98 | 30974 | mixed |
   | raw file data/phase3-live/live-ask-resume-p3l13.json | 1 | 11445 | no |
   | raw file data/phase3-live/live-chicken-dinner.json | 1 | 21262 | no |
   | raw file data/phase3-live/live-direct-lentil.json | 1 | 15815 | no |
@@ -239,7 +239,7 @@ COMMIT;
 
 ## 6. Spend (recomputed from the history files)
 
-- Phase 5 pool: $0.1015 of $0.13 (7 dispatched searches, 8 ledger entries).
+- Phase 5 pool, budget accounting (not invoiced spend): reconciled $0.07649 (searches $0.06671 + model/embedding $0.00978) + timeout reservation $0.02500 = $0.1015 of $0.13 (7 dispatched searches, 8 ledger entries).
   - 2026-10-03T19:43:02Z search-1: $0.01114 (reconciled)
   - 2026-10-03T21:09:23Z search-1: $0.01117 (reconciled)
   - 2026-10-03T21:09:23Z search-2: $0.01103 (reconciled)
@@ -253,8 +253,11 @@ COMMIT;
 
 ## 7. Checkpoint B questions for the owner (unanswered)
 
+Owner decisions: docs/phase5-owner-decisions.md, section "Checkpoint B: owner decisions (2026-10-03)". The questions below restate the packet context for the owner; they are not answered here.
+
+
 1. Approve the provider (OpenAI hosted web_search via the search_web wrapper)
-   context: 6 of 7 searches reconciled at about $0.011 against the $0.025 estimate; one timed out and is kept-ambiguous at $0.025. The wrapper enforces permission, slot limits, minimization and the 30 s tool / 20 s provider timeouts; the agent sees only the checked summary plus up to 5 sources.
+   context: 6 of 7 searches reconciled at about $0.011 against the $0.025 estimate; one timed out and is kept-ambiguous at $0.025. The wrapper enforces permission, slot limits, minimization and the 30 s tool / 20 s provider timeouts; the agent sees only the checked summary plus up to 5 sources. Provenance caveat: the 7 live searches predate the citation check and did not store action_sources, so their URL provenance cannot be verified after the fact.
    recommendation: approve the wrapper as the Phase 5 provider path.
 
 2. The per-session limit (3)

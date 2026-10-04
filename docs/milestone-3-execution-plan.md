@@ -285,6 +285,23 @@ the permission endpoint. The UI never enforces permission; the backend does.
 Add a smoke test and a short manual walkthrough.
 ```
 
+Phase 6 page requirements (Checkpoint B condition 6, offline spec):
+
+- Render every answer shape: options, plan, technique_answer,
+  web_answer.
+- For web_answer: visible, clickable citations built only from the
+  validated web_refs, plus the source labels and the
+  external/discovery status, shown prominently.
+- Clarification prompts: agent_question with its options, and the
+  answer box that resumes the session.
+- Typed outcomes: timeout, budget exhausted, permission denied,
+  search not performed or unverified, no progress.
+- The "Allow internet search" toggle (off by default; the backend
+  enforces).
+- Model text is rendered as text, never as HTML (no innerHTML).
+  Citation links open with rel="noopener noreferrer".
+- Keep "no build tooling".
+
 ## 7. Scenario evals and bounded live run
 
 ```text

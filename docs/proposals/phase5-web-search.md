@@ -625,7 +625,7 @@ compatibility.
    search-context window cap is documented. The $0.025/search figure
    is a provisional planning estimate (owner decision 4), not a bound.
 
-## Addendum — 30 s search timeout (2026-10-04, per docs/phase5-owner-decisions.md)
+## Addendum — 30 s search timeout (2026-10-03, per docs/phase5-owner-decisions.md)
 
 Owner decision: `SEARCH_WEB_TIMEOUT_S` becomes a permanent 30 s
 default for `search_web` only; the general `TOOL_TIMEOUT_S` stays
@@ -639,3 +639,29 @@ search default applies with no env var at all. The provider request
 stays bounded at min(tool timeout, `llm_rec_timeout_s`): with
 defaults min(30, 20) = 20 s, so no run-only env var is needed any
 more.
+
+## Addendum — citation provenance (Checkpoint B condition 1, 2026-10-03)
+
+Owner condition: accepted references must come from the provider's
+own evidence (`url_citation` annotations and/or
+`web_search_call.action.sources`), not from URLs in the search
+model's generated JSON. Verified defect: `action_sources` and
+`citations` were collected in `llm/client.py` but never compared, so
+an invented URL passed search processing and the final `web_refs`
+check (fake-provider reproduction).
+
+Fix (`tools/stub_tools.py`): the provider URL set is the union of
+action-source and citation URLs, normalized both sides
+(`_provenance_key`: strip query/fragment, lowercase scheme/host, no
+trailing slash except root). A parsed source is kept only on a set
+hit; the rest are dropped before the agent or session sees them. No
+provider URLs, or no surviving source, is a typed failure with no
+evidence (outcomes `no_provider_sources` / `no_verified_sources`,
+reason `search_unverified`, slot spent). Titles prefer the citation
+title; excerpts stay labelled model text; `search_results_retrieved`
+carries `provider_url_count`, `unverified_dropped`, `provider_urls`
+(≤10). Fakes supply consistent evidence by default, with regressions
+for the invented-URL, missing-metadata, utm-tagged, and mixed cases.
+The 7 live searches predate the check and did not store
+`action_sources`; their provenance cannot be verified after the fact
+(this does not mean the live links were invented).

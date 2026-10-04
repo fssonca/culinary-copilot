@@ -288,7 +288,7 @@ class Settings(BaseSettings):
     # Typed tool layer (Milestone 3, Phase 2, Checkpoint 0 budgets):
     # per-tool timeout 10 s. Read by tools/registry.py on every call.
     tool_timeout_s: float = 10.0
-    # Hosted web search timeout (owner decision 2026-10-04: 30 s
+    # Hosted web search timeout (owner decision 2026-10-03: 30 s
     # permanent default for search_web only; the general TOOL_TIMEOUT_S
     # stays 10 s). Read by tools/registry.py for search_web calls only,
     # and passed to the search provider as its own request timeout at

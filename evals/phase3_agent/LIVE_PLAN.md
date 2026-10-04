@@ -428,7 +428,7 @@ instructions" note; the fakes read the ref URL from their actual
 tool output; rejected web_refs now list the session's source URLs.
 Summary: `live-summary-phase5-step4.json`.
 
-## 2026-10-04: search timeout 30 s permanent (owner decision)
+## 2026-10-03: search timeout 30 s permanent (owner decision)
 
 `SEARCH_WEB_TIMEOUT_S` default 10 → 30 s for `search_web` only
 (config.py, `.env.example`); `TOOL_TIMEOUT_S` stays 10 s.
