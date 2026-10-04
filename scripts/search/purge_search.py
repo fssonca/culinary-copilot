@@ -17,27 +17,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SEARCH_EVENT_TYPES = (
-    "search_slot_claimed",
-    "search_requested",
-    "search_results_retrieved",
-    "evidence_evaluated",
-    "search_outcome",
-    "search_operations",
-)
 
-TRIGGER_AWARE_SQL = """-- Owner-run, trigger-aware purge for expired search events.
--- 1) Back up first (copy the rows, e.g. COPY TO a backup file).
--- 2) Temporarily allow deletes only inside this procedure transaction.
--- 3) Delete expired rows by recorded timestamps in the payload.
-BEGIN;
--- backup example: COPY search events TO a dated CSV first.
-DELETE FROM session_events
- WHERE event_type IN ('search_slot_claimed','search_requested','search_results_retrieved',
-                      'evidence_evaluated','search_outcome','search_operations')
-   AND created_at < now() - make_interval(days => :retention_days);
-COMMIT;
-"""
+# Single source for the DB procedure: scripts/search/purge_search_events.sql.
+# This script prints that file verbatim (never a second copy of the SQL).
+PURGE_SQL_PATH = REPO_ROOT / "scripts" / "search" / "purge_search_events.sql"
 
 
 def main() -> int:
@@ -72,8 +55,8 @@ def main() -> int:
         print(f"  {item}")
     if not args.apply:
         print("dry run: pass --apply to delete (backup copies first)")
-    print("--- trigger-aware SQL (run by the owner with a backup) ---")
-    print(TRIGGER_AWARE_SQL)
+    print("--- purge_search_events.sql (verbatim; run by the owner with a backup) ---")
+    print(PURGE_SQL_PATH.read_text(encoding="utf-8"))
     return 0
 
 

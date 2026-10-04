@@ -534,6 +534,29 @@ def _pg_urls() -> tuple[str, str]:
     return f"{head}/postgres", f"{head}/culinary_test_phase5"
 
 
+def _purge_sql_statements() -> list[str]:
+    """Operative statements of scripts/search/purge_search_events.sql
+    (single source; the BEGIN/COMMIT wrapper is asserted, not replayed
+    — the caller supplies the transaction)."""
+    from pathlib import Path
+
+    raw = Path("scripts/search/purge_search_events.sql").read_text(encoding="utf-8")
+    code = "\n".join(line for line in raw.splitlines() if not line.strip().startswith("--"))
+    stmts = [part.strip() for part in code.split(";") if part.strip()]
+    assert stmts[0].upper() == "BEGIN", stmts[0][:40]
+    assert stmts[-1].upper() == "COMMIT", stmts[-1][:40]
+    return stmts[1:-1]
+
+
+def _purge_trigger_enabled(conn: Any) -> bool:
+    from sqlalchemy import text as _text
+
+    row = conn.execute(
+        _text("SELECT tgenabled FROM pg_trigger WHERE tgname='session_events_no_mutation'")
+    ).first()
+    return row is not None and row[0] == "O"
+
+
 def test_claim_and_purge_procedure_on_disposable_db() -> None:
     from sqlalchemy import create_engine, text
     from sqlalchemy.exc import SQLAlchemyError
@@ -564,23 +587,101 @@ def test_claim_and_purge_procedure_on_disposable_db() -> None:
         events = store.list_events("ses-p5")
         kinds = {e.event_type for e in events}
         assert "search_slot_claimed" in kinds and "search_requested" in kinds
+        # Real purge-procedure test: backdated rows for every purged
+        # type (100 days old), plus keepers (fresh search rows, an old
+        # user_message, an old non-search tool_call).
+        store.create(SessionState(id="ses-purge", internet_search_allowed=True))
+        scoped_old = [
+            "search_slot_claimed",
+            "search_requested",
+            "search_results_retrieved",
+            "evidence_evaluated",
+            "search_outcome",
+            "search_operations",
+        ]
         with engine.begin() as conn:
-            count = conn.execute(
-                text(
-                    "SELECT count(*) FROM session_events WHERE session_id='ses-p5' "
-                    "AND event_type IN ('search_slot_claimed','search_requested')"
+            seq = int(
+                conn.execute(
+                    text(
+                        "SELECT coalesce(max(seq), 0) FROM session_events "
+                        "WHERE session_id='ses-purge'"
+                    )
+                ).scalar_one()
+            )
+            for etype in scoped_old:
+                seq += 1
+                conn.execute(
+                    text(
+                        "INSERT INTO session_events "
+                        "(session_id, seq, event_type, payload, created_at) "
+                        "VALUES ('ses-purge', :seq, :etype, :payload, "
+                        "now() - make_interval(days => 100))"
+                    ),
+                    {"seq": seq, "etype": etype, "payload": '{"call_id": "c-old"}'},
                 )
-            ).scalar_one()
-            assert int(count) == 2
-            # Trigger-aware purge procedure runs (deletes 0 fresh rows).
+            seq += 1
             conn.execute(
                 text(
-                    "DELETE FROM session_events WHERE event_type IN "
-                    "('search_slot_claimed','search_requested','search_results_retrieved',"
-                    "'evidence_evaluated','search_outcome','search_operations') "
-                    "AND created_at < now() - make_interval(days => 90)"
-                )
+                    "INSERT INTO session_events "
+                    "(session_id, seq, event_type, payload, created_at) "
+                    "VALUES ('ses-purge', :seq, 'tool_call', "
+                    '\'{"tool": "search_web", "call_id": "c-old"}\', '
+                    "now() - make_interval(days => 100))"
+                ),
+                {"seq": seq},
             )
+            keepers = [
+                ("search_slot_claimed", '{"call_id": "c-fresh"}', 0),
+                ("tool_call", '{"tool": "search_web", "call_id": "c-fresh"}', 0),
+                ("user_message", '{"text": "keep me"}', 100),
+                ("tool_call", '{"tool": "search_recipes", "call_id": "c-keep"}', 100),
+            ]
+            for etype, payload, age_days in keepers:
+                seq += 1
+                conn.execute(
+                    text(
+                        "INSERT INTO session_events "
+                        "(session_id, seq, event_type, payload, created_at) "
+                        "VALUES ('ses-purge', :seq, :etype, "
+                        "CAST(:payload AS jsonb), "
+                        "now() - make_interval(days => :age))"
+                    ),
+                    {"seq": seq, "etype": etype, "payload": payload, "age": age_days},
+                )
+        # A failure after DISABLE rolls back with the trigger enabled.
+        autocommit = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+        with autocommit as conn:
+            conn.execute(text("BEGIN"))
+            conn.execute(
+                text("ALTER TABLE session_events DISABLE TRIGGER session_events_no_mutation")
+            )
+            with pytest.raises(SQLAlchemyError):
+                conn.execute(text("DELETE FROM no_such_table_xyz"))
+            conn.execute(text("ROLLBACK"))
+            assert _purge_trigger_enabled(conn)
+        # Run the procedure's statements as one transaction.
+        with engine.begin() as conn:
+            for stmt in _purge_sql_statements():
+                conn.execute(text(stmt))
+        with engine.begin() as conn:
+            remaining = conn.execute(
+                text(
+                    "SELECT event_type, payload->>'tool' AS tool, count(*) "
+                    "FROM session_events WHERE session_id='ses-purge' "
+                    "GROUP BY event_type, payload->>'tool' ORDER BY event_type, tool"
+                )
+            ).fetchall()
+            assert [(r[0], r[1], r[2]) for r in remaining] == [
+                ("created", None, 1),
+                ("search_slot_claimed", None, 1),
+                ("tool_call", "search_recipes", 1),
+                ("tool_call", "search_web", 1),
+                ("user_message", None, 1),
+            ]
+            # The trigger is enabled afterwards: a plain DELETE raises.
+            assert _purge_trigger_enabled(conn)
+            with pytest.raises(SQLAlchemyError):
+                conn.execute(text("DELETE FROM session_events WHERE session_id='ses-purge'"))
         engine.dispose()
     finally:
         try:
@@ -1072,8 +1173,9 @@ def test_tool_error_paths_keep_minimized_args() -> None:
 
 
 def test_search_provider_timeout_bounded_by_tool_timeout() -> None:
-    """2026-10-03 search proposal: the provider request's own timeout
-    is at most the tool timeout (defaults: tool 10, provider 10)."""
+    """Owner decision 2026-10-04: search_web defaults to a 30 s tool
+    timeout; the provider request's own timeout is at most the tool
+    timeout (defaults: tool 30, provider min(rec 20, 30) = 20)."""
     seen_timeouts: list[Any] = []
 
     class _RecordingProvider(_FakeSearchProvider):
@@ -1115,10 +1217,82 @@ def test_search_provider_timeout_bounded_by_tool_timeout() -> None:
             assert result.get("ok") is True
             return seen_timeouts[-1]
 
-    assert _timeout_for() == 10.0
+    assert _timeout_for() == 20.0, "tool 30 default, rec 20 binds"
     assert _timeout_for(search_web_timeout_s=30.0) == 20.0, "rec default binds"
     assert _timeout_for(search_web_timeout_s=30.0, llm_rec_timeout_s=60.0) == 30.0
     assert _timeout_for(llm_rec_timeout_s=5.0) == 5.0
+    assert _timeout_for(tool_timeout_s=5.0) == 5.0, "explicit general binds search_web"
+    assert _timeout_for(tool_timeout_s=45.0, llm_rec_timeout_s=60.0) == 45.0
+    assert _timeout_for(tool_timeout_s=45.0, search_web_timeout_s=12.0) == 12.0, (
+        "explicit search-specific wins"
+    )
+
+
+def test_search_web_timeout_precedence() -> None:
+    """Owner decision 2026-10-04 precedence for search_web: explicit
+    SEARCH_WEB_TIMEOUT_S, then explicit TOOL_TIMEOUT_S, then the 30 s
+    search default. Other tools keep the 10 s general default."""
+    from culinary_copilot.tools.registry import tool_timeout_s
+
+    assert tool_timeout_s("search_web", _settings()) == 30.0
+    assert tool_timeout_s("search_recipes", _settings()) == 10.0
+    assert tool_timeout_s("search_web", _settings(tool_timeout_s=5.0)) == 5.0
+    assert tool_timeout_s("search_recipes", _settings(tool_timeout_s=5.0)) == 5.0
+    assert tool_timeout_s("search_web", _settings(search_web_timeout_s=12.0)) == 12.0
+    assert (
+        tool_timeout_s("search_web", _settings(tool_timeout_s=5.0, search_web_timeout_s=12.0))
+        == 12.0
+    )
+
+
+def test_tool_timeout_cancellation_records_outcome() -> None:
+    """Tool-level cancellation of search_web records outcome
+    "cancelled" plus operations, then propagates: run_tool still
+    reports tool_timeout (nothing swallowed, no results recorded, no
+    ledger change — the run keeps the search spent)."""
+    import asyncio as _asyncio
+
+    class _SlowProvider(_FakeSearchProvider):
+        async def complete_web_search(self, **kwargs: Any) -> WebSearchResult:
+            await _asyncio.sleep(5)
+            return _ok_result()
+
+    with _disposable_pg("culinary_test_p5cancel") as engine:
+        from culinary_copilot.domain.sessions import SessionState
+        from culinary_copilot.services.session_store import PostgresSessionStore
+
+        store = PostgresSessionStore(engine)
+        store.create(SessionState(id="ses-cancel", internet_search_allowed=True))
+        ctx = ToolContext(
+            settings=_settings(tool_timeout_s=0.2),
+            engine=engine,
+            session_store=store,
+            bound_session_id="ses-cancel",
+            search_provider=_SlowProvider(),
+        )
+        defs = {d.name: d for d in all_tool_definitions(timeout_s=10.0)}
+        result = _run(
+            run_tool(
+                defs["search_web"],
+                all_tool_impls()["search_web"],
+                {"query": "cancellation case"},
+                ctx,
+                session_id="ses-cancel",
+                call_id="call-cancel",
+            )
+        )
+        assert result.get("reason") == "tool_timeout"
+        assert result.get("ok") is False
+        by_type: dict[str, list[Any]] = {}
+        for event in store.list_events("ses-cancel"):
+            by_type.setdefault(event.event_type, []).append(event.payload)
+        outcomes = [p.get("outcome") for p in by_type.get("search_outcome", [])]
+        assert "cancelled" in outcomes
+        ops = by_type.get("search_operations", [])
+        assert len(ops) == 1
+        assert ops[0].get("error") == "cancelled (tool timeout)"
+        assert isinstance(ops[0].get("latency_ms"), (int, float))
+        assert "search_results_retrieved" not in by_type
 
 
 def test_rejected_web_ref_lists_session_urls() -> None:

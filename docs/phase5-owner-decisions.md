@@ -584,3 +584,85 @@ Recorded by an AI assistant.
   the $0.025 estimate.
 - Phase 5's live checks are complete. Next: checkpoint B (logs, gap
   records, and the open search-timeout proposal).
+
+## Owner answers, search timeout and checkpoint B packet (2026-10-03)
+
+Recorded by an AI assistant; not a signature. The owner adopted the
+suggested decisions:
+
+- **The search timeout becomes 30 s permanently.** The
+  `SEARCH_WEB_TIMEOUT_S` default changes from 10 to 30 s for
+  `search_web` only. The general per-tool timeout (10 s, checkpoint 0)
+  is unchanged. The provider request stays bounded at
+  min(tool timeout, `llm_rec_timeout_s`). Evidence: latencies of 4.1 to
+  7.4 s across six reconciled searches, and one over 10 s that timed
+  out.
+- **Prepare a checkpoint B review packet**, with no paid calls and only
+  read-only access to the application database. It covers:
+  - the live search events;
+  - the gap candidates;
+  - a logging and privacy summary.
+
+## Checkpoint B: owner decisions (2026-10-03)
+
+Recorded by an AI assistant; not a signature. The owner adopted an
+external review of the checkpoint B packet
+(`evals/phase5_search/REVIEW.md`). Checkpoint B is **approved with
+conditions**. Phase 5 closes only after the offline fixes below.
+
+1. **Provider:** the OpenAI hosted web search, called through the
+   `search_web` wrapper, is approved on one condition. Accepted
+   references must come from the provider's own evidence
+   (`url_citation` annotations and/or `web_search_call.action.sources`),
+   not from URLs in the search model's generated JSON.
+   - Verified before recording: `action_sources` and `citations` are
+     collected in `llm/client.py` but never compared with the parsed
+     sources. A fake-provider reproduction showed that an invented URL
+     passes both the search processing and the final `web_refs`
+     validation.
+   - The 7 live searches did not store `action_sources`, so their
+     provenance cannot be shown after the fact. This does not mean the
+     live links were invented.
+2. **Search limit:** 3 per session stays the development ceiling. Future
+   live checks default to 1, or 2 when a test needs a follow-up search.
+   - The step-2 overrun stays on record. The refusals that followed show
+     that the fix works.
+   - Any future shared budget must reserve capacity atomically across
+     workers. A preflight check alone is not enough.
+3. **Budget:** $0.13 is this campaign's final ceiling. No further
+   searches are authorized.
+   - Accounting: $0.07649 reconciled, plus a $0.02500 timeout
+     reservation, gives $0.10149 against the budget.
+   - The reservation stays until its actual usage can be resolved.
+   - Call this "budget accounting", not invoiced spend or a proven
+     maximum charge.
+4. **Logs:** accepted as useful and privacy-acceptable, but only for
+   synthetic, owner-only development data. This acceptance does not
+   cover real users. Before any real-user storage, define retention and
+   deletion for:
+   - user messages, agent questions and raw trails;
+   - exports and backup copies.
+
+   The search purge is one component of that, not complete session-data
+   retention. Provider-side retention is separate from local deletion
+   and from `store: false`.
+5. **Gap queue:** keep the events plus the export, and defer a dedicated
+   table. The candidates are investigation leads, to be reviewed before
+   any cause is confirmed:
+   - four repeated missing-dish sessions are not four distinct missing
+     recipes;
+   - a successful manual recipe lookup does not show that it answers the
+     failed query.
+6. **Before Phase 6:** a small offline correction pass, then proceed.
+   - Fix the citation provenance and add the fake-provider regression.
+   - Correct the "completed: answered" labels on sessions that stopped
+     to ask the user a question.
+   - Describe the final success as **one demonstrated discovery answer
+     after fixes**, not a reliability result.
+   - Extend the Phase 6 specification to render:
+     - `web_answer`, with visible, clickable citations;
+     - its external/discovery status;
+     - clarification prompts;
+     - timeout and budget outcomes.
+
+No additional paid runs and no real-user logging are authorized.

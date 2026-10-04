@@ -624,3 +624,18 @@ compatibility.
 4. Content-token counts per call (not documented): only the 128k
    search-context window cap is documented. The $0.025/search figure
    is a provisional planning estimate (owner decision 4), not a bound.
+
+## Addendum — 30 s search timeout (2026-10-04, per docs/phase5-owner-decisions.md)
+
+Owner decision: `SEARCH_WEB_TIMEOUT_S` becomes a permanent 30 s
+default for `search_web` only; the general `TOOL_TIMEOUT_S` stays
+10 s. Evidence (live): six reconciled searches at 4.1–7.4 s, one
+over 10 s that timed out.
+
+Precedence for `search_web` (`tools/registry.py::tool_timeout_s`):
+explicit `SEARCH_WEB_TIMEOUT_S` wins; else explicit `TOOL_TIMEOUT_S`
+wins (the owner deliberately retunes every tool); else the 30 s
+search default applies with no env var at all. The provider request
+stays bounded at min(tool timeout, `llm_rec_timeout_s`): with
+defaults min(30, 20) = 20 s, so no run-only env var is needed any
+more.

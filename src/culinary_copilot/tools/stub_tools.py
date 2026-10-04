@@ -266,10 +266,10 @@ async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str
     except Exception:
         instruction = "Summarize the search results for the query."
     max_output = int(_settings_value(context, "search_max_output_tokens", 1500) or 1500)
-    # Provider request timeout (2026-10-03 search proposal): at most
+    # Provider request timeout (owner decision 2026-10-04): at most
     # the tool timeout, so an abandoned request cannot keep running
-    # long after the tool gave up. Defaults keep current behavior
-    # (tool 10 s, provider min(rec 20 s, 10 s)).
+    # long after the tool gave up. Defaults: tool 30 s, provider
+    # min(rec 20 s, 30 s) = 20 s.
     from culinary_copilot.tools.registry import tool_timeout_s as _tool_timeout_s
 
     settings = getattr(context, "settings", None)
@@ -286,6 +286,31 @@ async def search_web_impl(args: SearchWebArgs, context: ToolContext) -> dict[str
             max_output_tokens=max_output,
             timeout=provider_timeout,
         )
+    except asyncio.CancelledError:
+        # Tool-level timeout cancelled the provider call (residual
+        # case: with defaults the provider's own 20 s timeout fires
+        # first and is recorded as outcome "error" below). Best
+        # effort, then re-raise: no results are recorded, ledger
+        # handling is unchanged (the run keeps the search spent), and
+        # the cancellation still surfaces as a tool timeout upstream.
+        try:
+            store.append_event(
+                session_id,
+                "search_outcome",
+                {"call_id": call_id, "outcome": "cancelled"},
+            )
+            store.append_event(
+                session_id,
+                "search_operations",
+                {
+                    "call_id": call_id,
+                    "latency_ms": round((time.monotonic() - started) * 1000, 2),
+                    "error": "cancelled (tool timeout)",
+                },
+            )
+        except Exception:
+            pass
+        raise
     except Exception as exc:
         if getattr(exc, "runner_stop", False):
             # Runner control flow (budget refusal, estimate breach):

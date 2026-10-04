@@ -288,13 +288,15 @@ class Settings(BaseSettings):
     # Typed tool layer (Milestone 3, Phase 2, Checkpoint 0 budgets):
     # per-tool timeout 10 s. Read by tools/registry.py on every call.
     tool_timeout_s: float = 10.0
-    # Hosted web search timeout (proposed 2026-10-03, default = current
-    # 10 s: nothing changes until the owner approves a higher value).
-    # Read by tools/registry.py for search_web calls only, and passed
-    # to the search provider as its own request timeout (at most the
-    # tool timeout, so an abandoned request cannot long outlive the
-    # tool that gave up on it).
-    search_web_timeout_s: float = 10.0
+    # Hosted web search timeout (owner decision 2026-10-04: 30 s
+    # permanent default for search_web only; the general TOOL_TIMEOUT_S
+    # stays 10 s). Read by tools/registry.py for search_web calls only,
+    # and passed to the search provider as its own request timeout at
+    # most the tool timeout (see tools/stub_tools.py), so an abandoned
+    # request cannot long outlive the tool that gave up on it. With
+    # defaults the provider request is bounded at
+    # min(tool 30 s, llm_rec_timeout_s 20 s) = 20 s.
+    search_web_timeout_s: float = 30.0
     # Bounded agent loop (Milestone 3, Phase 3, Checkpoint 0 budgets):
     # wall clock 90 s per agent run. Read by agent/loop.py at run start.
     # Steps (8) and tool calls (12) are per-session budgets stored on the

@@ -273,33 +273,53 @@ _TOOL_TIMEOUT_SETTINGS = {"search_web": "search_web_timeout_s"}
 def tool_timeout_s(tool_name: str, settings: Any, default: float = 10.0) -> float:
     """Effective timeout for one tool call (single source of truth).
 
-    The per-tool settings override wins when explicitly set
-    (constructor kwarg or environment; pydantic
-    ``model_fields_set``), else ``Settings.tool_timeout_s``, else the
-    passed default. Without the explicitness check the override's own
-    default would shadow a deliberately set general timeout. Used
-    both by ``run_tool`` (via ``_timeout_for``) and by
-    implementations that must bound their own sub-requests at most at
-    the tool timeout.
+    Precedence for a tool with a dedicated setting (currently
+    ``search_web`` -> ``SEARCH_WEB_TIMEOUT_S``, owner decision
+    2026-10-03):
+    1. the dedicated setting when explicitly set (constructor kwarg
+       or environment; pydantic ``model_fields_set``);
+    2. ``TOOL_TIMEOUT_S`` when explicitly set (the owner deliberately
+       retunes every tool, search_web included);
+    3. the dedicated setting's code default (30 s for search_web:
+       applies with no env var at all);
+    4. the passed default (10 s; tools without a dedicated setting
+       resolve here via ``TOOL_TIMEOUT_S`` first).
+    Without the explicitness checks the dedicated default would either
+    shadow a deliberately set general timeout or be shadowed by the
+    general default. Used both by ``run_tool`` (via ``_timeout_for``)
+    and by implementations that must bound their own sub-requests at
+    most at the tool timeout.
     """
+
+    def _positive(key: str) -> float | None:
+        try:
+            value = float(getattr(settings, key))
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
     override_key = _TOOL_TIMEOUT_SETTINGS.get(str(tool_name))
     if override_key is not None and settings is not None and hasattr(settings, override_key):
         fields_set = getattr(settings, "model_fields_set", None)
-        explicit = (override_key in fields_set) if fields_set is not None else True
-        if explicit:
-            try:
-                value = float(getattr(settings, override_key))
-                if value > 0:
-                    return value
-            except (TypeError, ValueError):
-                pass
-    if settings is not None and hasattr(settings, "tool_timeout_s"):
-        try:
-            value = float(getattr(settings, "tool_timeout_s"))
-            if value > 0:
+
+        def _explicit(key: str) -> bool:
+            return (key in fields_set) if fields_set is not None else True
+
+        if _explicit(override_key):
+            value = _positive(override_key)
+            if value is not None:
                 return value
-        except (TypeError, ValueError):
-            pass
+        if hasattr(settings, "tool_timeout_s") and _explicit("tool_timeout_s"):
+            value = _positive("tool_timeout_s")
+            if value is not None:
+                return value
+        value = _positive(override_key)
+        if value is not None:
+            return value
+    if settings is not None and hasattr(settings, "tool_timeout_s"):
+        value = _positive("tool_timeout_s")
+        if value is not None:
+            return value
     return float(default)
 
 
