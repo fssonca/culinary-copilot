@@ -659,15 +659,77 @@ def test_allergen_tables_share_p3l07() -> None:
         "paneer",
     ):
         assert cheese in dairy and cheese in VEGAN_EXTRA_TERMS, cheese
-    # Alternative-flour exemptions reuse the shared compound table.
+    # Alternative-flour exemptions reuse the shared compound table;
+    # oat flour stays exempt from "flour" and is marked unverified via
+    # the "oat" term instead (Phase 7 review).
     shared_flours = {c for c in COMPOUND_EXCEPTIONS if c.endswith(" flour")}
     assert {"rice flour", "almond flour", "coconut flour", "oat flour"} <= shared_flours
-    assert {"rice flour", "almond flour", "coconut flour", "oat flour"} <= set(_alt_flour_phrases())
+    assert shared_flours <= set(_alt_flour_phrases())
     # Fish/shellfish overlap with the P3-L-07 vegetarian list.
     assert set(ALLERGEN_VIOLATED_TERMS["fish"]) <= set(VEGETARIAN_VIOLATION_TERMS)
     assert set(ALLERGEN_VIOLATED_TERMS["shellfish"]) - {"shellfish"} <= set(
         VEGETARIAN_VIOLATION_TERMS
     )
+
+
+def test_quantity_matching_mixed_fractions() -> None:
+    # P7-MIXED-01: exact rationals via the shared ingestion parser
+    # (recipes/normalize.py::quantity). No tolerance, units still exact.
+    from culinary_copilot.agent.validate import _numbers_equal
+
+    assert _numbers_equal("1 1/2", "1.5") is True
+    assert _numbers_equal("1 1/2", "3/2") is True
+    assert _numbers_equal("1.5", "3/2") is True
+    assert _numbers_equal("0.33", "1/3") is False
+    assert _numbers_equal("a lot", "1.5") is False
+    assert _numbers_equal("1.5", "a lot") is False
+    assert _numbers_equal("1 1/2", "2") is False
+    flour_doc = {
+        "ingredients": [
+            {"canonical": "flour", "amount": "1.5", "unit": "cup"},
+        ]
+    }
+    assert quantity_in_source({"ingredient": "flour", "amount": "1 1/2", "unit": "cup"}, flour_doc)
+    assert not quantity_in_source(
+        {"ingredient": "flour", "amount": "1 1/2", "unit": "g"}, flour_doc
+    )
+
+
+def test_allergen_oat_compounds() -> None:
+    # Phase 7 review: oatmeal is unverified (single token, missed by
+    # word-boundary "oat"); oat flour is unverified via "oat", never
+    # violated (it is not wheat); goat cheese stays clean.
+    from culinary_copilot.agent.validate import check_allergen_option
+
+    def _status(line: str) -> tuple[str, dict[str, object]]:
+        doc = {"ingredients": [{"canonical": line, "quantity_text": line}]}
+        _, entry = check_allergen_option(0, {}, doc, "wheat/gluten")
+        assert isinstance(entry, dict)
+        return str(entry.get("status")), entry
+
+    status, entry = _status("1 cup oatmeal")
+    assert status == "unverified", entry
+    assert "oatmeal" in entry.get("unverified_terms", [])
+    errors, entry = check_allergen_option(
+        0,
+        {},
+        {"ingredients": [{"canonical": "oat flour", "quantity_text": "2 tbsp oat flour"}]},
+        "wheat/gluten",
+    )
+    assert entry.get("status") == "unverified", entry
+    assert "oat" in entry.get("unverified_terms", [])
+    assert not entry.get("terms"), entry
+    assert not errors, entry
+    errors, entry = check_allergen_option(
+        0,
+        {},
+        {"ingredients": [{"canonical": "flour", "quantity_text": "2 tbsp flour"}]},
+        "wheat/gluten",
+    )
+    assert entry.get("status") == "violated", entry
+    assert errors, entry
+    status, entry = _status("30 g goat cheese")
+    assert status == "no_listed_terms_found", entry
 
 
 def test_allergen_safety_claim_detector() -> None:

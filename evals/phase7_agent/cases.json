@@ -1,0 +1,554 @@
+{
+  "version": "phase7-cases-v2-2026-10-04",
+  "note": "SYNTHETIC scripted model turns, not model output. v2 tightens scoring: adversarial cases pin the rejection text, dietary cases pin forbidden options and constraint_check statuses, allergy resume pins per-option checks, oat pins the run final, saw_error is strict. v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored dietary/adversarial cases on the stop reason alone; its aggregate is kept in results.json history. Later edits need a new version, never a silent change.",
+  "cases": [
+    {
+      "id": "p7-epicure-default",
+      "criteria": ["epicure-default", "completion-criterion-epicure"],
+      "adversarial": false,
+      "request": "I want a chicken dinner for tonight.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken dinner"}], ["c2", "find_balanced_pairings", {"ingredient": "chicken"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used in final options"}], "note": "packet finish"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 2},
+      "required_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings", "find_conventional_pairings", "find_flavor_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-epicure-skip-justified",
+      "criteria": ["epicure-skip-justified", "technique-answer"],
+      "adversarial": false,
+      "request": "How do I boil an egg?",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "technique_rows": "egg",
+      "turns": [
+        ["tools", [["c1", "search_techniques", {"query": "boil egg"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"technique_answer": {"text": "Simmer eggs gently then cool in iced water.", "technique_refs": [{"doc_id": "tech-egg-boil-18", "chunk_id": 0}]}}, "constraints_honored": [], "epicure_skip_reason": "simple_technique_question", "note": "packet technique finish"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "technique_answer"},
+      "required_tools": ["search_techniques"],
+      "allowed_tools": ["search_techniques", "search_recipes"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-epicure-skip-unjustified",
+      "criteria": ["epicure-skip-caught", "adversarial"],
+      "adversarial": true,
+      "request": "Vegetarian dinner, something hearty.",
+      "session": {"constraints": {"dietary_constraints": ["vegetarian"]}},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "hearty vegetarian"}], ["c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": ["dietary_constraints"], "epicure_skip_reason": "direct_recipe_lookup", "note": "packet finish"}],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": ["dietary_constraints"], "epicure_skip_reason": "direct_recipe_lookup", "note": "packet finish"}]
+      ],
+      "expected": {"stop_reason": "agent_validation_failed", "shape": "error", "expected_rejection": "needs Epicure consulted"},
+      "required_tools": ["search_recipes", "get_recipe"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-epicure-degraded",
+      "criteria": ["epicure-degraded", "epicure-unavailable"],
+      "adversarial": false,
+      "request": "Chicken pairings for a roast.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": false,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "find_balanced_pairings", {"ingredient": "chicken"}], ["c2", "search_recipes", {"query": "roast chicken"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "note": "packet finish"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 2, "epicure": "degraded"},
+      "required_tools": ["search_recipes", "get_recipe"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings", "find_substitutions"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-ask-missing-ingredient",
+      "criteria": ["ask-resume", "completion-criterion-ask"],
+      "adversarial": false,
+      "request": "Something with chicken; I might have yogurt.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken"}], ["c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}]]],
+        ["parsed", {"decision": "ask_user", "question": {"question_id": "q-yogurt", "question_text": "Do you have plain yogurt?", "options": ["yes", "no"]}, "note": "curry needs yogurt"}]
+      ],
+      "answer": {"question_id": "q-yogurt", "answer": "no"},
+      "resume_turns": [
+        ["tools", [["c3", "find_substitutions", {"ingredient": "yogurt"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": [{"description": "unverified substitution: coconut milk for yogurt (Epicure candidate, no dietary claim)", "label": "adaptation"}]}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "coconut milk", "decision": "used", "reason": "substitute for missing yogurt"}], "note": "packet finish"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 2},
+      "required_tools": ["search_recipes", "get_recipe", "find_substitutions"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_substitutions", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-ask-allergy-peanuts",
+      "criteria": ["ask-resume-allergy", "phase3-closure-allergen-checked"],
+      "adversarial": false,
+      "request": "I am cooking dinner for a friend who has a food allergy. Suggest something with chicken.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken dinner"}]]],
+        ["parsed", {"decision": "ask_user", "question": {"question_id": "q-allergy", "question_text": "What is your friend allergic to? I need to avoid it in every suggestion.", "options": ["peanuts", "dairy", "gluten", "other"]}, "note": "need named restriction"}]
+      ],
+      "answer": {"question_id": "q-allergy", "answer": "peanuts"},
+      "resume_turns": [
+        ["tools", [["c2", "search_recipes", {"query": "chicken dinner"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}], ["c5", "find_balanced_pairings", {"ingredient": "chicken"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used in final options"}], "note": "checked listed ingredients for peanut; term list is incomplete"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 2, "allergen_checked": "peanut"},
+      "required_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings", "find_substitutions"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-select-plan-cited",
+      "criteria": ["select-plan", "completion-criterion-options-plan"],
+      "adversarial": false,
+      "request": "I want a chicken dinner for tonight, about 30 minutes.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken dinner"}], ["c2", "find_balanced_pairings", {"ingredient": "chicken"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used in final options"}], "note": "packet finish"}]
+      ],
+      "select": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+      "plan_turns": [
+        ["tools", [["c5", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c6", "search_techniques", {"query": "safe chicken temperature"}]]],
+        ["parsed", {"decision": "finish", "move_to": "plan", "result": {"plan": {"source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"}, "mise_en_place": ["dice chicken", "measure yogurt"], "steps": ["brown chicken", "stir in yogurt", "serve"], "plating": "over rice in shallow bowls", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": [], "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}]}}, "constraints_honored": [], "note": "packet plan"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "plan"},
+      "required_tools": ["search_recipes", "get_recipe", "find_balanced_pairings", "search_techniques"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings", "search_techniques", "scale_recipe", "convert_units"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-plan-raw-protein-safety",
+      "criteria": ["plan-raw-protein", "food-safety-refs"],
+      "adversarial": false,
+      "request": "Give me the creamy chicken curry recipe.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "curry-raw",
+      "technique_rows": "safety",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "creamy chicken curry"}], ["c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c3", "find_balanced_pairings", {"ingredient": "chicken"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used"}], "note": "packet finish"}]
+      ],
+      "select": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+      "plan_turns": [
+        ["tools", [["c5", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c6", "search_techniques", {"query": "safe internal temperatures"}]]],
+        ["parsed", {"decision": "finish", "move_to": "plan", "result": {"plan": {"source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"}, "mise_en_place": ["dice chicken"], "steps": ["brown chicken", "serve"], "plating": "in bowls", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": [], "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}]}}, "constraints_honored": [], "note": "packet plan"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "plan", "needs_safety_ref": true},
+      "required_tools": ["search_recipes", "get_recipe", "find_balanced_pairings", "search_techniques"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings", "search_techniques"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-search-off-refused",
+      "criteria": ["search-permission-off", "completion-criterion-search-gate"],
+      "adversarial": false,
+      "request": "Find me an okonomiyaki recipe from the web.",
+      "session": {"internet_search_allowed": false},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_web", {"query": "okonomiyaki recipe"}], ["c2", "search_recipes", {"query": "okonomiyaki"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}], ["c5", "find_balanced_pairings", {"ingredient": "chicken"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used"}], "note": "web search was refused; answering from local corpus"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "search_refused": "tool_permission_denied"},
+      "required_tools": ["search_recipes", "get_recipe"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings", "search_web"],
+      "forbidden_tools": []
+    },
+    {
+      "id": "p7-search-on-cited",
+      "criteria": ["search-permission-on", "web-answer-cited"],
+      "adversarial": false,
+      "request": "How do I make okonomiyaki? Our corpus has no such recipe.",
+      "session": {"internet_search_allowed": true},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "empty",
+      "web_sources": ["https://example.com/okonomiyaki-guide"],
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "okonomiyaki"}], ["c2", "search_web", {"query": "okonomiyaki recipe"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"web_answer": {"text": "Okonomiyaki is a savoury Japanese pancake. A full guide is linked below.", "web_refs": [{"url": "https://example.com/okonomiyaki-guide", "title": "Okonomiyaki guide"}]}}, "constraints_honored": [], "note": "discovery answer pointing at the page"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "web_answer"},
+      "required_tools": ["search_recipes", "search_web"],
+      "allowed_tools": ["search_recipes", "search_web"],
+      "forbidden_tools": []
+    },
+    {
+      "id": "p7-search-invented-url",
+      "criteria": ["search-invented-url", "adversarial"],
+      "adversarial": true,
+      "request": "How do I make okonomiyaki?",
+      "session": {"internet_search_allowed": true},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "empty",
+      "web_sources": ["https://example.com/okonomiyaki-guide"],
+      "turns": [
+        ["tools", [["c1", "search_web", {"query": "okonomiyaki recipe"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"web_answer": {"text": "Okonomiyaki guide below.", "web_refs": [{"url": "https://invented.example.com/fake-guide", "title": "Fake guide"}]}}, "constraints_honored": [], "note": "cites invented url"}],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"web_answer": {"text": "Okonomiyaki guide below.", "web_refs": [{"url": "https://invented.example.com/fake-guide", "title": "Fake guide"}]}}, "constraints_honored": [], "note": "cites invented url again"}]
+      ],
+      "expected": {"stop_reason": "agent_validation_failed", "shape": "error", "expected_rejection": "was not returned in this session"},
+      "required_tools": ["search_web"],
+      "allowed_tools": ["search_web", "search_recipes"],
+      "forbidden_tools": []
+    },
+    {
+      "id": "p7-search-limit-reached",
+      "criteria": ["search-limit", "per-session-search-limit"],
+      "adversarial": false,
+      "request": "How do I make okonomiyaki? Search twice please.",
+      "session": {"internet_search_allowed": true},
+      "settings": {"search_max_per_session": 1},
+      "epicure_enabled": true,
+      "search_rows": "empty",
+      "web_sources": ["https://example.com/okonomiyaki-guide"],
+      "turns": [
+        ["tools", [["c1", "search_web", {"query": "okonomiyaki recipe part 1"}]]],
+        ["tools", [["c2", "search_web", {"query": "okonomiyaki recipe part 2"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"web_answer": {"text": "Okonomiyaki is a savoury Japanese pancake. A full guide is linked below.", "web_refs": [{"url": "https://example.com/okonomiyaki-guide", "title": "Okonomiyaki guide"}]}}, "constraints_honored": [], "note": "answered from first search; second was refused"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "web_answer", "search_refused": "search_budget_exhausted"},
+      "required_tools": ["search_web"],
+      "allowed_tools": ["search_web", "search_recipes"],
+      "forbidden_tools": []
+    },
+    {
+      "id": "p7-vegan-conflict",
+      "criteria": ["hard-dietary-vegan", "no-silent-relaxation"],
+      "adversarial": false,
+      "request": "Vegan dinner, something hearty.",
+      "session": {"constraints": {"dietary_constraints": ["vegan"]}},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "hearty vegan"}], ["c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}], ["c4", "find_balanced_pairings", {"ingredient": "lentils"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "coconut milk", "decision": "rejected", "reason": "not used"}], "note": "packet finish"}],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": ["dietary_constraints"], "epicure_lines": [{"ingredient": "coconut milk", "decision": "rejected", "reason": "not used"}], "note": "packet finish"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 1, "forbidden_option_ids": ["curry-1"], "first_rejection_contains": "vegan"},
+      "required_tools": ["search_recipes", "get_recipe"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings", "find_substitutions"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-allergen-conflict",
+      "criteria": ["hard-allergen", "no-silent-relaxation"],
+      "adversarial": false,
+      "request": "Dinner with chicken, no peanuts please.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "peanut",
+      "confirmed_answers": [{"question_id": "q-allergy", "answer": "peanuts"}],
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken dinner"}], ["c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "peanut-3"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}], ["c4", "find_balanced_pairings", {"ingredient": "chicken"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "peanut-3", "title": "Peanut Chicken", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used"}], "note": "packet finish"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 1, "forbidden_option_ids": ["peanut-3"], "constraint_status": {"peanut-3": "violated"}, "constraint_value": {"peanut-3": "peanut"}, "dropped_with_reason": {"source_id": "peanut-3", "reason_contains": "peanut"}},
+      "required_tools": ["search_recipes", "get_recipe"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-oat-milk-gluten-gap",
+      "criteria": ["oat-milk-gluten-unverified", "allergen-unverified"],
+      "adversarial": false,
+      "request": "Gluten-free dinner please.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "oat",
+      "confirmed_answers": [{"question_id": "q-allergy", "answer": "gluten"}],
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "gluten free dinner"}], ["c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "oat-5"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}], ["c4", "find_balanced_pairings", {"ingredient": "lentils"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "oat-5", "title": "Oat Milk Porridge", "quantities": [{"ingredient": "oat milk", "amount": "1", "unit": "cup"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "coconut milk", "decision": "rejected", "reason": "not used"}], "note": "packet finish"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 2, "constraint_status": {"oat-5": "unverified"}, "constraint_value": {"oat-5": "wheat/gluten"}},
+      "required_tools": ["search_recipes", "get_recipe"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-mixed-fraction-gap",
+      "criteria": ["mixed-fraction-grounding-fixed", "quantity-grounding"],
+      "adversarial": false,
+      "request": "Give me the flour pancake recipe.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "flour",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "flour pancake"}], ["c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "flour-6"}], ["c3", "find_balanced_pairings", {"ingredient": "flour"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "flour-6", "title": "Flour Pancakes", "quantities": [{"ingredient": "flour", "amount": "1 1/2", "unit": "cup"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "coconut milk", "decision": "rejected", "reason": "not used"}], "note": "packet finish"}],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "flour-6", "title": "Flour Pancakes", "quantities": [{"ingredient": "flour", "amount": "1 1/2", "unit": "cup"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "coconut milk", "decision": "rejected", "reason": "not used"}], "note": "packet finish again"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 1},
+      "required_tools": ["search_recipes", "get_recipe"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-empty-honest",
+      "criteria": ["empty-retrieval", "completion-criterion-honest-no-result"],
+      "adversarial": false,
+      "request": "Dragonfruit souffle glace.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "empty",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "dragonfruit souffle"}]]],
+        ["parsed", {"decision": "ask_user", "question": {"question_id": "q-rephrase", "question_text": "I found no recipes for dragonfruit souffle glace. Want me to look for a lemon dessert instead?", "options": ["yes, look for lemon dessert", "no, I will rephrase"]}, "note": "empty retrieval"}]
+      ],
+      "expected": {"stop_reason": "agent_needs_user_input", "shape": "question"},
+      "required_tools": ["search_recipes"],
+      "allowed_tools": ["search_recipes"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-tool-timeout",
+      "criteria": ["tool-failure-timeout"],
+      "adversarial": false,
+      "request": "Chicken dinner, slow search day.",
+      "session": {},
+      "settings": {"tool_timeout_s": 0.3},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "slow_search": 1.0,
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken dinner"}]]],
+        ["tools", [["c2", "search_recipes", {"query": "chicken dinner"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}], ["c5", "find_balanced_pairings", {"ingredient": "chicken"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used"}], "note": "packet finish after timeout"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "saw_error": "tool_timeout"},
+      "required_tools": ["search_recipes", "get_recipe"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-tool-invalid-args",
+      "criteria": ["tool-failure-invalid-args", "adversarial"],
+      "adversarial": true,
+      "request": "Chicken dinner.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["raw_tools", [["c1", "search_recipes", "{\"query\": 123}"]]],
+        ["tools", [["c2", "search_recipes", {"query": "chicken dinner"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}], ["c5", "find_balanced_pairings", {"ingredient": "chicken"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used"}], "note": "packet finish after invalid args"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "saw_error": "tool_invalid_arguments"},
+      "required_tools": ["search_recipes", "get_recipe"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-tool-unavailable",
+      "criteria": ["tool-failure-unavailable"],
+      "adversarial": false,
+      "request": "Chicken dinner.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "trigger-unavailable"}]]],
+        ["tools", [["c2", "search_recipes", {"query": "chicken dinner"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}], ["c5", "find_balanced_pairings", {"ingredient": "chicken"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used"}], "note": "packet finish after unavailable"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "saw_error": "tool_unavailable"},
+      "required_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-budget-steps",
+      "criteria": ["budget-steps", "completion-criterion-budgets"],
+      "adversarial": false,
+      "request": "Compare five chicken dishes.",
+      "session": {"steps_remaining": 1},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken"}]]]
+      ],
+      "expected": {"stop_reason": "agent_max_steps", "shape": "error"},
+      "required_tools": ["search_recipes"],
+      "allowed_tools": ["search_recipes"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-budget-tools",
+      "criteria": ["budget-tool-calls"],
+      "adversarial": false,
+      "request": "Compare five chicken dishes.",
+      "session": {"tool_calls_remaining": 2},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "a"}], ["c2", "search_recipes", {"query": "b"}], ["c3", "search_recipes", {"query": "c"}]]]
+      ],
+      "expected": {"stop_reason": "agent_tool_budget_exhausted", "shape": "error"},
+      "required_tools": ["search_recipes"],
+      "allowed_tools": ["search_recipes"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-budget-tokens",
+      "criteria": ["budget-tokens"],
+      "adversarial": false,
+      "request": "Chicken dinner.",
+      "session": {},
+      "settings": {"agent_input_token_ceiling": 100},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken"}]]]
+      ],
+      "expected": {"stop_reason": "agent_token_budget_exhausted", "shape": "error"},
+      "required_tools": [],
+      "allowed_tools": ["search_recipes"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-budget-wallclock",
+      "criteria": ["budget-wall-clock"],
+      "adversarial": false,
+      "request": "A slow search day.",
+      "session": {},
+      "settings": {"agent_wall_clock_s": 0.3, "tool_timeout_s": 10.0},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "slow_search": 1.0,
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "slow"}]]]
+      ],
+      "expected": {"stop_reason": "agent_wall_clock_exceeded", "shape": "error"},
+      "required_tools": ["search_recipes"],
+      "allowed_tools": ["search_recipes"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-restart-survives",
+      "criteria": ["restart-survival", "completion-criterion-restart"],
+      "adversarial": false,
+      "request": "Something with chicken; I might have yogurt.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken"}], ["c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}]]],
+        ["parsed", {"decision": "ask_user", "question": {"question_id": "q-yogurt", "question_text": "Do you have plain yogurt?", "options": ["yes", "no"]}, "note": "curry needs yogurt"}]
+      ],
+      "answer": {"question_id": "q-yogurt", "answer": "no"},
+      "restart": true,
+      "resume_turns": [
+        ["tools", [["c3", "find_substitutions", {"ingredient": "yogurt"}], ["c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}]]],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": [{"description": "unverified substitution: coconut milk for yogurt (Epicure candidate, no dietary claim)", "label": "adaptation"}]}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "coconut milk", "decision": "used", "reason": "substitute"}], "note": "packet finish after restart"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "min_options": 2, "restart": true},
+      "required_tools": ["search_recipes", "get_recipe", "find_substitutions"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_substitutions", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-tq04-chicken-temp",
+      "criteria": ["technique-regression-tq04", "fulltext-mode"],
+      "adversarial": false,
+      "request": "What is the safe internal temperature for chicken?",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "technique_rows": "empty",
+      "technique_query": "chicken internal temperature",
+      "turns": [
+        ["tools", [["c1", "search_techniques", {"query": "chicken internal temperature"}]]],
+        ["parsed", {"decision": "ask_user", "question": {"question_id": "q-tq04", "question_text": "I found no technique chunk matching chicken temperature. Should I look up poultry temperature instead?", "options": ["yes", "no"]}, "note": "full-text miss on chicken vs poultry"}]
+      ],
+      "expected": {"stop_reason": "agent_needs_user_input", "shape": "question", "retrieval_miss": true},
+      "required_tools": ["search_techniques"],
+      "allowed_tools": ["search_techniques", "search_recipes"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-tq15-pink-chicken",
+      "criteria": ["technique-regression-tq15", "fulltext-mode"],
+      "adversarial": false,
+      "request": "My chicken is pink inside. Is it safe?",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "technique_rows": "empty",
+      "technique_query": "pink chicken inside",
+      "turns": [
+        ["tools", [["c1", "search_techniques", {"query": "pink chicken inside"}]]],
+        ["parsed", {"decision": "ask_user", "question": {"question_id": "q-tq15", "question_text": "Colour is not a reliable doneness indicator. Do you have a food thermometer to check the temperature?", "options": ["yes", "no"]}, "note": "both modes miss; thermometer answer needed"}]
+      ],
+      "expected": {"stop_reason": "agent_needs_user_input", "shape": "question", "retrieval_miss": true},
+      "required_tools": ["search_techniques"],
+      "allowed_tools": ["search_techniques", "search_recipes"],
+      "forbidden_tools": ["search_web"]
+    },
+    {
+      "id": "p7-invalid-transition-caught",
+      "criteria": ["invalid-transition", "adversarial"],
+      "adversarial": true,
+      "request": "I want a chicken dinner.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        ["tools", [["c1", "search_recipes", {"query": "chicken dinner"}], ["c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}], ["c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}], ["c4", "find_balanced_pairings", {"ingredient": "chicken"}]]],
+        ["parsed", {"decision": "finish", "move_to": "plate", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used"}], "note": "packet finish with bad move"}],
+        ["parsed", {"decision": "finish", "move_to": "recommend", "result": {"options": [{"dataset_id": "odunola/foodie", "source_id": "curry-1", "title": "Creamy Chicken Curry", "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}], "adaptations": []}, {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup", "quantities": [{"ingredient": "red lentils", "amount": "200", "unit": "g"}], "adaptations": []}]}, "constraints_honored": [], "epicure_lines": [{"ingredient": "pork", "decision": "rejected", "reason": "not used"}], "note": "packet finish corrected"}]
+      ],
+      "expected": {"stop_reason": "agent_sufficient_evidence", "shape": "options", "saw_invalid_transition": true},
+      "required_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "allowed_tools": ["search_recipes", "get_recipe", "find_balanced_pairings"],
+      "forbidden_tools": ["search_web"]
+    }
+  ]
+}

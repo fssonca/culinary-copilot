@@ -404,7 +404,12 @@ ALLERGEN_VIOLATED_PHRASES: dict[str, tuple[str, ...]] = {
 #: lists the term and the note may not claim the option was checked
 #: clean (same "verified" rule as P3-L-07).
 ALLERGEN_UNVERIFIED_TERMS: dict[str, frozenset[str]] = {
-    "wheat/gluten": frozenset({"bouillon", "malt", "seasoning", "oats"}),
+    # "oat" covers "oat", "oats" and "oat milk" via the plural-aware
+    # matcher (Phase 7 P7-OAT-01: "oat milk" was missed by "oats" alone).
+    # "oatmeal" is a single token, so word-boundary matching needs it
+    # literally (Phase 7 review). Compound forms found in the Epicure
+    # vocabulary (oat, oat_milk) are covered by "oat".
+    "wheat/gluten": frozenset({"bouillon", "malt", "seasoning", "oat", "oatmeal"}),
     "fish": frozenset({"worcestershire"}),
     "egg": frozenset({"custard", "pasta", "batter"}),
     "soy": frozenset({"lecithin"}),
@@ -428,7 +433,10 @@ def _alt_flour_phrases() -> tuple[str, ...]:
     """Alternative-flour exemptions: the flour compounds shared with
     ``recommendations.policy.COMPOUND_EXCEPTIONS`` (rice, almond,
     coconut, chickpea, oat, buckwheat) plus corn, potato and tapioca.
-    A "flour" hit on a line naming one of these is not wheat."""
+    A "flour" hit on a line naming one of these is not wheat. Oat
+    flour is not wheat but can be gluten cross-contaminated: the
+    unverified term "oat" marks it unverified, never violated (Phase 7
+    review: a violated reason would falsely say it contains wheat)."""
     from culinary_copilot.recommendations.policy import COMPOUND_EXCEPTIONS
 
     shared = sorted(c for c in COMPOUND_EXCEPTIONS if c.endswith(" flour"))
@@ -716,10 +724,20 @@ def _numbers_equal(left: Any, right: Any) -> bool:
         return left is None and right is None
     if str(left).strip() == str(right).strip():
         return True
+    # Exact rational comparison (Phase 7 P7-MIXED-01): "1 1/2" and 1.5
+    # are the same quantity. Reuses the deterministic ingestion parser
+    # (recipes/normalize.py::quantity), not a third parser and not float
+    # tolerance: "0.33" still does not match "1/3".
+    from culinary_copilot.recipes.normalize import quantity as _quantity
+
     try:
-        return float(str(left).strip()) == float(str(right).strip())
+        parsed_left = _quantity(str(left))
+        parsed_right = _quantity(str(right))
     except (TypeError, ValueError):
         return False
+    if parsed_left is None or parsed_right is None:
+        return False
+    return parsed_left == parsed_right
 
 
 def quantity_in_source(claim: dict[str, Any], doc: dict[str, Any]) -> bool:

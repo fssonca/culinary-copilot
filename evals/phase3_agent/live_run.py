@@ -207,10 +207,24 @@ PHASE5_HISTORY = REPO_ROOT / "data" / "phase5-live" / "spend-history.json"
 BUDGET_POOLS: dict[str, dict[str, Any]] = {
     "phase3": {"history": SPEND_HISTORY, "cap_usd": LIVE_CAP_USD},
     "phase5": {"history": PHASE5_HISTORY, "cap_usd": PHASE5_CAP_USD},
+    "phase7": {
+        "history": REPO_ROOT / "data" / "phase7-live" / "spend-history.json",
+        "cap_usd": 0.50,
+    },
 }
 #: Live-check search slots per session (owner item 3): at most 2, inside
 #: the code limit of 3.
 PHASE5_MAX_SEARCHES_PER_SESSION = 2
+#: Phase 7 live pool (part 2, prepared only): $0.50 of the $1.00 M3
+#: ceiling. Covers agent turns, search sub-requests, embeddings and
+#: retries in one ledger. Runs only with explicit owner acknowledgement.
+PHASE7_CAP_USD = 0.50
+PHASE7_HISTORY = REPO_ROOT / "data" / "phase7-live" / "spend-history.json"
+PHASE7_MAX_SEARCHES_PER_SESSION = 2
+PHASE7_CAMPAIGN_SEARCH_CAP = 5
+#: Exact owner-acknowledgment value for the Phase 7 live run
+#: (checkpoint C). Preflight checks this exact string.
+PHASE7_ACK_VALUE = "phase7-checkpoint-c-2026-10-04"
 
 
 # --- input bound ---------------------------------------------------------------
@@ -1169,7 +1183,7 @@ def preflight(
                 problems.append(f"Epicure cache probe failed for {name}: {error}")
     pool = str(getattr(args, "budget_pool", "phase3") or "phase3")
     if pool not in BUDGET_POOLS:
-        problems.append(f"unknown --budget-pool {pool!r} (phase3 | phase5)")
+        problems.append(f"unknown --budget-pool {pool!r} (phase3 | phase5 | phase7)")
         pool = "phase3"
     pool_cap = float(BUDGET_POOLS[pool]["cap_usd"])
     record["budget_pool"] = pool
@@ -1201,27 +1215,44 @@ def preflight(
             f"{PHASE5_MAX_SEARCHES_PER_SESSION} (owner item 3)"
         )
     record["phase5_campaign_cap_usd"] = PHASE5_CAP_USD
-    # Campaign search cap: at most 4 paid searches across all Phase 5
-    # runs, counted from the persisted campaign history (ambiguous
-    # dispatches count; unaffordable refusals do not).
-    prior_searches = count_campaign_searches(PHASE5_HISTORY)
+    # Campaign search caps per pool (ambiguous dispatches count;
+    # unaffordable refusals do not). Phase 7 uses its own history and
+    # cap; every limiting flag is enforced inside the run via ledger
+    # reservations and slot claims, not only at preflight. Use the
+    # module globals (patchable in tests), not the BUDGET_POOLS dict.
+    pool_history = PHASE7_HISTORY if pool == "phase7" else PHASE5_HISTORY
+    pool_search_cap = PHASE7_CAMPAIGN_SEARCH_CAP if pool == "phase7" else PHASE5_CAMPAIGN_SEARCH_CAP
+    prior_searches = (
+        count_campaign_searches(pool_history)
+        if pool in ("phase5", "phase7")
+        else count_campaign_searches(PHASE5_HISTORY)
+    )
     record["prior_campaign_searches"] = prior_searches
-    record["campaign_search_cap"] = PHASE5_CAMPAIGN_SEARCH_CAP
+    record["campaign_search_cap"] = (
+        pool_search_cap if pool in ("phase5", "phase7") else PHASE5_CAMPAIGN_SEARCH_CAP
+    )
     max_campaign = getattr(args, "max_campaign_searches", None)
     record["max_campaign_searches"] = max_campaign
     if live_mode and search_selected:
-        if prior_searches >= PHASE5_CAMPAIGN_SEARCH_CAP:
+        if prior_searches >= pool_search_cap:
             problems.append(
                 f"campaign search cap reached: {prior_searches} paid searches recorded "
-                f"in {PHASE5_HISTORY} (cap {PHASE5_CAMPAIGN_SEARCH_CAP}); no further searches"
+                f"in {pool_history} (cap {pool_search_cap}); no further searches"
             )
-        if max_campaign is not None and prior_searches + int(max_campaign) > (
-            PHASE5_CAMPAIGN_SEARCH_CAP
-        ):
+        if max_campaign is not None and prior_searches + int(max_campaign) > pool_search_cap:
             problems.append(
                 f"--max-campaign-searches {max_campaign} does not fit: "
-                f"{prior_searches} already recorded, cap {PHASE5_CAMPAIGN_SEARCH_CAP}"
+                f"{prior_searches} already recorded, cap {pool_search_cap}"
             )
+    # Phase 7 live runs need explicit owner acknowledgement (checkpoint C).
+    live_ack = str(getattr(args, "acknowledge_live_run", "") or "")
+    record["acknowledge_live_run"] = live_ack
+    if pool == "phase7" and live_mode and live_ack != PHASE7_ACK_VALUE:
+        problems.append(
+            "phase7 live run refused without explicit owner acknowledgement: "
+            f"--acknowledge-live-run {PHASE7_ACK_VALUE} (checkpoint C)"
+        )
+    if live_mode and search_selected:
         estimate_breach = find_unacknowledged_estimate_breach(PHASE5_HISTORY)
         record["search_estimate_breach"] = estimate_breach
         if estimate_breach is not None:
@@ -1593,9 +1624,10 @@ class FakeRunProvider:
     """Deterministic fake model: retrieval turns then a valid finish (tests only).
 
     Per-flow scripts (calls count turns across resume runs in one attempt):
-    full: tools, options finish, then plan finishes; ask: tools, ask,
-    tools, options finish; direct: tools, single finish; empty: tools,
-    ask; technique: tools, skip finish.
+    full: tools, options finish, then plan finishes; full-requery: as
+    full, but the plan run re-queries techniques first (per-run
+    evidence); ask: tools, ask, tools, options finish; direct: tools,
+    single finish; empty: tools, ask; technique: tools, skip finish.
     """
 
     def __init__(self, scenario: dict[str, Any]) -> None:
@@ -1746,6 +1778,58 @@ class FakeRunProvider:
                         ),
                     ],
                     epicure_lines=self._lines(),
+                )
+            return self._parsed(
+                {
+                    "decision": "finish",
+                    "move_to": "plan",
+                    "result": {
+                        "plan": {
+                            "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                            "mise_en_place": ["dice chicken"],
+                            "steps": ["brown chicken", "serve"],
+                            "plating": "in bowls",
+                            "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                            "adaptations": [],
+                            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                        }
+                    },
+                    "constraints_honored": [],
+                    "note": "fake plan",
+                }
+            )
+        if flow == "full-requery":
+            # Same as "full", but the plan run re-queries techniques
+            # first: technique refs must be returned in the plan run's
+            # own run_agent invocation (per-run evidence), which is what
+            # a real model does after select.
+            if self.calls == 1:
+                return self._tools(
+                    ("c1", "search_recipes", query),
+                    ("c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    ("c5", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            if self.calls == 2:
+                return self._options_finish(
+                    [
+                        self._opt(
+                            "curry-1",
+                            "Creamy Chicken Curry",
+                            [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                        ),
+                        self._opt(
+                            "lentil-2",
+                            "Red Lentil Soup",
+                            [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+                        ),
+                    ],
+                    epicure_lines=self._lines(),
+                )
+            if self.calls == 3:
+                return self._tools(
+                    ("c6", "search_techniques", {"query": "safe internal temperatures"}),
                 )
             return self._parsed(
                 {
@@ -2647,9 +2731,20 @@ def _args(argv: list[str] | None = None) -> Any:
     )
     parser.add_argument(
         "--budget-pool",
-        choices=("phase3", "phase5"),
+        choices=("phase3", "phase5", "phase7"),
         default="phase3",
-        help="which cap/history the run charges (phase3: $0.15 cap; phase5: $0.10 campaign)",
+        help=(
+            "which cap/history the run charges "
+            "(phase3: $0.15 cap; phase5: $0.13 campaign; "
+            "phase7: $0.50 prepared, not authorized)"
+        ),
+    )
+    parser.add_argument(
+        "--acknowledge-live-run",
+        default="",
+        help=(
+            "phase7 checkpoint C: must equal phase7-checkpoint-c-2026-10-04 for live phase7 runs"
+        ),
     )
     parser.add_argument(
         "--acknowledge-search-estimate",
@@ -2842,13 +2937,16 @@ def _run_all(
     # search_web. Fake runs start at prior 0 and never read the real
     # campaign history.
     max_this_run = getattr(args, "max_campaign_searches", None)
+    pool = str(getattr(args, "budget_pool", "phase3") or "phase3")
+    pool_history = PHASE7_HISTORY if pool == "phase7" else PHASE5_HISTORY
+    pool_search_cap = PHASE7_CAMPAIGN_SEARCH_CAP if pool == "phase7" else PHASE5_CAMPAIGN_SEARCH_CAP
     search_limits = SearchRunLimits(
         max_per_session=int(
             getattr(args, "search_max_per_live_session", PHASE5_MAX_SEARCHES_PER_SESSION)
         ),
         max_this_run=int(max_this_run) if max_this_run is not None else None,
-        campaign_cap=PHASE5_CAMPAIGN_SEARCH_CAP,
-        prior_campaign_searches=(count_campaign_searches(PHASE5_HISTORY) if not fake else 0),
+        campaign_cap=pool_search_cap,
+        prior_campaign_searches=(count_campaign_searches(pool_history) if not fake else 0),
     )
     if history_path:
         # The cap covers the whole evaluation: this run may only spend

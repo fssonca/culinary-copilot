@@ -1,0 +1,134 @@
+{
+  "version": "live-scenarios-phase7-2026-10-04",
+  "note": "Phase 7 prepare-only (no run authorized). Synthetic requests. Runner schema (key, request, session, settings, scripted_answers, flow, fake_flow, expected); flows use the runner's select-first and resume steps. Do not touch the frozen v1, v2 or phase5 scenario files.",
+  "scenarios": [
+    {
+      "key": "live-chicken-e2e",
+      "title": "Chicken dinner end to end: options, select first, plan",
+      "request": "I want a chicken dinner for tonight, about 30 minutes.",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [],
+      "flow": ["recommend", "select-first", "plan"],
+      "fake_flow": "full-requery",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "plan": true,
+        "min_options": 2
+      }
+    },
+    {
+      "key": "live-yogurt-ask",
+      "title": "Ask and resume: missing yogurt, answer no",
+      "request": "Something with chicken; I might have yogurt.",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [
+        {
+          "question_id": "q-yogurt",
+          "answer": "no"
+        }
+      ],
+      "flow": ["recommend-ask", "resume"],
+      "fake_flow": "ask",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "asked": true,
+        "answer_recorded": true,
+        "resumed_used_answer": true
+      }
+    },
+    {
+      "key": "live-peanut-allergy",
+      "title": "Ask and resume: unnamed allergy, answer peanuts",
+      "request": "I am cooking dinner for a friend who has a food allergy. Suggest something with chicken.",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [
+        {
+          "question_id": "q-allergy",
+          "answer": "She is allergic to peanuts."
+        }
+      ],
+      "flow": ["recommend-ask", "resume"],
+      "fake_flow": "ask-allergy",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "allergy_check": true
+      }
+    },
+    {
+      "key": "live-vegan-conflict",
+      "title": "Vegan constraint: chicken dropped, no silent relaxation",
+      "request": "Vegan dinner, something hearty.",
+      "session": {
+        "constraints": {
+          "dietary_constraints": ["vegan"]
+        }
+      },
+      "settings": {
+        "epicure_enabled": true
+      },
+      "scripted_answers": [],
+      "flow": ["recommend"],
+      "fake_flow": "direct",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "min_options": 1
+      }
+    },
+    {
+      "key": "live-search-once",
+      "title": "Search on for a dish missing locally, one search",
+      "request": "How do I make okonomiyaki? I cannot find it in the app.",
+      "session": {
+        "internet_search_allowed": true
+      },
+      "settings": {},
+      "scripted_answers": [],
+      "flow": ["recommend"],
+      "fake_flow": "web-discovery",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "search_offered": true,
+        "web_answer": true,
+        "asking_is_fail": true,
+        "max_searches": 2
+      }
+    },
+    {
+      "key": "live-search-toggle",
+      "title": "Search off from the start: gate holds, local answer",
+      "request": "Give me the red lentil soup recipe.",
+      "session": {
+        "internet_search_allowed": false
+      },
+      "settings": {
+        "epicure_enabled": true
+      },
+      "scripted_answers": [],
+      "flow": ["recommend"],
+      "fake_flow": "direct",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "search_offered": false,
+        "web_answer": false
+      }
+    },
+    {
+      "key": "live-plan-safety",
+      "title": "Chicken plan with food-safety technique ref",
+      "request": "Give me the creamy chicken curry recipe.",
+      "session": {},
+      "settings": {},
+      "scripted_answers": [],
+      "flow": ["recommend", "select-first", "plan"],
+      "fake_flow": "full-requery",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "plan": true
+      }
+    }
+  ],
+  "freeze_sha256": "5d9e17a540b75c3273b90d4ffe26b55c8170cae041d4ff170f80f857491d162e"
+}
