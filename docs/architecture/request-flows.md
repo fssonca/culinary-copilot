@@ -86,7 +86,8 @@ sequenceDiagram
 The rule-only path operates on structured information. It cannot interpret arbitrary
 free text as an LLM would. Provider failure degrades to rules with error metadata;
 unknown information must remain unknown. Group size defaults to six, with a maximum
-of twelve. The future UI may present those questions serially; no UI exists yet.
+of twelve. The `/ui` page drives the agent endpoints, not this
+clarification API.
 
 The evidence helper currently selects search-result titles and dataset/source IDs,
 with empty snippets. It does not fetch full recipes or pass the request's time
@@ -335,7 +336,8 @@ error. Telemetry (`obs/recommendations.py`) records both transports.
 ```mermaid
 flowchart TD
     UI["/ui page (static, no build)"] -->|message / select / answers / toggle| AgentAPI["Agent endpoints (run, stream, answers, select, permission)"]
-    AgentAPI --> Loop["Bounded agent loop (12 steps / 12 calls / 90 s)"]
+    AgentAPI --> Loop["Bounded agent loop (12 steps / 12 calls / 60k in / 90 s)"]
+    Loop -->|"each turn: framing + snapshot + evidence digest + capped history"| Model["Model (native function calling)"]
     Loop -->|"native function calling, parallel in call order"| Tools["Typed registry"]
     Tools --> Recipes["search_recipes / get_recipe (full-text default)"]
     Tools --> Epicure["Epicure pairings/substitutions (local, CPU)"]
@@ -352,8 +354,10 @@ flowchart TD
 (toggle off by default) and re-checks inside the atomic slot claim on
 every call; a spoofed session id is impossible (args model has no
 session field). Web pages stay external discovery evidence: accepted
-refs come from provider citation metadata, numeric claims fail closed.
-The `/ui` page streams stages, renders options/plan/technique/web
+refs come from provider citation metadata, numeric claims fail closed,
+and procedural cooking method is rejected (discovery only). The
+step-by-step run, context management and guardrails are explained in
+[the agent system](agent-system.md). The `/ui` page streams stages, renders options/plan/technique/web
 cards and follow-up answers, and answers questions through the same
 endpoints (see `docs/ui-walkthrough.md`).
 

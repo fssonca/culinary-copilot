@@ -64,7 +64,7 @@ bump); standalone calls go to the logger.
 | Name | Arguments | Cost | Timeout | Errors |
 |---|---|---|---|---|
 | `search_recipes` | `query` (1–500), `mode?` (`fulltext`\|`vector` when embeddings on, else `fulltext` only), `limit?` (1–50, default 5) | **mode that ran**: fulltext `free`, vector `paid` (one query embedding; full-text is zero-call) | `TOOL_TIMEOUT_S` | `invalid_arguments` (incl. vector when unconfigured), `tool_not_configured` (vector without embeddings: retry with `fulltext`; never falls back), transient `unavailable`, `timeout` |
-| `get_recipe` | `dataset_id`, `source_id` (exact pair, never fallback) | `free` | `TOOL_TIMEOUT_S` | `invalid_arguments` (unknown dataset/pair), transient `unavailable`, `timeout` |
+| `get_recipe` | `dataset_id`, `source_id` (exact pair, never fallback) | `free` | `TOOL_TIMEOUT_S` | `invalid_arguments` (unknown dataset/pair, with the expected separate-id shape), transient `unavailable`, `timeout`; a repeat of a pair whose full output is still visible in the run's capped history returns a short duplicate pointer instead of the document (still counts against the tool budget) |
 | `find_balanced_pairings` | `ingredient`, `k?` (1–20, default 5) | `free` (local CPU, cached assets only) | `TOOL_TIMEOUT_S` | `invalid_arguments` (unknown ingredient), `tool_not_configured` (disabled/missing asset), `timeout` |
 | `find_conventional_pairings` | same as above (cooc) | `free` | `TOOL_TIMEOUT_S` | same as above |
 | `find_flavor_pairings` | same as above (chem) | `free` | `TOOL_TIMEOUT_S` | same as above |

@@ -59,10 +59,10 @@ model reasoning.
 
 | Limit | Value | Source |
 |---|---|---|
-| Steps per session | 8 | `steps_remaining` on the session row (server-set at create) |
+| Steps per session | 12 | `steps_remaining` on the session row (server-set at create, `SESSION_MAX_STEPS`) |
 | Tool calls per session | 12 | `tool_calls_remaining` on the session row |
-| Input tokens per session | 20,000 | `AGENT_INPUT_TOKEN_CEILING` (read before every turn) |
-| Output tokens per session | 5,000 | `AGENT_OUTPUT_TOKEN_CEILING` (read before every turn) |
+| Input tokens per session | 60,000 | `AGENT_INPUT_TOKEN_CEILING` (read before every turn) |
+| Output tokens per session | 12,000 | `AGENT_OUTPUT_TOKEN_CEILING` (read before every turn) |
 | Wall clock per run | 90 s | `AGENT_WALL_CLOCK_S` (read by the loop at run start) |
 | Per tool call | 10 s | `TOOL_TIMEOUT_S` (registry) |
 
@@ -105,7 +105,7 @@ provider faults (provider failures, DB outage, internal defects).
 | `agent_wall_clock_exceeded` | error | 408 | `retry` |
 | `agent_sufficient_evidence` | final (normal completion) | — | — (terminal success, not in the error mapping) |
 | `agent_needs_user_input` | final (question in `unresolved_questions`, phase `clarify`) | — | — (the question is the call to action) |
-| `agent_no_progress` (3 failed steps, 3 identical calls with identical results, or repeated empty turns) | error | 422 | `change_request` |
+| `agent_no_progress` (3 failed steps, 3 identical calls with identical results, or repeated empty turns; the first step that only repeats earlier calls earns one tool-less wrap-up turn first) | error | 422 | `change_request` |
 | `agent_validation_failed` (second rejection) | error | 422 | `change_request` |
 | `invalid_phase_transition` (model-requested illegal move: defect, fails immediately) | error | 422 | `change_request` |
 
@@ -151,7 +151,9 @@ validation messages and labels (`direct_dish_request`,
 
 ## Ask only when material, then resume
 
-The yogurt case works end to end: the agent asks when a retrieved
+Offline, the yogurt case works end to end (`p7-ask-missing-ingredient`;
+the live yogurt run went straight to options and did not exercise
+this path): the agent asks when a retrieved
 recipe needs an unconfirmed ingredient, the run stops
 `needs_user_input` with the question in `unresolved_questions` and the
 phase in `clarify`, `POST …/answers` merges the answer (CAS, question
@@ -234,7 +236,10 @@ removed), and the next run substitutes (labelled `adaptation`,
   No source text actually obtained exists (provider `results` is
   image-only per docs), so time/temperature claims fail closed: a web
   answer carrying numeric claims is rejected — drop the number and
-  point at the page. Creates a `missing_recipe` investigation
+  point at the page. Procedural method is rejected too
+  (`web_answer_procedural_errors`): step sequences, two or more
+  imperative cooking verbs, and unit quantities. Page descriptions and
+  a single serving suggestion pass. Creates a `missing_recipe` investigation
   candidate only when the request is about a recipe that local
   retrieval failed to find (zero `search_recipes` + web ok), never for
   technique or general answers.
@@ -255,11 +260,19 @@ removed), and the next run substitutes (labelled `adaptation`,
   the pre-turn input estimate measures via `model_json_schema()`)
   covers the grown `technique_refs` field inside the unchanged 30k/12k
   ceilings; technique excerpts travel in bounded tool summaries
-  (300 chars/hit in history, 4000 chars/turn).
-  Minimum plan evidence (P3-L-09): a source without directions sets
-  `steps_source: "model_adaptation"` on the plan (shown in the client
-  final), and at least one plan adaptation must state the steps are
-  not from the source. Source ingredients with raw meat, poultry, fish
+  (600 chars/hit in history, 6500 chars per `search_techniques` output;
+  raised from 300/4000 on 2026-10-06 after a live session where the
+  cut hid the poultry row of the FDA temperature table).
+  Minimum plan evidence (P3-L-09, tightened at Phase 7 close-out): the
+  `get_recipe` summary shows the model bounded directions with
+  `directions_total` / `directions_shown` / `directions_truncated`.
+  `steps_source` is `"source"` only when every plan step cites a
+  stored direction index (`step_sources`) whose direction contains all
+  the step's content words, **and** every stored direction is cited by
+  at least one step. Otherwise it is `"model_adaptation"` (shown in the
+  client final), and at least one plan adaptation must state the steps
+  are not from the source. A plan claiming the source has no
+  directions is rejected when the stored record has them. Source ingredients with raw meat, poultry, fish
   or eggs (not "cooked") need at least one `technique_ref` to a chunk
   from a food-safety manifest doc (`tech-fda-safe-32`,
   `tech-fsis-temp-34`, `tech-fda-kitchen-33`, `tech-fsis-leftover-36`);
@@ -278,7 +291,7 @@ removed), and the next run substitutes (labelled `adaptation`,
 
 - `AGENT_WALL_CLOCK_S` (default 90): read by `agent/loop.py` at run
   start. Steps/tool calls are session-row budgets, not settings.
-- `AGENT_INPUT_TOKEN_CEILING` (default 30000) and
+- `AGENT_INPUT_TOKEN_CEILING` (default 60000 since 2026-10-04) and
   `AGENT_OUTPUT_TOKEN_CEILING` (default 12000): read before every turn;
   usage summed from `session_events`; per-turn output hard-capped at
   `min(6500, remaining)` with a 500-token useful minimum. All three
@@ -293,5 +306,10 @@ select + plan, yogurt, direct+select+plan, constraint conflict, empty
 retrieval, tool failure, budget, wall clock, Epicure skip,
 no-progress; every option/plan shows title, IDs, source facts vs
 labelled adaptations, plus budgets and token totals after each run).
-`LIVE_PLAN.md` is the prepared, unrun live plan (gpt-6-luna,
-repo-recorded pricing, measured ceilings, $0.15 bound, 8 live cases).
+`LIVE_PLAN.md` was the Phase 3 live plan (gpt-6-luna, repo-recorded
+pricing, measured ceilings, $0.15 bound, 8 live cases).
+
+The Phase 7 offline harness is `evals/phase7_agent/` (v8, 43 cases;
+`docs/agent-scoreboard.md`). The Phase 7 live evaluation (11 sessions)
+and its owner review are in `evals/phase7_agent/CHECKPOINT_C.md` and
+`docs/phase7-owner-decisions.md`.

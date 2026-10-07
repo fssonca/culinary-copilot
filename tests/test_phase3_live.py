@@ -1631,8 +1631,11 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
             from culinary_copilot.tools.registry import strict_violations as _check_strict
 
             assert len(seen_tools) == 11
+            # Every turn is sent the tool schemas except the one wrap-up
+            # turn after c7, which only repeats c2's fetch (2026-10-06).
+            tool_less = [i for i, t in enumerate(seen_tools) if not t]
+            assert tool_less == [7]
             for payload_tools in seen_tools:
-                assert payload_tools, "every model turn is sent the tool schemas"
                 for _tool in payload_tools:
                     assert _tool["strict"] is True
                     assert _check_strict(_tool["parameters"]) == []

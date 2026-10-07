@@ -715,6 +715,34 @@ def test_web_answer_validation() -> None:
     assert validate_web_refs([], session_sources=session_sources) != []
 
 
+def test_web_answer_procedural_guard() -> None:
+    # Phase 7 close-out (live search-once): the accepted answer taught
+    # a cooking method. The guard rejects procedural content while
+    # page descriptions pass.
+    from culinary_copilot.agent.loop import web_answer_procedural_errors as _guard
+
+    method = (
+        "Whisk a flour batter with egg, fold in chopped cabbage, and add "
+        "pork if you like. Cook it in an oiled pan, covered, until browned; "
+        "flip and cook through."
+    )
+    assert any("cooking method" in e for e in _guard(method))
+    assert any("procedural steps" in e for e in _guard("1. Mix flour. 2. Fry."))
+    assert any("quantities" in e for e in _guard("Use 2 cups of flour."))
+    assert any(
+        "cooking method" in e for e in _guard("First mix the batter, then fry it on a griddle.")
+    )
+    assert any(
+        "cooking method" in e for e in _guard("You whisk eggs into the batter and fold in cabbage.")
+    )
+    # Descriptions pass: no imperatives in sequence, no units.
+    assert _guard("Okonomiyaki is a savoury pancake. A guide is linked below.") == []
+    assert _guard("The guide covers whisking, folding and flipping techniques.") == []
+    assert _guard("The guide covers whisking the batter and flipping.") == []
+    assert _guard("Serve with okonomiyaki sauce.") == []
+    assert _guard("I found one verified set of quantities in the app.") == []
+
+
 def test_session_web_sources_reads_retrieved_events() -> None:
     events = [
         type(

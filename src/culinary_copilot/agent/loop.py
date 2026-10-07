@@ -40,13 +40,16 @@ from culinary_copilot.agent.validate import (
     allergen_claim_allowed,
     allergen_safety_claim,
     allergens_named_in_answers,
+    allergy_answer_texts,
     check_allergen_option,
     check_dietary_option,
     check_plan_evidence,
     dietary_values,
     doc_text,
+    flatten_constraint_texts,
     hard_constraint_keys,
     mentions_restriction,
+    plan_attribution_note,
     unresolved_unnamed_restriction,
     validate_one_option,
     validate_plan,
@@ -72,6 +75,7 @@ from culinary_copilot.domain.recommendations import (
     next_action_for,
 )
 from culinary_copilot.domain.sessions import validate_transition
+from culinary_copilot.search.minimize import minimize_summary
 from culinary_copilot.services.session_store import (
     PostgresSessionStore,
     SessionStaleError,
@@ -353,6 +357,18 @@ class PlanPayload(BaseModel):
     source: PlanSource
     mise_en_place: list[str] = Field(default_factory=list, max_length=30)
     steps: list[str] = Field(default_factory=list, max_length=50)
+    step_sources: list[int | None] = Field(
+        default_factory=list,
+        max_length=50,
+        description=(
+            "One entry per step: the index into the source recipe's "
+            "stored directions supporting that step, or null for a "
+            "model-written step. steps_source is 'source' only when "
+            "every step cites a valid supporting index and every "
+            "stored direction is cited by at least one step; omitting "
+            "a direction makes the plan model_adaptation."
+        ),
+    )
     plating: str = Field(max_length=2000)
     quantities: list[QuantityClaim] = Field(default_factory=list, max_length=20)
     adaptations: list[Adaptation] = Field(default_factory=list, max_length=10)
@@ -372,7 +388,10 @@ class WebAnswer(BaseModel):
     """Cited discovery answer (Phase 5, part 2, owner decision 6).
 
     Points the user at pages; claims no verified quantities or safety
-    instructions. Separate from corpus recipe identity: web evidence
+    instructions. One bounded description per page, never procedural
+    cooking instructions: no method, step sequences, quantities,
+    times or temperatures (a deterministic guard rejects them).
+    Separate from corpus recipe identity: web evidence
     never becomes an option, a quantity, or a plan source.
     """
 
@@ -786,6 +805,134 @@ _TIME_TEMP_PARTS_RE = re.compile(
 )
 
 
+#: Imperative cooking verbs marking procedural method (Phase 7
+#: close-out): two or more in sequence means the web answer teaches
+#: how to cook instead of describing pages.
+_WEB_METHOD_VERBS = frozenset(
+    {
+        "whisk",
+        "fold",
+        "stir",
+        "mix",
+        "chop",
+        "dice",
+        "mince",
+        "slice",
+        "heat",
+        "cook",
+        "bake",
+        "fry",
+        "saute",
+        "simmer",
+        "boil",
+        "grill",
+        "roast",
+        "broil",
+        "flip",
+        "serve",
+        "add",
+        "combine",
+        "pour",
+        "blend",
+        "knead",
+        "season",
+        "garnish",
+        "brown",
+        "sear",
+        "steam",
+        "whip",
+        "drain",
+        "rinse",
+        "peel",
+        "grate",
+        "marinate",
+        "preheat",
+        "coat",
+        "sprinkle",
+        "drizzle",
+        "toss",
+    }
+)
+
+#: Step-sequence markers in prose.
+_WEB_STEP_MARKERS = (
+    re.compile(r"(?:^|\n)\s*(?:\d+[.)]|[-•*])\s+[A-Za-z]", re.MULTILINE),
+    re.compile(r"\bstep\s+\d+\b", re.IGNORECASE),
+    re.compile(r"\bfirst\b.{0,80}\bthen\b.{0,80}\b(finally|lastly)\b", re.IGNORECASE),
+)
+
+#: Quantity spans (number + cooking unit) for the web-answer guard.
+_WEB_QUANTITY_RE = re.compile(
+    r"\b\d+(?:\.\d+)?\s*(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|grams?|g\b|"
+    r"kg\b|ml\b|liters?|litres?|oz\b|ounces?|pounds?|lbs?\b|cloves?|"
+    r"slices?|cans?|pinch(?:es)?|dashes?)\b",
+    re.IGNORECASE,
+)
+
+
+def _web_imperative_verb_hits(text: str) -> list[str]:
+    """Cooking verbs used imperatively, in order of appearance.
+
+    A verb counts when it starts a sentence (after `.`, `!`, `?`, `;`,
+    `:` or the text start) or follows "and"/"then"/"first"/"next"/
+    "now"/"finally"/"simply"/"just"/"you"/"we"/"after that"/a comma —
+    the positions where instructions command. Descriptions ("the guide
+    covers whisking") use gerunds/participles and never match.
+    """
+    hits: list[str] = []
+    for match in re.finditer(r"[A-Za-z]+", str(text or "")):
+        word = match.group(0).lower()
+        if word not in _WEB_METHOD_VERBS:
+            continue
+        before = str(text or "")[: match.start()]
+        stripped = before.rstrip()
+        if not stripped:
+            hits.append(word)
+            continue
+        if stripped[-1] in ".;:!?":
+            hits.append(word)
+            continue
+        tail = stripped[-32:].lower()
+        if stripped.endswith(",") or re.search(
+            r"(?:^|[\s,;:])(and|then|plus|first|next|now|finally|"
+            r"simply|just|you|we|after that)\s*$",
+            tail,
+        ):
+            hits.append(word)
+    return hits
+
+
+def web_answer_procedural_errors(text: str) -> list[str]:
+    """Conservative deterministic guard on web_answer.text.
+
+    Rejects procedural cooking content: step sequences, two or more
+    imperative cooking verbs in sequence, quantities, and (via the
+    existing numeric rule alongside) times and temperatures. Single
+    serving suggestions ("serve with sauce") and page descriptions
+    ("the guide covers whisking") pass: only sequences fail.
+    """
+    errors: list[str] = []
+    body = str(text or "")
+    if any(pattern.search(body) for pattern in _WEB_STEP_MARKERS):
+        errors.append(
+            "web answer lists procedural steps; describe each page in "
+            "one bounded description instead, never how to cook it"
+        )
+    verbs = _web_imperative_verb_hits(body)
+    if len(verbs) >= 2:
+        errors.append(
+            f"web answer gives a cooking method ({', '.join(verbs[:4])}); "
+            "describe what each page is instead of teaching the method"
+        )
+    quantities = _WEB_QUANTITY_RE.findall(body)
+    if quantities:
+        errors.append(
+            "web answer states quantities no source text verifies; drop "
+            "the numbers and point at the pages instead"
+        )
+    return errors
+
+
 def _extract_time_temp_claims(text: str) -> list[str]:
     """Numeric time/temperature claim spans in prose, in order, deduped."""
     claims: list[str] = []
@@ -829,9 +976,13 @@ def _parse_time_temp_claim(span: str) -> tuple[tuple[int | float, ...], str] | N
     """Canonical (numbers, unit-class) form of one claim span.
 
     Two numbers are a range tuple ("10 to 12 minutes" ==
-    "10-12 minutes"); one number is a single tuple.
+    "10-12 minutes"); one number is a single tuple. A hyphen joining a
+    number directly to a word ("20-Minute") is a joiner, not a range:
+    it becomes a space before matching (a hyphen between digits stays
+    a range separator).
     """
-    match = _TIME_TEMP_PARTS_RE.search(str(span or ""))
+    span = re.sub(r"(?<=\d)-(?=[A-Za-z])", " ", str(span or ""))
+    match = _TIME_TEMP_PARTS_RE.search(span)
     if match is None:
         return None
     numbers = [_parse_claim_number(match.group("first"))]
@@ -951,14 +1102,19 @@ _TASK_FRAMING = (
     "constraints on fetched recipes with get_recipe — a 0-result "
     "search never proves an option unsafe, and a recipe fetched "
     "earlier in this session (see the evidence digest) is already "
-    "retrieved. When the user asks for a dish the corpus "
+    "retrieved: never fetch the same (dataset_id, source_id) twice "
+    "in one session (a repeat returns only a pointer). When the user asks for a dish the corpus "
     "does not have and a web search returned sources, answer with "
-    "web_answer citing them (a discovery answer if no verified source "
-    "text exists). Do not ask whether they want a web result. Ask only "
+    "web_answer citing them: one bounded description per page of what "
+    "the page is, never how to cook it — no method, no step sequences, "
+    "no quantities. Do not ask whether they want a web result. Ask only "
     "when the request itself is ambiguous. The typical path is one "
     "search, get_recipe on the top 2-3, one Epicure query on the main "
     "base ingredient, then finish; do not repeat a query listed in the "
-    "evidence digest. Quantities are copied exactly from get_recipe, or "
+    "evidence digest. Put independent calls in the same step (they run "
+    "in parallel): search with the Epicure query, then every get_recipe "
+    "together. Food-safety searches and scaling belong to the plan, "
+    "after a dish is selected, not to options. Quantities are copied exactly from get_recipe, or "
     "omitted. constraints_honored lists each hard-constraint key exactly "
     "(e.g. dietary_constraints), and every option must satisfy it. When "
     "Epicure was consulted, finish with at least 1 epicure_line naming a "
@@ -973,10 +1129,18 @@ _TASK_FRAMING = (
     "Worcestershire-based items without vegetable or vegan stay "
     "unverified, never verified. Name only pairings, companions, times "
     "and temperatures found in this session's evidence (returned Epicure "
-    "pairings, the options' source ingredients, cited chunks or the "
-    "selected recipe); anything else is rejected. A plan from a source "
-    "without directions is marked model_adaptation with an adaptation "
-    "saying so, and a plan with raw meat, poultry, fish or eggs needs a "
+    "pairings, the options' source ingredients and stored titles, cited "
+    "chunks or the selected recipe); anything else is rejected. A plan step "
+    "that follows the source cites its stored-direction index in "
+    "step_sources; steps_source is 'source' only when every step cites "
+    "a supporting index and every stored direction is cited (dropping "
+    "a direction makes it model_adaptation), otherwise the plan is "
+    "model_adaptation, which the app labels itself when the source has "
+    "directions; an ingredient-only source (directions_total 0) needs "
+    "your own adaptation saying the steps are not from the source. "
+    "Never claim the source has no directions when the fetched record "
+    "lists directions_total above 0. A plan with raw meat, "
+    "poultry, fish or eggs needs a "
     "technique_ref to a food-safety chunk: search_techniques for safe "
     "internal temperatures."
 )
@@ -991,6 +1155,7 @@ def build_turn_input(
     epicure_available: bool = True,
     evidence_digest: str | None = None,
     final_turn: bool = False,
+    wrap_up: bool = False,
 ) -> list[dict[str, Any]]:
     """Model input: user messages + history + task framing snapshot.
 
@@ -1004,7 +1169,8 @@ def build_turn_input(
     the ``epicure_not_configured`` skip reason. ``evidence_digest`` is
     the session evidence rebuilt from events (it survives the history
     cap). On a ``final_turn`` no tools are sent and the framing says
-    so.
+    so. A ``wrap_up`` turn is also tool-less, after a step that only
+    repeated earlier calls; a rejected wrap-up gets the normal retry.
     """
     snapshot = {
         "phase": state.current_phase,
@@ -1028,6 +1194,14 @@ def build_turn_input(
         text += (
             "\nFinal step: no tools remain. Finish now with options from "
             "the evidence listed, or ask one question if nothing suitable "
+            "was found."
+        )
+    elif wrap_up:
+        text += (
+            "\nWrap-up: your last step only repeated calls already made in "
+            "this run, so no tools are offered this turn. Finish now from "
+            "the evidence gathered (what the phase requires: options, the "
+            "plan, or the answer), or ask one question if nothing suitable "
             "was found."
         )
     if last_outcome:
@@ -1057,8 +1231,29 @@ def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
             }
             for r in (result.get("results") or [])[:10]
         ]
+    elif name == "get_recipe" and result.get("ok") and result.get("duplicate_of_session_evidence"):
+        # 2026-10-06 live fix: the pointer used to summarize as an empty
+        # recipe (null ids, no directions), and the model concluded the
+        # selected recipe had no directions. Name the pair and say where
+        # the full output is instead.
+        summary["duplicate_of_session_evidence"] = True
+        summary["recipe_ref"] = {
+            "dataset_id": result.get("dataset_id"),
+            "source_id": result.get("source_id"),
+            "title": result.get("title"),
+        }
+        summary["message"] = (
+            "not re-sent: the full recipe (ingredients and directions) is "
+            "in your earlier get_recipe output for this dataset_id and "
+            "source_id, still in this conversation; use that output, do "
+            "not re-fetch"
+        )
     elif name == "get_recipe" and result.get("ok"):
         doc = result.get("recipe") or {}
+        from culinary_copilot.agent.validate import doc_directions
+
+        stored_directions = doc_directions(doc)
+        shown_directions = [str(d)[:200] for d in stored_directions[:6]]
         summary["recipe"] = {
             "dataset_id": doc.get("dataset_id"),
             "source_id": doc.get("source_id"),
@@ -1073,6 +1268,15 @@ def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
                 for i in (doc.get("ingredients") or [])[:30]
                 if isinstance(i, dict)
             ],
+            # Bounded source directions (Phase 7 close-out): the model
+            # never saw directions before, so it invented method and
+            # mislabelled absence. directions_total 0 ("absent from the
+            # source") is distinct from truncated True ("omitted from
+            # this response").
+            "directions": shown_directions,
+            "directions_total": len(stored_directions),
+            "directions_shown": len(shown_directions),
+            "directions_truncated": len(stored_directions) > len(shown_directions),
         }
     elif name in _PAIRING_TOOLS and result.get("ok"):
         key = "candidates" if name == "find_substitutions" else "pairings"
@@ -1133,7 +1337,10 @@ def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
                 "licence": r.get("licence"),
                 "licence_url": r.get("licence_url"),
                 "attribution_text": r.get("attribution_text"),
-                "excerpt": str(r.get("excerpt") or "")[:300],
+                # Full repository excerpt (2026-10-06 live fix): at 300
+                # chars the FDA temperature table was cut just before the
+                # poultry row, and the model searched for it in a loop.
+                "excerpt": str(r.get("excerpt") or "")[:_TECHNIQUE_EXCERPT_LIMIT],
             }
             for r in (result.get("results") or [])[:10]
         ]
@@ -1226,6 +1433,47 @@ def user_messages_from_events(store: PostgresSessionStore, session_id: str) -> l
     return texts[-USER_MESSAGE_KEEP:]
 
 
+def all_user_messages_from_events(store: PostgresSessionStore, session_id: str) -> list[str]:
+    """Every stored user message text (bounded each), oldest first.
+
+    Unlike ``user_messages_from_events`` there is no recency window:
+    a restriction mentioned early in the session still counts.
+    """
+    try:
+        events = store.list_events(session_id)
+    except Exception:
+        return []
+    texts: list[str] = []
+    for event in events:
+        if getattr(event, "event_type", "") != USER_MESSAGE_EVENT:
+            continue
+        text = (getattr(event, "payload", None) or {}).get("text")
+        if isinstance(text, str) and text:
+            texts.append(text[:USER_MESSAGE_CHARS])
+    return texts
+
+
+def question_texts_from_events(store: PostgresSessionStore, session_id: str) -> dict[str, str]:
+    """Question id -> question text plus options, from agent_question events."""
+    try:
+        events = store.list_events(session_id)
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    for event in events:
+        if getattr(event, "event_type", "") != "agent_question":
+            continue
+        payload = getattr(event, "payload", None) or {}
+        question_id = payload.get("question_id")
+        if not question_id:
+            continue
+        options = payload.get("question_options") or []
+        out[str(question_id)] = " ".join(
+            [str(payload.get("question_text") or "")] + [str(o) for o in options]
+        )
+    return out
+
+
 def effective_request_text(explicit: str | None, user_messages: list[str] | None) -> str | None:
     """The pairing-cue input: explicit ``request_text`` wins, otherwise
     the latest stored user message, so the cue guard and the model see
@@ -1267,7 +1515,10 @@ def record_answer(
             expected_revision=expected_revision,
             fn=_apply,
             event_type="agent_answer",
-            event_payload={"question_id": question_id},
+            event_payload={
+                "question_id": question_id,
+                "answer": minimize_summary(str(answer), limit=USER_MESSAGE_CHARS),
+            },
         )
     except KeyError as exc:
         raise AgentLoopError(
@@ -1344,6 +1595,15 @@ def _truncate_note(note: str) -> str:
 #: Model-visible tool-output bound (P3-L-10): structural truncation
 #: below, never a string slice (a slice can yield invalid JSON).
 _TOOL_OUTPUT_LIMIT = 4000
+#: Technique hits carry attribution per hit, so five full excerpts
+#: need more room than the default bound.
+_TECHNIQUE_EXCERPT_LIMIT = 600
+_TOOL_OUTPUT_LIMITS = {"search_techniques": 6500}
+
+
+def tool_output_limit(name: str) -> int:
+    """Model-visible output bound for one tool (default 4000 chars)."""
+    return _TOOL_OUTPUT_LIMITS.get(name, _TOOL_OUTPUT_LIMIT)
 
 
 def _shorten_text(value: str, budget: int) -> str:
@@ -1447,7 +1707,85 @@ def _budget_error(name: str, call_id: str, remaining: int) -> dict[str, Any]:
     }
 
 
+#: Bound for each recorded trajectory text (tool output, directive, final).
+TRAJECTORY_CHARS = 8000
+
+
+def trajectory_enabled(settings: Any) -> bool:
+    """True when ``AGENT_RECORD_TRAJECTORY`` asks for full trajectories."""
+    return bool(getattr(settings, "agent_record_trajectory", False))
+
+
+def _trajectory_text(value: Any) -> dict[str, Any]:
+    """Scrubbed, bounded JSON text of a trajectory value plus a truncation flag."""
+    try:
+        raw = value if isinstance(value, str) else json.dumps(value, default=str)
+    except (TypeError, ValueError):
+        raw = str(value)
+    return {
+        "text": minimize_summary(raw, limit=TRAJECTORY_CHARS),
+        "truncated": len(raw) > TRAJECTORY_CHARS,
+    }
+
+
+def record_trajectory(
+    store: PostgresSessionStore,
+    session_id: str,
+    settings: Any,
+    event_type: str,
+    payload: dict[str, Any],
+) -> None:
+    """Append a trajectory event when recording is on; never fails a run.
+
+    Off by default. When ``AGENT_RECORD_TRAJECTORY`` is set, the loop
+    also records what each tool returned to the model, every model
+    directive (including rejected answers) and each run's result, so a
+    session can be replayed for analysis. Text is scrubbed with the
+    Phase 5 minimizer (emails, phones, addresses, "my <Name>") and
+    bounded; private model reasoning is never available, so never stored.
+    """
+    if not trajectory_enabled(settings):
+        return
+    try:
+        store.append_event(session_id, event_type, payload)
+    except Exception:
+        return
+
+
 async def run_agent(
+    session_id: str,
+    *,
+    deps: AgentDeps,
+    expected_revision: int | None = None,
+) -> AgentRunResult:
+    """Run the bounded loop, recording the run result when trajectories are on."""
+    try:
+        result = await _run_agent(session_id, deps=deps, expected_revision=expected_revision)
+    except AgentLoopError as exc:
+        record_trajectory(
+            deps.session_store,
+            session_id,
+            deps.settings,
+            "trajectory_run_result",
+            {"status": "error", "reason": exc.reason, "message": str(exc.message)[:500]},
+        )
+        raise
+    record_trajectory(
+        deps.session_store,
+        session_id,
+        deps.settings,
+        "trajectory_run_result",
+        {
+            "status": "stopped",
+            "stop_reason": result.stop_reason,
+            "phase": result.phase,
+            "final": _trajectory_text(result.final) if result.final is not None else None,
+        },
+    )
+    return result
+
+
+async def _run_agent(
     session_id: str,
     *,
     deps: AgentDeps,
@@ -1529,6 +1867,12 @@ async def run_agent(
     history: list[dict[str, Any]] = []
     consecutive_errors = 0
     fingerprints: dict[str, dict[str, Any]] = {}
+    # Wrap-up (2026-10-06 live fix): a step whose calls all repeat
+    # earlier calls with identical results gains nothing, so the next
+    # turn is tool-less and asks for the answer. Once per run; the
+    # identical-call stall stop stays the backstop.
+    wrap_up_next = False
+    wrap_up_used = False
     ok_count = 0
     validation_retries = 0
     run_epicure_ok = False
@@ -1592,7 +1936,14 @@ async def run_agent(
             epicure_enabled=bool(getattr(settings, "epicure_enabled", False)),
             settings=settings,
         )
-        if final_turn:
+        # Duplicate-fetch rule (Phase 7 close-out): get_recipe returns
+        # its short pointer only for pairs whose full outputs are still
+        # in this run's capped history. A new run starts empty, and
+        # capped-out outputs come back full.
+        context.visible_full_recipes = visible_full_recipe_pairs(history)
+        wrap_up = wrap_up_next and not final_turn
+        wrap_up_next = False
+        if final_turn or wrap_up:
             # No tools are sent on the final turn: the request carries
             # an empty tool list, so the model can only return a
             # directive (finish/ask). Calls the model makes anyway are
@@ -1609,6 +1960,7 @@ async def run_agent(
             and not all(tool in excluded for tool in _PAIRING_TOOLS),
             evidence_digest=session_evidence_digest(store, session_id),
             final_turn=final_turn,
+            wrap_up=wrap_up,
         )
         est_in = estimate_turn_input(turn_input, tool_defs, response_schema=directive_schema)
         if used_in + est_in >= in_ceiling or used_out >= out_ceiling:
@@ -1913,25 +2265,30 @@ async def run_agent(
                             )
             # Identical-call stall detection: the same call 3 times with
             # byte-identical result summaries means no new information.
+            # The stop happens after the step commit below, so the step
+            # and its executed calls are charged (2026-10-06 live fix:
+            # stopping first left the stored budgets one step behind).
+            stalled_tool: str | None = None
+            repeats = 0
             for call, result in zip(runnable, ran_results):
                 fingerprint = f"{call['name']}:{args_digest(call['args'])}"
                 digest = json.dumps(
                     _summarize_result(call["name"], result), sort_keys=True, default=str
                 )
                 slot = fingerprints.setdefault(fingerprint, {"count": 0, "digests": set()})
+                if slot["count"] >= 1 and digest in slot["digests"]:
+                    repeats += 1
                 slot["count"] += 1
                 slot["digests"].add(digest)
-                if slot["count"] >= _MAX_IDENTICAL_CALLS and len(slot["digests"]) == 1:
-                    return await _stop(
-                        deps,
-                        store,
-                        session_id,
-                        state,
-                        revision,
-                        REASON_AGENT_NO_PROGRESS,
-                        422,
-                        f"repeated identical {call['name']} calls without new information",
-                    )
+                if (
+                    stalled_tool is None
+                    and slot["count"] >= _MAX_IDENTICAL_CALLS
+                    and len(slot["digests"]) == 1
+                ):
+                    stalled_tool = call["name"]
+            if runnable and repeats == len(runnable) and not wrap_up_used:
+                wrap_up_next = True
+                wrap_up_used = True
 
             executed = len(ran_results)
             state = _apply_step_commit(
@@ -1946,6 +2303,17 @@ async def run_agent(
                 usage=turn_usage,
             )
             revision = state.revision
+            if stalled_tool is not None:
+                return await _stop(
+                    deps,
+                    store,
+                    session_id,
+                    state,
+                    revision,
+                    REASON_AGENT_NO_PROGRESS,
+                    422,
+                    f"repeated identical {stalled_tool} calls without new information",
+                )
             for tool_name in newly_excluded:
                 await _emit(deps, "tool_excluded", {"tool": tool_name})
             await _emit(
@@ -1965,16 +2333,38 @@ async def run_agent(
                     "tool_calls_remaining": state.tool_calls_remaining,
                 },
             )
-            history.extend(
+            output_items = [
                 {
                     "type": "function_call_output",
                     "call_id": (c.get("call_id") or ""),
                     "output": json.dumps(
-                        truncate_tool_output(_summarize_result(c.get("name", ""), r)),
+                        truncate_tool_output(
+                            _summarize_result(c.get("name", ""), r),
+                            tool_output_limit(c.get("name", "")),
+                        ),
                         default=str,
                     ),
                 }
                 for c, r in zip(parsed_calls, results)
+            ]
+            history.extend(output_items)
+            # What the model saw from each tool (trajectory recording).
+            record_trajectory(
+                store,
+                session_id,
+                settings,
+                "trajectory_tool_outputs",
+                {
+                    "step": step,
+                    "outputs": [
+                        {
+                            "call_id": item["call_id"],
+                            "tool": c.get("name", ""),
+                            "output": _trajectory_text(item["output"]),
+                        }
+                        for c, item in zip(parsed_calls, output_items)
+                    ],
+                },
             )
             history = _cap_history(history)
             last_outcome = (
@@ -2027,6 +2417,15 @@ async def run_agent(
                     "repeated empty model turns",
                 )
             continue
+        # The model's directive as returned, before validation, so
+        # rejected answers stay reviewable (trajectory recording).
+        record_trajectory(
+            store,
+            session_id,
+            settings,
+            "trajectory_model_directive",
+            {"step": step, "directive": _trajectory_text(parsed)},
+        )
         try:
             directive = AgentDirective.model_validate(parsed)
         except Exception as exc:
@@ -2243,6 +2642,41 @@ def _cap_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
             break
         kept = group + kept
     return kept
+
+
+def visible_full_recipe_pairs(history: list[Any]) -> set[tuple[str, str]]:
+    """Pairs whose full get_recipe outputs are in the given history.
+
+    The model can only use what it can still see: a pair counts when a
+    ``function_call_output`` item in the current (capped) history
+    carries a successful get_recipe summary with a non-empty recipe
+    ingredient list (short duplicate pointers summarize to an empty
+    recipe and never count). Liberal on malformed items: they simply
+    do not contribute.
+    """
+    pairs: set[tuple[str, str]] = set()
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "function_call_output":
+            continue
+        try:
+            output = json.loads(str(item.get("output") or ""))
+        except Exception:
+            continue
+        if not isinstance(output, dict):
+            continue
+        if output.get("tool") != "get_recipe" or not output.get("ok"):
+            continue
+        recipe = output.get("recipe")
+        if not isinstance(recipe, dict):
+            continue
+        dataset_id = recipe.get("dataset_id")
+        source_id = recipe.get("source_id")
+        ingredients = recipe.get("ingredients")
+        if dataset_id and source_id and isinstance(ingredients, list) and ingredients:
+            pairs.add((str(dataset_id), str(source_id)))
+    return pairs
 
 
 def history_pairing_violations(history: list[Any]) -> list[str]:
@@ -2560,8 +2994,11 @@ async def _handle_finish(
             if name not in session_keys:
                 errors.append(
                     f"constraints_honored {name!r} is not a session constraint "
-                    f"(session keys: {sorted(session_keys)}); put free-text "
-                    "claims in note instead"
+                    f"(session keys: {sorted(session_keys)}); leave "
+                    "constraints_honored to session keys only (empty when "
+                    "there are none) — confirmed answers such as allergies "
+                    "are checked automatically and reported in "
+                    "constraint_check, so they need no claim here"
                 )
         honored_set = set(honored)
         for key in sorted(hard_keys):
@@ -2672,11 +3109,16 @@ async def _handle_finish(
                 "ask which one before recommending"
             )
         else:
-            answer_texts = [
-                str(a.get("answer") or "")
-                for a in confirmed_answers
-                if isinstance(a, dict) and str(a.get("answer") or "").strip()
-            ]
+            # Only answers that are about allergies or avoided foods
+            # count (2026-10-05 demo finding: a dish choice such as
+            # "Creamy mushroom pasta" was read as a wheat allergy).
+            answer_texts = allergy_answer_texts(
+                confirmed_answers,
+                question_texts_from_events(store, session_id),
+                all_user_messages_from_events(store, session_id)
+                + ([str(explicit_request)] if explicit_request else [])
+                + flatten_constraint_texts(state.constraints or {}),
+            )
             named_labels = allergens_named_in_answers(answer_texts)
             if named_labels:
                 checked_allergen: list[tuple[dict[str, Any], list[str]]] = []
@@ -2816,13 +3258,23 @@ async def _handle_finish(
                             "pairings, option ingredients, or cited chunks)"
                         )
             recipe_claims = _evidence_time_temp_claims("\n".join(selection_texts))
+            # Stored recipe titles count as evidence too (Phase 7
+            # re-run: "20-Minute Chicken Parmesan" states 20 minutes).
+            # Only resolved document titles: a model-written option
+            # title supports nothing.
+            title_claims = _evidence_time_temp_claims("\n".join(selection_titles))
             for claim in _extract_time_temp_claims(model_note_text):
                 checkable_claims += 1
                 parsed = _parse_time_temp_claim(claim)
-                if parsed is None or not _time_temp_claim_supported(parsed, recipe_claims):
+                if parsed is None or not (
+                    _time_temp_claim_supported(parsed, recipe_claims)
+                    or _time_temp_claim_supported(parsed, title_claims)
+                ):
                     grounding_errors.append(
                         f"note makes an unsupported time/temperature claim: {claim!r} "
-                        "(not in the selected recipe documents)"
+                        "(not in the selected recipe documents or their titles); "
+                        "remove the time or temperature, or state that the "
+                        "recipe does not give a time"
                     )
             if re.search(r"\bverif\w*\b", model_note_text, re.IGNORECASE) and any(
                 entry.get("status") == "unverified" for entry in constraint_checks
@@ -2961,6 +3413,12 @@ async def _handle_finish(
         web_dump = web_answer.model_dump()
         session_sources = session_web_sources(store, session_id)
         errors.extend(validate_web_refs(web_dump.get("web_refs"), session_sources=session_sources))
+        # Discovery-only rule (Phase 7 close-out): the text points at
+        # pages with bounded descriptions, never procedural method.
+        web_text_for_guard = str(web_dump.get("text") or "")
+        for procedural_error in web_answer_procedural_errors(web_text_for_guard):
+            checkable_claims += 1
+            grounding_errors.append(f"web answer is procedural: {procedural_error}")
         # Discovery-only rule (owner decision 6): no source text actually
         # obtained exists in this integration (web_search_call.results is
         # image-only per docs), so time/temperature claims cannot verify.
@@ -3015,8 +3473,20 @@ async def _handle_finish(
             plan_dump if isinstance(plan_dump, dict) else {},
             plan_doc if isinstance(plan_doc, dict) else {},
             [row for row in technique_evidence if isinstance(row, dict)],
+            auto_label=True,
         )
         errors.extend(plan_evidence_errors)
+        # App-written label (2026-10-06 live fix): three live plans failed
+        # only because the model did not write the admission for a
+        # label the code had already computed. The code now states it.
+        attribution_note = plan_attribution_note(
+            plan_dump if isinstance(plan_dump, dict) else {},
+            plan_doc if isinstance(plan_doc, dict) else {},
+        )
+        if attribution_note and result.plan is not None:
+            result.plan.adaptations.append(
+                Adaptation(description=attribution_note, label="adaptation")
+            )
         state_epicure_skip = None
         effective_skip = None
 

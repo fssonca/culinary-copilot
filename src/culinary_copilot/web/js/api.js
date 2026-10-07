@@ -52,10 +52,13 @@ export async function requestJson(path, { method, body } = {}) {
   return parsed;
 }
 
-export function createSession() {
+export const DIETS = ["vegetarian", "vegan"];
+
+export function createSession(diet) {
+  const constraints = DIETS.includes(diet) ? { dietary_constraints: [diet] } : {};
   return requestJson("/api/v1/sessions", {
     method: "POST",
-    body: { internet_search_allowed: false },
+    body: { internet_search_allowed: false, constraints },
   });
 }
 

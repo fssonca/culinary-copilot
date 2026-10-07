@@ -1,6 +1,7 @@
 /* State and wiring: sessions, streaming, composer, toggle. */
 
 import {
+  DIETS,
   createSession,
   getSession,
   isStaleRevision,
@@ -85,6 +86,7 @@ function setBusy(busy) {
   refs.sendButton.disabled = busy;
   refs.composerInput.disabled = busy;
   refs.toggle.disabled = busy;
+  refs.dietSelect.disabled = busy;
   for (const button of refs.answerOptions.querySelectorAll("button")) {
     button.disabled = busy;
   }
@@ -96,6 +98,7 @@ function applySession(body) {
   setPhase(body.current_phase);
   setBudgets(body.steps_remaining, body.tool_calls_remaining);
   setToggle(body.internet_search_allowed);
+  setDiet(body.constraints);
   setSessionLabel();
   const open = Array.isArray(body.unresolved_questions) ? body.unresolved_questions : [];
   state.pendingQuestion = open.length > 0 ? open[open.length - 1] : null;
@@ -104,6 +107,13 @@ function applySession(body) {
   } else {
     exitAnswerMode();
   }
+}
+
+function setDiet(constraints) {
+  const raw = constraints && constraints.dietary_constraints;
+  const values = Array.isArray(raw) ? raw.map(String) : typeof raw === "string" ? [raw] : [];
+  const diet = values.find((value) => DIETS.includes(value));
+  refs.dietSelect.value = diet || "";
 }
 
 function notice(text) {
@@ -215,6 +225,8 @@ async function runStream(message) {
   const resultBox = document.createElement("div");
   turn.appendChild(resultBox);
   refs.transcript.appendChild(turn);
+  // The new turn can start below the fold (e.g. after "Choose this").
+  turn.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
   try {
     const final = await streamAgent(
@@ -322,7 +334,7 @@ async function answerQuestion(answer) {
 
 async function chooseOption(datasetId, sourceId) {
   if (!state.sessionId || state.streaming) {
-    return;
+    return false;
   }
   setBusy(true);
   setFormError("");
@@ -343,10 +355,11 @@ async function chooseOption(datasetId, sourceId) {
       setFormError(error.message || "select failed");
     }
     setBusy(false);
-    return;
+    return false;
   }
   setBusy(false);
   await runStream(null);
+  return true;
 }
 
 async function sendComposer() {
@@ -372,7 +385,7 @@ async function createNewSession() {
   setFormError("");
   setBusy(true);
   try {
-    const body = await createSession();
+    const body = await createSession(refs.dietSelect.value);
     writeStoredSessionId(body.id);
     refs.transcript.replaceChildren();
     applySession(body);
@@ -385,12 +398,19 @@ async function createNewSession() {
 
 async function restoreOrCreate() {
   const stored = readStoredSessionId();
+  let replacedSpent = false;
   if (stored) {
     try {
       const body = await getSession(stored);
-      applySession(body);
-      notice("Earlier answers in this session are not shown after reload");
-      return;
+      const spent = Number(body.steps_remaining) <= 0 || Number(body.tool_calls_remaining) <= 0;
+      if (!spent) {
+        applySession(body);
+        notice("Earlier answers in this session are not shown after reload");
+        return;
+      }
+      // A restored session with no budget left cannot run: start a new
+      // one (it gets the server's current budgets) and say so.
+      replacedSpent = true;
     } catch (error) {
       if (!(error && (error.reason === "unknown_session" || error.status === 404))) {
         setFormError(error.message || "could not load the session");
@@ -399,9 +419,12 @@ async function restoreOrCreate() {
     }
   }
   try {
-    const body = await createSession();
+    const body = await createSession(refs.dietSelect.value);
     writeStoredSessionId(body.id);
     applySession(body);
+    if (replacedSpent) {
+      notice("The previous session had used its budget, so a new session was started");
+    }
   } catch (error) {
     setFormError(error.message || "could not create a session");
   }
@@ -436,6 +459,7 @@ export function init() {
   refs.newSession = document.getElementById("new-session");
   refs.toggle = document.getElementById("internet-toggle");
   refs.toggleHelp = document.getElementById("toggle-help");
+  refs.dietSelect = document.getElementById("diet-select");
   refs.transcript = document.getElementById("transcript");
   refs.answerBox = document.getElementById("answer-box");
   refs.answerQuestion = document.getElementById("answer-question");
@@ -459,6 +483,11 @@ export function init() {
   });
   refs.toggle.addEventListener("change", () => {
     void onToggleChange();
+  });
+  refs.dietSelect.addEventListener("change", () => {
+    if (!state.streaming) {
+      void createNewSession();
+    }
   });
   setToggle(false);
   setBudgets(null, null);

@@ -9,6 +9,14 @@ Latency, tokens and cost are reported as "not measured offline
 (scripted provider)". The harness records scripted turn sizes for
 debugging only and never reports them as real cost or latency.
 
+Honesty limits (close-out): `verify_packet.py` checks the raw live
+files against hard-coded expectations, not the packet's narrative —
+a passing script means the numbers match, not that prose claims are
+complete. Scripted offline cases prove specified behaviour (a given
+scripted turn is accepted or rejected); they do not prove a live
+model will choose the intended recovery. Every recovery fix below is
+marked offline only; not live-evaluated.
+
 ## Per-case metrics
 
 - `task_completion`: the expected terminal was reached (stop reason plus
@@ -81,6 +89,32 @@ debugging only and never reports them as real cost or latency.
   generic "error" fallback.
 - `needs_safety_ref` (v2): plan `technique_refs` must resolve to
   food-safety technique documents, not merely be non-empty.
+- v4 regression cases pin the close-out fixes: `expected_rejection`
+  "remove the time" (repeated time claim still fails),
+  `first_rejection_contains` for the dropped-claim and model-title
+  recoveries and the honored-misuse recovery, stored-title support
+  (no rejection at all), and the refetch duplicate (finish on a
+  short pointer result).
+- `steps_source` (v6, coverage in close-out review): the final
+  plan's attribution label must equal the declared value (`source`
+  only with fully cited, supported steps covering every stored
+  direction; otherwise `model_adaptation`).
+- `expect_fetch` (v5): the last logged `get_recipe` call per pair
+  must be full or short (duplicate pointer) as declared.
+- Web procedural guard (v7, widened in close-out review): verbs
+  count as imperative after sentence breaks and after and/then/
+  first/next/now/finally/simply/just/you/we/after-that/commas.
+  `p7-web-answer-method` pins rejection of method-like text and
+  acceptance of a page description; unit tests pin the boundary.
+  Accepts: page descriptions, gerunds ("covers whisking"), single
+  serving suggestions, unit-less numbers. Rejects: step sequences,
+  verb sequences (the live method text), quantities with units.
+  Residual risk: single-verb instructions pass ("First mix the
+  batter." alone has one hit, below the two-verb sequence bar), and
+  hedged method ("you could whisk, which some cooks fold") may pass
+  or fail on wording; "you can X" never matches (the modal
+  intervenes). The bar stays at sequences to keep page descriptions
+  passing.
 - `latency_tokens_cost`: string constant "not measured offline
   (scripted provider)" for every case and the aggregate.
 

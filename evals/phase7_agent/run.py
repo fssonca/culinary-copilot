@@ -98,6 +98,51 @@ DOCS = {
     ("odunola/foodie", "peanut-3"): PEANUT_DOC,
     ("odunola/foodie", "oat-5"): OAT_DOC,
     ("odunola/foodie", "flour-6"): FLOUR_DOC,
+    ("odunola/foodie", "quick-7"): {
+        "dataset_id": "odunola/foodie",
+        "source_id": "quick-7",
+        "title": "20-Minute Chicken Parmesan",
+        "servings": 4.0,
+        "ingredients": [
+            {
+                "canonical": "chicken",
+                "amount": "500",
+                "unit": "g",
+                "quantity_text": "500 g",
+            },
+        ],
+        "instructions": ["Coat the chicken.", "Bake until done.", "Serve hot."],
+    },
+    # Synthetic fixture shaped like foodie-013643 (6 stored directions,
+    # raw chicken, cashew method) for the plan-attribution cases.
+    ("odunola/foodie", "cashew-8"): {
+        "dataset_id": "odunola/foodie",
+        "source_id": "cashew-8",
+        "title": "Creamy Cashew Chicken Curry",
+        "servings": 4.0,
+        "ingredients": [
+            {
+                "canonical": "chicken",
+                "amount": "500",
+                "unit": "g",
+                "quantity_text": "500 g",
+            },
+            {
+                "canonical": "cashews",
+                "amount": "100",
+                "unit": "g",
+                "quantity_text": "100 g",
+            },
+        ],
+        "instructions": [
+            "Mix the salt and spices in a small bowl.",
+            "Cut the chicken into pieces.",
+            "Coat the chicken with oil and spices; refrigerate to marinate.",
+            "Brown the chicken in butter over high heat.",
+            "Cook the onion, garlic and remaining spices.",
+            "Blend the cashews with cold water until smooth and stir in.",
+        ],
+    },
 }
 
 ROWS_DEFAULT = [
@@ -125,6 +170,23 @@ def search_rows_for(spec: str | list[Any] | None) -> list[dict[str, Any]]:
     if spec == "flour":
         return [
             {"dataset_id": "odunola/foodie", "source_id": "flour-6", "title": "Flour Pancakes"},
+        ]
+    if spec == "quick":
+        return [
+            {
+                "dataset_id": "odunola/foodie",
+                "source_id": "quick-7",
+                "title": "20-Minute Chicken Parmesan",
+            },
+            {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup"},
+        ]
+    if spec == "cashew":
+        return [
+            {
+                "dataset_id": "odunola/foodie",
+                "source_id": "cashew-8",
+                "title": "Creamy Cashew Chicken Curry",
+            },
         ]
     if spec == "curry-raw":
         return list(ROWS_DEFAULT)
@@ -302,6 +364,9 @@ def make_context(store: Any, settings: Any, case: dict[str, Any]) -> Any:
     tech_rows = technique_rows_for(case.get("technique_rows"))
     slow = float(case.get("slow_search") or 0.0)
     slow_state = {"n": 0}
+    # ((dataset_id, source_id), "full" | "short") per get_recipe call,
+    # read by run_case for grading the duplicate rule.
+    fetch_log: list[tuple[tuple[str, str], str]] = []
 
     def _search(args: Any, context: Any) -> dict[str, Any]:
         # Timeout probe: sleep once (first call) so the recovery turn runs fast.
@@ -324,6 +389,44 @@ def make_context(store: Any, settings: Any, case: dict[str, Any]) -> Any:
         return {"ok": True, "mode_ran": "fulltext", "cost_class": "free", "results": list(rows)}
 
     def _get(args: Any, context: Any) -> dict[str, Any]:
+        # Mirror the production repeat-fetch rule: an identical pair
+        # already returned full in this session comes back short — but
+        # only when its full output is still visible to the model (the
+        # loop sets visible_full_recipes per turn). Each call is logged
+        # for grading.
+        from culinary_copilot.agent.loop import recipe_session_evidence
+
+        def _short(doc: dict[str, Any]) -> dict[str, Any]:
+            fetch_log.append(((args.dataset_id, args.source_id), "short"))
+            return {
+                "ok": True,
+                "duplicate_of_session_evidence": True,
+                "dataset_id": args.dataset_id,
+                "source_id": args.source_id,
+                "title": str(doc.get("title") or ""),
+                "message": (
+                    "already returned in this session; use the earlier "
+                    "evidence (see the evidence digest), do not re-fetch"
+                ),
+            }
+
+        session_store = getattr(context, "session_store", None)
+        bound_session = getattr(context, "bound_session_id", None)
+        visible = getattr(context, "visible_full_recipes", None)
+        if session_store is not None and bound_session and visible is not None:
+            try:
+                _, full_pairs = recipe_session_evidence(
+                    store=session_store, session_id=str(bound_session)
+                )
+            except Exception:
+                full_pairs = []
+            if (args.dataset_id, args.source_id) in set(full_pairs) and (
+                args.dataset_id,
+                args.source_id,
+            ) in set(visible):
+                doc = DOCS.get((args.dataset_id, args.source_id)) or {}
+                return _short(doc)
+        fetch_log.append(((args.dataset_id, args.source_id), "full"))
         doc = DOCS.get((args.dataset_id, args.source_id))
         if doc is None:
             return {
@@ -354,7 +457,7 @@ def make_context(store: Any, settings: Any, case: dict[str, Any]) -> Any:
         if web_urls or case.get("id", "").startswith("p7-search")
         else None
     )
-    return ToolContext(
+    ctx = ToolContext(
         settings=settings,
         engine=None,
         session_store=store,
@@ -364,6 +467,8 @@ def make_context(store: Any, settings: Any, case: dict[str, Any]) -> Any:
         epicure_chem=core,
         search_provider=search_provider,
     )
+    ctx.fetch_log = fetch_log  # type: ignore[attr-defined]
+    return ctx
 
 
 def run_case(engine: Any, case: dict[str, Any]) -> dict[str, Any]:
@@ -394,13 +499,17 @@ def run_case(engine: Any, case: dict[str, Any]) -> dict[str, Any]:
         state.confirmed_answers = list(case["confirmed_answers"])
     store.create(state)
 
+    contexts: list[Any] = []
+
     def _deps(provider: Any, use_store: Any = None) -> AgentDeps:
         ctx_store = use_store or store
+        ctx = make_context(ctx_store, settings, case)
+        contexts.append(ctx)
         return AgentDeps(
             settings=settings,
             session_store=ctx_store,
             provider=provider,
-            tool_context=make_context(ctx_store, settings, case),
+            tool_context=ctx,
             recipe_resolver=lambda ds, s: DOCS.get((ds, s)),
             technique_resolver=fake_technique_resolver,
             request_text=case.get("request"),
@@ -530,6 +639,11 @@ def run_case(engine: Any, case: dict[str, Any]) -> dict[str, Any]:
         "epicure_skip_reason": final_state.epicure_skip_reason,
         "events": events,
         "backend_probe": backend_probe,
+        "fetch_log": [
+            {"dataset_id": pair[0], "source_id": pair[1], "mode": mode}
+            for ctx in contexts
+            for pair, mode in getattr(ctx, "fetch_log", [])
+        ],
     }
 
 
@@ -635,6 +749,23 @@ def grade_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
             and str(want.get("reason_contains", "")).lower() in str(d.get("error") or "").lower()
             for d in dropped
         )
+    # Expected plan attribution label.
+    if expected.get("steps_source") is not None:
+        plan = final.get("plan") or {}
+        ok = ok and plan.get("steps_source") == expected["steps_source"]
+    # Expected fetch modes: the last logged get_recipe call per pair
+    # must be full or short (duplicate pointer) as declared.
+    if expected.get("expect_fetch"):
+        last_mode: dict[tuple[str, str], str] = {}
+        for entry in result.get("fetch_log") or []:
+            if isinstance(entry, dict):
+                last_mode[(str(entry.get("dataset_id")), str(entry.get("source_id")))] = str(
+                    entry.get("mode")
+                )
+        for want in expected["expect_fetch"]:
+            key = (str(want.get("dataset_id")), str(want.get("source_id")))
+            want_mode = "short" if want.get("duplicate") else "full"
+            ok = ok and last_mode.get(key) == want_mode
     if expected.get("saw_invalid_transition"):
         texts = json.dumps(events)
         ok = ok and ("invalid phase move" in texts)

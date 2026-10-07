@@ -319,3 +319,17 @@ class Settings(BaseSettings):
     # and evals/phase7_agent/. Read by agent/loop.py before every turn.
     agent_input_token_ceiling: int = 60_000
     agent_output_token_ceiling: int = 12_000
+    # Full trajectory recording (2026-10-05): off by default. When true,
+    # the agent loop also records tool arguments (minimized), what each
+    # tool returned to the model, every model directive (including
+    # rejected answers) and each run's result as session_events, so a
+    # session can be analyzed later. Scrubbed and bounded; stays in the
+    # local database. Export: scripts/sessions/export_session.py.
+    agent_record_trajectory: bool = False
+    # Operator switch for real hosted web search from the app
+    # (2026-10-05): off by default, so search_web stays
+    # tool_not_configured. When true, the agent endpoints pass the
+    # application provider as the search_web sub-request provider.
+    # Each session still needs its own toggle on, and
+    # SEARCH_MAX_PER_SESSION caps searches per session. Paid.
+    web_search_enabled: bool = False

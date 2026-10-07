@@ -211,6 +211,31 @@ VEGAN_VIOLATION_TERMS = VEGETARIAN_VIOLATION_TERMS | VEGAN_EXTRA_TERMS
 #: they keep the option but mark it unverified (never verified).
 AMBIGUOUS_DIET_TERMS = frozenset({"broth", "stock", "bouillon", "worcestershire"})
 
+#: Vegetarian-ambiguous cheeses (2026-10-05 demo finding): traditionally
+#: made with animal rennet (Parmigiano-Reggiano and Grana Padano by
+#: rule), so a strict vegetarian cannot rely on them. They keep the
+#: option but mark it unverified, never "checked", unless the same line
+#: says "vegetarian" (a line naming rennet is already a violation).
+#: Vegan already treats every cheese as a violation.
+VEGETARIAN_RENNET_CHEESE_TERMS = frozenset(
+    {
+        "parmesan",
+        "parmigiano",
+        "pecorino",
+        "romano",
+        "grana",
+        "gorgonzola",
+        "gruyere",
+        "gruyère",
+        "manchego",
+        "emmental",
+        "emmentaler",
+        "comte",
+        "comté",
+    }
+)
+_VEGETARIAN_CHEESE_OK_RE = re.compile(r"\bvegetarian\b")
+
 #: False-positive guards: plant butters, plant milks, coconut cream
 #: and cream of tartar are not dairy.
 _NON_DAIRY_RES = (
@@ -288,6 +313,10 @@ def check_dietary_option(
             ):
                 if ambiguous not in unverified:
                     unverified.append(ambiguous)
+        if label == "vegetarian" and _VEGETARIAN_CHEESE_OK_RE.search(scrubbed) is None:
+            for cheese in sorted(VEGETARIAN_RENNET_CHEESE_TERMS):
+                if _word_hit(scrubbed, cheese) and cheese not in unverified:
+                    unverified.append(cheese)
     if violations:
         entry: dict[str, Any] = {"status": "violated", "value": label, "terms": violations}
     elif unverified:
@@ -536,6 +565,11 @@ def _flatten_constraint_texts(constraints: dict[str, Any]) -> list[str]:
     return texts
 
 
+def flatten_constraint_texts(constraints: dict[str, Any]) -> list[str]:
+    """Public alias: constraint values as texts (keys never count)."""
+    return _flatten_constraint_texts(constraints)
+
+
 def unresolved_unnamed_restriction(
     request_texts: list[str],
     constraints: dict[str, Any] | None,
@@ -581,6 +615,74 @@ def allergens_named_in_answers(answer_texts: list[str]) -> list[str]:
         ):
             labels.append(label)
     return labels
+
+
+#: Avoidance cues in an answer's own words ("no peanuts", "without
+#: dairy", "gluten-free", "she can't have nuts").
+_ANSWER_AVOIDANCE_RE = re.compile(
+    r"\b(?:no|not|without|avoid(?:s|ing)?|exclud(?:e|es|ing)|free|never)\b|n['’]t\b",
+    re.IGNORECASE,
+)
+
+#: Question wording that asks about allergies, diets or avoided foods.
+_AVOIDANCE_QUESTION_RE = re.compile(
+    r"\b(?:avoid\w*|allerg\w*|diet\w*|intoleran\w*|restrict\w*|"
+    r"can['’]?t eat|cannot eat|don['’]t eat|doesn['’]t eat)\b",
+    re.IGNORECASE,
+)
+
+
+def allergy_answer_texts(
+    confirmed_answers: list[Any] | None,
+    question_texts: dict[str, str] | None,
+    restriction_texts: list[str] | None,
+) -> list[str]:
+    """Confirmed answer texts that count as allergy/avoidance evidence.
+
+    Live finding (2026-10-05 demo): choosing "Creamy mushroom pasta"
+    from a dish-choice question was read as a wheat allergy, because
+    every answer was scanned for allergen terms. Now:
+
+    - when the request, a user message or a constraint value mentions
+      an allergy, intolerance or restriction, or states an avoidance
+      ("no peanuts please", "gluten-free dinner"), every answer counts
+      (unchanged and conservative: the P3-L-13 flow never weakens);
+    - an answer whose question is not recorded in this session (for
+      example answers supplied at session creation) always counts;
+    - otherwise an answer counts only when its question asks about
+      allergies, diets or avoided foods, or the answer itself mentions
+      a restriction or an avoidance cue ("no peanuts", "gluten-free").
+
+    Only a dish choice to a recorded non-restriction question, in a
+    session with no restriction or avoidance anywhere, is excluded.
+    """
+    answers: list[tuple[str, str]] = []
+    for answer in confirmed_answers or []:
+        if not isinstance(answer, dict):
+            continue
+        text = str(answer.get("answer") or "").strip()
+        if text:
+            answers.append((str(answer.get("question_id") or ""), text))
+    if any(
+        mentions_restriction(str(t or "")) or _ANSWER_AVOIDANCE_RE.search(str(t or ""))
+        for t in (restriction_texts or [])
+    ):
+        return [text for _, text in answers]
+    questions = question_texts or {}
+    out: list[str] = []
+    for question_id, text in answers:
+        if question_id not in questions:
+            out.append(text)
+            continue
+        question = str(questions.get(question_id) or "")
+        if (
+            mentions_restriction(question)
+            or _AVOIDANCE_QUESTION_RE.search(question) is not None
+            or mentions_restriction(text)
+            or _ANSWER_AVOIDANCE_RE.search(text) is not None
+        ):
+            out.append(text)
+    return out
 
 
 #: Model-text patterns that call an option allergen-free: a bare
@@ -1004,6 +1106,69 @@ MODEL_STEPS_MARKERS = (
 #: Directions fields in a resolved recipe document, in lookup order.
 _DIRECTION_FIELDS = ("instructions", "instruction_lines", "steps", "directions")
 
+#: Content words ignored by the plan-step overlap check (deterministic
+#: attribution): a plan step is supported by a cited direction when
+#: every remaining word of the step appears in the direction.
+_PLAN_ATTRIBUTION_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "to",
+        "of",
+        "in",
+        "on",
+        "with",
+        "for",
+        "then",
+        "until",
+        "while",
+        "it",
+        "its",
+        "them",
+        "then",
+        "is",
+        "are",
+        "be",
+        "as",
+        "at",
+        "by",
+        "from",
+        "into",
+        "over",
+    }
+)
+
+#: Claims that the source has no directions (rejected whenever the
+#: stored record actually has directions).
+_NO_DIRECTIONS_PATTERNS = (
+    re.compile(r"\bno\s+(directions|instructions|steps|method)\b", re.IGNORECASE),
+    re.compile(r"\bwithout\s+(directions|instructions)\b", re.IGNORECASE),
+    re.compile(
+        r"\bdoes\s+not\s+(give|include|have|list|provide|contain)\b"
+        r".{0,60}\b(directions|instructions|steps)\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _plan_content_words(text: str) -> set[str]:
+    """Lowercased content words of plan/direction text for attribution."""
+    words = re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)?", str(text or "").lower())
+    return {w for w in words if w not in _PLAN_ATTRIBUTION_STOPWORDS}
+
+
+def direction_supports_step(direction: str, step: str) -> bool:
+    """True when every content word of the step appears in the direction.
+
+    Faithful condensations pass (dropping words is fine); synonyms,
+    added ingredients, or a changed method fail into model_adaptation.
+    """
+    words = _plan_content_words(step)
+    return bool(words) and words <= _plan_content_words(direction)
+
 
 def doc_directions(doc: dict[str, Any]) -> list[str]:
     """Source directions (empty when the record is ingredient-only)."""
@@ -1021,33 +1186,163 @@ def doc_text(doc: dict[str, Any]) -> str:
     return "\n".join(_ingredient_line_texts(doc) + doc_directions(doc))
 
 
+def _plan_attribution(
+    plan: dict[str, Any], directions: list[str]
+) -> tuple[str, list[int], list[int], dict[int, tuple[int, list[str]]]]:
+    """(steps_source, unsupported steps, uncovered directions, missing words).
+
+    ``missing_words`` maps an unsupported step to its cited direction
+    and the step's words that direction lacks (2026-10-06 live fix: a
+    faithful plan with "drizzled" for "drizzle" failed twice on a
+    message that only named the step index).
+    """
+    raw_steps = plan.get("steps") or []
+    steps = [s for s in raw_steps if isinstance(s, str) and s.strip()]
+    cited = plan.get("step_sources")
+    unsupported: list[int] = []
+    uncovered: list[int] = []
+    missing_words: dict[int, tuple[int, list[str]]] = {}
+    if steps and directions and isinstance(cited, list) and len(cited) == len(raw_steps):
+        cited_indices: set[int] = set()
+        for index, (step, citation) in enumerate(zip(raw_steps, cited)):
+            valid = (
+                isinstance(citation, int)
+                and not isinstance(citation, bool)
+                and 0 <= citation < len(directions)
+            )
+            if valid and direction_supports_step(directions[citation], str(step or "")):
+                cited_indices.add(citation)
+                continue
+            unsupported.append(index)
+            if valid:
+                missing_words[index] = (
+                    citation,
+                    sorted(
+                        _plan_content_words(str(step or ""))
+                        - _plan_content_words(directions[citation])
+                    )[:8],
+                )
+        # Coverage (Phase 7 close-out): "source" also requires every
+        # stored direction index to be cited by at least one step. A
+        # plan that silently drops a direction (e.g. a marinade) is an
+        # adaptation, even when every kept step is faithful.
+        uncovered = sorted(set(range(len(directions))) - cited_indices)
+    else:
+        unsupported = list(range(len(steps)))
+    steps_source = "source" if steps and not unsupported and not uncovered else "model_adaptation"
+    return steps_source, unsupported, uncovered, missing_words
+
+
+def _attribution_detail(
+    unsupported: list[int],
+    uncovered: list[int],
+    missing_words: dict[int, tuple[int, list[str]]],
+) -> str:
+    detail = f"plan steps {unsupported} are not all grounded" if unsupported else ""
+    if missing_words:
+        detail += "; " + "; ".join(
+            f"step {index} uses words not in direction {citation}: "
+            + ", ".join(repr(word) for word in words)
+            for index, (citation, words) in missing_words.items()
+        )
+    if uncovered:
+        detail += ("; " if detail else "") + (
+            f"source directions {uncovered} are not cited by any step"
+        )
+    return detail
+
+
+def has_model_steps_admission(plan: dict[str, Any]) -> bool:
+    """True when a plan adaptation states the steps are not from the source."""
+    adaptations = plan.get("adaptations") or []
+    descriptions = [str(a.get("description") or "") for a in adaptations if isinstance(a, dict)]
+    return any(
+        marker in description.lower()
+        for description in descriptions
+        for marker in MODEL_STEPS_MARKERS
+    )
+
+
+def plan_attribution_note(plan: dict[str, Any], doc: dict[str, Any] | None) -> str | None:
+    """App-written adaptation for a model_adaptation plan the model did not label.
+
+    Only for sources with directions (ingredient-only sources still
+    need the model's own admission). The note names the steps that
+    differ and why, so the label and its reason come from code.
+    """
+    directions = doc_directions(doc or {})
+    if not directions:
+        return None
+    steps_source, unsupported, uncovered, missing_words = _plan_attribution(plan, directions)
+    if steps_source == "source" or has_model_steps_admission(plan):
+        return None
+    detail = _attribution_detail(unsupported, uncovered, missing_words)
+    note = f"Labelled by the app: these steps are not from the source verbatim ({detail})."
+    return note if len(note) <= 500 else note[:497].rstrip() + "…"
+
+
 def check_plan_evidence(
     plan: dict[str, Any],
     doc: dict[str, Any] | None,
     technique_rows: list[dict[str, Any]] | None,
+    *,
+    auto_label: bool = False,
 ) -> tuple[list[str], str]:
-    """Minimum plan-evidence checks (P3-L-09).
+    """Minimum plan-evidence checks (P3-L-09, Phase 7 close-out).
 
-    Returns ``(errors, steps_source)``. A source without directions
-    sets ``steps_source`` to ``"model_adaptation"`` and needs at least
-    one plan adaptation stating the steps are not from the source.
-    Source ingredients with raw meat, poultry, fish or eggs (not
-    "cooked") need at least one technique_ref to a food-safety chunk.
+    Returns ``(errors, steps_source)``. ``steps_source`` is ``"source"``
+    only when every plan step cites a valid stored-direction index
+    (``step_sources``, one entry per step) whose direction supports it
+    (deterministic content-word overlap); otherwise it is
+    ``"model_adaptation"`` and needs at least one plan adaptation
+    stating the steps are not from the source (with ``auto_label`` and
+    a source that has directions, the caller adds
+    ``plan_attribution_note`` instead of rejecting). The label comes from
+    the actual plan/evidence relationship, never from the mere
+    presence of stored directions. Any plan or adaptation text
+    claiming the source has no directions is rejected whenever the
+    stored record actually has directions. Source ingredients with raw
+    meat, poultry, fish or eggs (not "cooked") need at least one
+    technique_ref to a food-safety chunk.
     """
     errors: list[str] = []
     source = doc or {}
-    steps_source = "source" if doc_directions(source) else "model_adaptation"
-    if steps_source == "model_adaptation":
-        adaptations = plan.get("adaptations") or []
-        descriptions = [str(a.get("description") or "") for a in adaptations if isinstance(a, dict)]
-        if not any(
-            marker in description.lower()
-            for description in descriptions
-            for marker in MODEL_STEPS_MARKERS
-        ):
+    directions = doc_directions(source)
+    steps_source, unsupported, uncovered, missing_words = _plan_attribution(plan, directions)
+    if steps_source == "model_adaptation" and not has_model_steps_admission(plan):
+        if directions:
+            # auto_label: the caller attaches plan_attribution_note
+            # instead (2026-10-06): the label is computed here either
+            # way, so a missing model admission no longer fails a plan.
+            if not auto_label:
+                errors.append(
+                    f"steps_source is model_adaptation "
+                    f"({_attribution_detail(unsupported, uncovered, missing_words)}): "
+                    "either keep each step to its cited direction's own words "
+                    "(dropping words is fine) and cite every direction, or add a "
+                    "plan adaptation stating the steps are not from the source"
+                )
+        else:
             errors.append(
                 "steps_source is model_adaptation (the source has no directions): "
                 "add a plan adaptation stating the steps are not from the source"
+            )
+    if directions:
+        steps = [s for s in (plan.get("steps") or []) if isinstance(s, str) and s.strip()]
+        prose = "\n".join(
+            [str(s or "") for s in steps]
+            + [str(m or "") for m in (plan.get("mise_en_place") or [])]
+            + [str(plan.get("plating") or "")]
+            + [
+                str(a.get("description") or "")
+                for a in (plan.get("adaptations") or [])
+                if isinstance(a, dict)
+            ]
+        )
+        if any(pattern.search(prose) for pattern in _NO_DIRECTIONS_PATTERNS):
+            errors.append(
+                f"plan claims the source has no directions, but the stored "
+                f"record has {len(directions)} directions; remove the claim"
             )
     raw_hits: list[str] = []
     for line in _ingredient_line_texts(source):
@@ -1275,6 +1570,7 @@ __all__ = [
     "check_dietary_option",
     "check_plan_evidence",
     "dietary_values",
+    "direction_supports_step",
     "doc_directions",
     "doc_text",
     "hard_constraint_keys",

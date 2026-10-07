@@ -1,10 +1,10 @@
-# Agent scoreboard (Milestone 3, Phase 7 part 1, offline)
+# Agent scoreboard (Milestone 3, Phase 7)
 
-Status: offline harness v2 complete 2026-10-04. No model calls, no
-embeddings calls, no web requests, no downloads. Writes went to the
-disposable `culinary_check_phase7` database only (dropped afterward).
-The live run is part 2 and is not authorized here; see
-`evals/phase7_agent/LIVE_PLAN.md`.
+Status: offline harness v8, updated 2026-10-05. The harness makes no
+model calls, embedding calls, web requests or downloads. Writes go to
+the disposable `culinary_check_phase7` database only (dropped
+afterward). The live evaluation (11 sessions, part 2) is summarized
+below and reviewed in `evals/phase7_agent/CHECKPOINT_C.md`.
 
 v1 (cases sha `5655b1cc…`, 27/27 scored, 4/4 adversarial, kept in
 `results.json` as `history_v1`) scored the dietary and adversarial
@@ -25,8 +25,8 @@ Model quality is measured only by the live run.
   `uv run python evals/phase7_agent/run.py`. Writes `results.json` and
   `epicure_compare.json` into that directory.
 - `evals/phase7_agent/cases.json`: version
-  `phase7-cases-v3-2026-10-04`, 30 cases, sha256
-  `26187f375fb41005f4a52be2b12f2df91aae9797d2b3133051f9a25c5c3e4b27`
+  `phase7-cases-v8-2026-10-05`, 43 cases, sha256
+  `2713af2655a058ae799a5bed6d8c9711b19b0e94ae759f4b1205a01d57c421b8`
   (recorded in `results.json` as `cases_sha256`; v1 sha and aggregate
   kept as `history_v1`). A later edit means a new version, never a
   silent change.
@@ -40,29 +40,29 @@ Model quality is measured only by the live run.
   permission-off backend gate is additionally probed directly with
   `run_tool`.
 
-## Aggregates (30 cases, v3)
+## Aggregates (43 cases, v8)
 
-- Task completion (scored): 30/30 (rate 1.0). Expected-fail: none.
+- Task completion (scored): 43/43 (rate 1.0). Expected-fail: none.
 - Adversarial catch rate: 4/4 (1.0), each with its pinned rejection
   text. Adversarial cases: `p7-epicure-skip-unjustified` ("needs
   Epicure consulted"), `p7-search-invented-url` ("was not returned in
   this session"), `p7-tool-invalid-args`, `p7-invalid-transition-caught`.
-- Stop reasons: `agent_sufficient_evidence` 21,
-  `agent_validation_failed` 2, `agent_needs_user_input` 3,
+- Stop reasons: `agent_sufficient_evidence` 32,
+  `agent_validation_failed` 4, `agent_needs_user_input` 3,
   `agent_max_steps` 1, `agent_tool_budget_exhausted` 1,
   `agent_token_budget_exhausted` 1, `agent_wall_clock_exceeded` 1.
 - Invalid transitions: 1 total (in `p7-invalid-transition-caught`,
   recovered then finished).
-- Tool-argument validity (mean): 0.987. Below 1.0:
+- Tool-argument validity (mean): 0.990. Below 1.0:
   `p7-tool-invalid-args` (0.8) and `p7-vector-unconfigured` (0.8:
   the refused vector call, recovered with fulltext).
 - Unnecessary-call rate (mean): 0.0. No forbidden calls.
-- Epicure compliance: 29/30 (0.967). The single non-compliant case is
+- Epicure compliance: 42/43 (0.977). The single non-compliant case is
   the adversarial unjustified skip, correctly caught.
-- Source-reference correctness: 30/30 (1.0).
-- Unsupported-claim cases: 0 (offline notes are deliberately plain;
-  most carry no checkable claims, which marks the system check, not
-  model quality).
+- Source-reference correctness: 43/43 (1.0).
+- Unsupported-claim cases: 3 (the time-claim regression cases,
+  whose first finishes are rejected on purpose; all recover or fail
+  as designed).
 - Latency, tokens, cost: not measured offline (scripted provider).
 
 ## Case list (criteria in `cases.json`)
@@ -117,6 +117,38 @@ Model quality is measured only by the live run.
 - `p7-resume-uses-evidence` (live-peanut regression: resumed run
   finishes on the earlier run's retrieved recipe, no new search):
   pass.
+- `p7-time-repeat` (re-run regression: repeated "30-minute" claim
+  still rejected with the actionable message): caught
+  (`agent_validation_failed`).
+- `p7-time-dropped` (claim dropped after feedback): pass.
+- `p7-time-stored-title` (stored title "20-Minute Chicken Parmesan"
+  supports "20 minutes"): pass.
+- `p7-time-model-title` (model-written "30-Minute" title supports
+  nothing): rejected once, then pass.
+- `p7-honored-misuse` (re-run regression: allergy answer needs no
+  `dietary_constraints` claim): rejected once, then pass.
+- `p7-refetch-duplicate` (re-run regression: cross-run re-fetch
+  returns full again now that pointers need visible history): pass,
+  pins full.
+- `p7-plan-refetch-full` (plan run after select re-fetches the
+  selected recipe full, plan accepted): pass, pins full.
+- `p7-double-fetch-pointer` (same pair twice in one run: second is
+  short): pass, pins short then full.
+- `p7-plan-false-absence` (changed method plus a false "no
+  directions" claim on a 6-direction record): rejected
+  (`agent_validation_failed`).
+- `p7-plan-faithful-source` (six steps citing all six stored
+  directions): pass, labelled "source".
+- `p7-plan-partial-coverage` (faithful steps that omit the marinade
+  direction, with a truthful admission): pass, labelled
+  "model_adaptation" — coverage requires every stored direction
+  cited.
+- `p7-plan-changed-method` (uncited changed steps with a truthful
+  admission): pass, labelled "model_adaptation".
+- `p7-web-answer-method` (procedural web text shaped like the live
+  answer): rejected once, then a description passes. Imperatives
+  count after first/next/now/finally/simply/just/you/we/after-that
+  as well as sentence starts.
 
 Code pointers: loop `src/culinary_copilot/agent/loop.py`, validators
 `src/culinary_copilot/agent/validate.py`, tools
@@ -246,13 +278,25 @@ Matched 3/7. Note the recorded summary still labels question stops
 round's runner fixes (checkpoint B logic: question stops are
 "completed: no-answer", adherence "n/a" when nothing was offered).
 
-Checkpoint C, honestly: claims were supported where answers completed
-(yogurt ask/resume, one cited discovery answer for search-once with a
-real provider-evidenced URL); no constraint was relaxed (vegan ended
-asking, peanut named and checked); the search citation was real and
-relevant. The other four scenarios did not complete for the reasons
-above, so model quality there is unmeasured — a re-run needs a new
-owner go-ahead.
+Checkpoint C, corrected in close-out (see
+`evals/phase7_agent/CHECKPOINT_C.md` for the packet): Q1 answer "yes"
+— unsupported content reached the user twice (the cashew plan's
+direction claim and attribution; the web answer's method). Resolved
+since: all 24 yogurt quantity entries re-verified read-only against
+the stored recipes (all matching), and the 165°F instruction is
+supported by the cited FDA chunk. Q2: "No explicit constraint
+relaxation was observed in the reviewed live runs" — the vegan
+checks ran, but the peanut sessions stopped without options, so
+allergy-aware recommendation after resuming is unproven; allergen
+checks cover listed-ingredient evidence only and cannot establish
+absence of cross-contact. Q3: all three URLs are in provider
+evidence; the owner checked the JETRO and Just One Cookbook pages
+as relevant; the PBS page returned 403 and is not fully reviewed;
+the answer content exceeded the discovery-only boundary (fixed
+offline). Yogurt ask-and-resume was NOT exercised live (asked,
+answer_recorded and resumed_used_answer all false in the recorded
+grades) — the only live ask/record/resume evidence is the peanut
+runs, which delivered no checked options after resuming.
 
 Open findings from the live run (all addressed offline except F5):
 
@@ -287,13 +331,63 @@ Open findings from the live run (all addressed offline except F5):
 - F5 (open): technique-mode comparison has no runner support; needs a
   paired-run flow plus query embeddings. Not built.
 
+## Live re-run (part 2b, owner-run 2026-10-04)
+
+Authorized re-run of the 4 unmatched scenarios with embeddings on,
+no web searches, ceiling $0.10 (cumulative: at most $0.0708 over the
+$0.0292 prior), new budgets (12 steps, 60k input). Spent $0.0184, 0
+searches; Phase 7 pool $0.0476, Milestone 3 about $0.2795 of $1.00.
+Raw trajectories in `data/phase7-live/raw-rerun/` (gitignored);
+summary `data/phase7-live/live-summary-phase7-rerun.json`. Aggregates
+only: matched 2/4 (`live-vegan-conflict` options with constraints
+honored; `live-plan-safety` full recommend-select-plan flow under the
+new budget). Still unmatched 2/4, both stopped safely on the
+tool-call budget (12) with nothing unsafe offered:
+`live-chicken-e2e` (repeated "30-minute" claim rejected twice, model
+never dropped it; one malformed recipe id) and `live-peanut-allergy`
+(claimed a `dietary_constraints` key the session lacks, then
+re-fetched known recipes until the budget ran out). Terminal
+outcomes across all 11 sessions: 5 sufficient-evidence, 3 questions,
+3 budget stops. The observed failures include recovery and
+efficiency problems; broader safety conclusions remain unproven.
+Live confirmation of this round's fixes is not authorized — they are
+marked "fixed offline, not live-verified" below. Expected-stop
+match is reported per run set, never combined: first run 3/7,
+selected re-runs 2/4.
+
+Open findings carried forward (fixed offline this round unless noted):
+
+- F1 vector-when-unconfigured: fixed offline, not live-verified
+  (offered enum from settings, retry-fulltext error, preflight gate,
+  `p7-vector-unconfigured`).
+- F2 note time-claim loop: fixed offline, not live-verified
+  (actionable rejection, stored-title evidence incl. hyphenated
+  times, `p7-time-repeat/dropped/stored-title/model-title`).
+- F3 honored-misuse: fixed offline, not live-verified (leave-empty
+  message, `p7-honored-misuse`). No legitimate claim key exists for
+  confirmed answers: `constraints_honored` must be a subset of the
+  session constraint keys (loop + grader both key off them), and
+  answers surface in `constraint_check` — so none is proposed.
+- F4 redundant fetches: fixed offline, not live-verified (short
+  typed duplicate result, budget unchanged, stronger framing,
+  format-showing invalid-id message, `p7-refetch-duplicate`).
+- F5 technique-mode comparison: still open (no runner support; needs
+  a paired-run flow plus query embeddings).
+- F6 (new, open): tool-call budget (12) now binds end-to-end runs
+  before the step budget does (both re-run failures stopped on tool
+  calls, not steps). Options for the owner: raise the tool-call
+  budget, fund post-select/answer phases separately, or shorten
+  retrieval loops; defaults unchanged here.
+
 P3-L-12 step accounting (plan-safety live trajectory, 8-session
-budget): recommend run 5 steps (3 tool steps + 1 finish rejected on
-the "curry" pairing flag + 1 corrected options finish); select costs
-no steps (CAS update only); plan run 3 steps (1 tool step + 1 plan
-finish rejected for the missing food-safety ref + the final
+budget): recommend 5 (3 tool + 1 finish rejected on the "curry"
+pairing flag + 1 corrected options finish); select costs
+no steps (CAS update only); plan 3 (1 tool + 2 finish rejected for
+missing safety ref + the final
 rejected finish hitting `max_steps`). Validation rejects consumed 2
-of the 8 steps. Options for the owner (recommendation: plan-phase
+of the 8 steps. The owner has since raised the budgets to 12 steps
+and 60k input tokens (checkpoint 0 decision; loop tests updated).
+Options for the owner (recommendation: plan-phase
 allowance):
 - Raise `SESSION_MAX_STEPS` (e.g. 8 → 12): simplest; covers this
   trace with margin. Costs: longer worst-case runs, more spend

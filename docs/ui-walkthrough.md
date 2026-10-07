@@ -13,6 +13,24 @@ uv run uvicorn culinary_copilot.api.app:create_app --factory
 
 Then open `/ui/` in a browser. `/` redirects there.
 
+For a live demo with the model on, run `make demo`. It makes paid calls
+and raises the budgets for new sessions to 40 steps, 40 tool calls,
+300k input tokens, 60k output tokens and 240 s per run. Override any of
+these, for example `make demo DEMO_TOOL_CALLS=1000000`. It also turns
+on full trajectory recording (`AGENT_RECORD_TRAJECTORY=true`) and real
+web search (`WEB_SEARCH_ENABLED=true`; without it, `search_web` reports
+`tool_not_configured` even with the toggle on). Export a
+session for analysis with
+`uv run python scripts/sessions/export_session.py --latest`, which
+writes JSON plus a readable timeline to `data/session-exports/`. Use
+`--list` to see recent sessions.
+
+The **Diet** selector (none, vegetarian, vegan) sends a hard
+`dietary_constraints` value when the session is created, and changing
+it starts a new session. Typing "vegetarian" in a message does not
+create a constraint, so the vegetarian check runs only when the
+selector is set.
+
 ## 2. Check every card on the demo page
 
 Open `/ui/demo.html`. It renders only synthetic demo data (labelled

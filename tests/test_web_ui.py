@@ -110,6 +110,9 @@ def test_security_headers_on_ui_absent_from_api() -> None:
             assert response.headers.get("content-security-policy") == EXPECTED_CSP, path
             assert response.headers.get("x-content-type-options") == "nosniff", path
             assert response.headers.get("referrer-policy") == "no-referrer", path
+            # UI files revalidate on every load, so a UI change is never
+            # hidden behind a cached module (2026-10-06).
+            assert response.headers.get("cache-control") == "no-cache", path
         api = client.get("/api/v1/pairings?ingredient=chicken")
         assert "content-security-policy" not in api.headers
         assert "x-content-type-options" not in api.headers
@@ -652,3 +655,63 @@ def test_agent_stream_disconnect_cancels_run(spec: str, middleware: str) -> None
     text = b"".join(chunks).decode()
     assert "event: final" not in text and "event: error" not in text
     assert provider.cancelled is True
+
+
+# --- diet selector (2026-10-05 demo finding) ------------------------------------
+
+
+def test_diet_selector_values_are_checked_diets() -> None:
+    """The page's diet values match api.js and are diets the validator checks.
+
+    Free-text "vegetarian" never became a session constraint, so the
+    vegetarian check did not run; the selector sends it as a hard
+    constraint at session creation instead.
+    """
+    from culinary_copilot.agent.validate import check_dietary_option
+
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    api_js = (WEB_DIR / "js" / "api.js").read_text(encoding="utf-8")
+    select = re.search(r'<select id="diet-select">(.*?)</select>', html, re.S)
+    assert select is not None
+    page_values = [v for v in re.findall(r'<option value="([^"]*)">', select.group(1)) if v]
+    diets = re.search(r"export const DIETS = \[([^\]]*)\];", api_js)
+    assert diets is not None
+    js_values = re.findall(r'"([^"]+)"', diets.group(1))
+    assert page_values == js_values == ["vegetarian", "vegan"]
+    assert "dietary_constraints: [diet]" in api_js
+    doc = {"ingredients": [{"canonical": "chicken", "quantity_text": "500 g"}]}
+    for value in page_values:
+        errors, entry = check_dietary_option(0, {"source_id": "x"}, doc, value)
+        assert entry.get("status") != "not_checked", value
+        assert errors, f"{value}: chicken must violate"
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_agent_router_wires_search_provider_only_when_enabled(
+    monkeypatch: pytest.MonkeyPatch, enabled: bool
+) -> None:
+    """WEB_SEARCH_ENABLED passes the app provider to search_web; off by default.
+
+    Demo finding (2026-10-05): the server never wired a search provider,
+    so with the toggle on every search reported tool_not_configured.
+    """
+    import culinary_copilot.tools as tools_pkg
+    from culinary_copilot.api.agent import build_router
+
+    captured: dict[str, Any] = {}
+    real = tools_pkg.build_tool_context
+
+    def _capture(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(tools_pkg, "build_tool_context", _capture)
+    provider = object()
+    build_router(
+        settings=_settings(web_search_enabled=enabled, epicure_enabled=False),
+        engine=None,
+        session_store=SimpleNamespace(),  # type: ignore[arg-type]
+        provider=provider,
+    )
+    assert captured["search_provider"] is (provider if enabled else None)
+    assert _settings().web_search_enabled is False

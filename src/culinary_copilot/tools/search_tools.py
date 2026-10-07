@@ -284,6 +284,31 @@ async def get_recipe_impl(args: GetRecipeArgs, context: ToolContext) -> dict[str
     engine = getattr(context, "engine", None)
     if engine is None:
         return _not_configured("get_recipe not configured: no recipe engine")
+    # Repeat fetch (Phase 7 close-out): an identical pair already
+    # returned in this session comes back as a short typed result
+    # pointing at the earlier evidence — but only when the full output
+    # is still visible to the model (in the current run's capped
+    # history). A repeat the model can no longer see (new run, or
+    # capped out) comes back full, as before. The call still executes
+    # either way, so the tool budget is unchanged.
+    duplicate = _already_fetched_pair(context, args.dataset_id, args.source_id)
+    visible = getattr(context, "visible_full_recipes", None)
+    if (
+        duplicate is not None
+        and visible is not None
+        and (args.dataset_id, args.source_id) in set(visible)
+    ):
+        return {
+            "ok": True,
+            "duplicate_of_session_evidence": True,
+            "dataset_id": args.dataset_id,
+            "source_id": args.source_id,
+            "title": duplicate,
+            "message": (
+                "already returned in this session; use the earlier "
+                "evidence (see the evidence digest), do not re-fetch"
+            ),
+        }
     try:
         doc = await __import__("asyncio").to_thread(
             get_recipe, engine, args.source_id, dataset_id=args.dataset_id
@@ -317,10 +342,61 @@ async def get_recipe_impl(args: GetRecipeArgs, context: ToolContext) -> dict[str
             "ok": False,
             "error_type": "invalid_arguments",
             "reason": REASON_TOOL_INVALID_ARGUMENTS,
-            "message": "get_recipe: recipe not found for (dataset_id, source_id)",
+            "message": (
+                "get_recipe: recipe not found for "
+                f"(dataset_id={args.dataset_id!r}, source_id={args.source_id!r}); "
+                "pass dataset_id and source_id separately "
+                '(e.g. dataset_id "odunola/foodie", source_id "foodie-004186", '
+                "never a combined id)"
+            ),
             "next_action": _naf(REASON_TOOL_INVALID_ARGUMENTS),
         }
     return {"ok": True, "recipe": dict(doc)}
+
+
+def _already_fetched_pair(context: ToolContext, dataset_id: str, source_id: str) -> str | None:
+    """Title of an identical pair already returned full in this session.
+
+    Reads the session's tool_call events (all runs); None when the
+    pair was never returned, the store is missing, or the session is
+    unbound. Lazy import: the agent loop already imports this module.
+    Returns the stored title (empty string when untitled).
+    """
+    from culinary_copilot.agent.loop import recipe_session_evidence
+
+    store = getattr(context, "session_store", None)
+    session_id = getattr(context, "bound_session_id", None)
+    if store is None or not session_id:
+        return None
+    try:
+        _, full_pairs = recipe_session_evidence(store=store, session_id=str(session_id))
+    except Exception:
+        return None
+    if (dataset_id, source_id) not in set(full_pairs):
+        return None
+    try:
+        events = store.list_events(str(session_id))
+    except Exception:
+        return ""
+    for event in events:
+        payload = getattr(event, "payload", None) or {}
+        if getattr(event, "event_type", "") != "tool_call":
+            continue
+        if payload.get("outcome") != "ok":
+            continue
+        for ident in payload.get("returned_identities") or []:
+            if (
+                isinstance(ident, dict)
+                and ident.get("dataset_id") == dataset_id
+                and ident.get("source_id") == source_id
+                and ident.get("via") == "full"
+            ):
+                facts = payload.get("result_facts")
+                title = ""
+                if isinstance(facts, dict):
+                    title = str(facts.get("title") or "")
+                return title
+    return ""
 
 
 def search_recipes_description(settings: Any = None) -> str:

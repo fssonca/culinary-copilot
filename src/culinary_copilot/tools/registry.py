@@ -255,6 +255,12 @@ class ToolContext:
     # the slot claim and refuses dispatches past the run/campaign
     # bounds. None means pre-limit behavior (unit tests, API path).
     search_limits: Any = None
+    # Pairs whose full get_recipe outputs are still in the current
+    # run's capped history (set per turn by the agent loop; None means
+    # unknown, e.g. direct impl calls). get_recipe returns its short
+    # duplicate pointer only for pairs in this set: a repeat the model
+    # can no longer see comes back full. run_tool copies it per call.
+    visible_full_recipes: set[tuple[str, str]] | None = None
     # Test hook: wrap the raw implementation (e.g. inject a sleeping fake).
     impl_overrides: dict[str, Callable[..., Any]] = field(default_factory=dict)
     # Review hook: also store the bounded validated args in the session

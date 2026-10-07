@@ -380,7 +380,11 @@ def test_plan_raw_chicken_needs_safety_ref() -> None:
     from culinary_copilot.agent.validate import check_plan_evidence
 
     errors, steps_source = check_plan_evidence(
-        {"adaptations": []},
+        {
+            "adaptations": [],
+            "steps": ["Cook."],
+            "step_sources": [0],
+        },
         {"ingredients": [{"canonical": "chicken breast"}], "instructions": ["Cook."]},
         [],
     )
@@ -395,7 +399,11 @@ def test_plan_raw_chicken_accepted_with_safety_ref() -> None:
     from culinary_copilot.agent.validate import check_plan_evidence
 
     errors, steps_source = check_plan_evidence(
-        {"adaptations": []},
+        {
+            "adaptations": [],
+            "steps": ["Cook."],
+            "step_sources": [0],
+        },
         {"ingredients": [{"canonical": "chicken breast"}], "instructions": ["Cook."]},
         [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
     )
@@ -406,7 +414,11 @@ def test_plan_fully_cooked_fillets_need_no_ref() -> None:
     from culinary_copilot.agent.validate import check_plan_evidence
 
     errors, steps_source = check_plan_evidence(
-        {"adaptations": []},
+        {
+            "adaptations": [],
+            "steps": ["Heat."],
+            "step_sources": [0],
+        },
         {
             "ingredients": [{"canonical": "fully cooked chicken fillets"}],
             "instructions": ["Heat."],
@@ -695,6 +707,39 @@ def test_quantity_matching_mixed_fractions() -> None:
     )
 
 
+def test_plan_attribution_needs_full_direction_coverage() -> None:
+    # Close-out review: every stored direction index must be cited by
+    # at least one step. A faithful subset that drops the marinade
+    # direction is model_adaptation, not source.
+    from culinary_copilot.agent.validate import check_plan_evidence
+
+    doc = {
+        "ingredients": [{"canonical": "lentils"}],
+        "instructions": ["Mix the spices.", "Marinate overnight.", "Cook and serve."],
+    }
+    partial = {
+        "adaptations": [
+            {
+                "description": (
+                    "The marinade is omitted; steps are model adaptations not from the source.",
+                ),
+                "label": "adaptation",
+            }
+        ],
+        "steps": ["Mix the spices", "Cook and serve"],
+        "step_sources": [0, 2],
+    }
+    errors, steps_source = check_plan_evidence(partial, doc, [])
+    assert steps_source == "model_adaptation"
+    assert errors == []
+    full = dict(partial)
+    full["steps"] = ["Mix the spices", "Marinate overnight", "Cook and serve"]
+    full["step_sources"] = [0, 1, 2]
+    full["adaptations"] = []
+    errors, steps_source = check_plan_evidence(full, doc, [])
+    assert (errors, steps_source) == ([], "source")
+
+
 def test_allergen_oat_compounds() -> None:
     # Phase 7 review: oatmeal is unverified (single token, missed by
     # word-boundary "oat"); oat flour is unverified via "oat", never
@@ -744,3 +789,78 @@ def test_allergen_safety_claim_detector() -> None:
     assert allergen_safety_claim("The chicken is tender.") is None
     assert allergen_claim_allowed("peanut-free", ["peanut-free cookies"]) is True
     assert allergen_claim_allowed("peanut-free", ["chicken and rice"]) is False
+
+
+def test_vegetarian_rennet_cheeses_are_unverified() -> None:
+    """Parmesan and similar cheeses keep the option but are never "checked".
+
+    Demo finding (2026-10-05): three "vegetarian" pasta options used
+    Parmesan, traditionally made with animal rennet.
+    """
+    from culinary_copilot.agent.validate import check_dietary_option
+
+    def status(line: str, diet: str = "vegetarian") -> dict:
+        return check_dietary_option(0, {}, {"ingredients": [{"canonical": line}]}, diet)
+
+    errors, entry = status("grated parmesan cheese, or more to taste")
+    assert errors == []
+    assert entry == {"status": "unverified", "value": "vegetarian", "terms": ["parmesan"]}
+    assert status("Pecorino Romano")[1]["terms"] == ["pecorino", "romano"]
+    assert status("vegetarian parmesan-style cheese")[1]["status"] == "checked"
+    assert status("part-skim ricotta cheese")[1]["status"] == "checked"
+    assert status("animal rennet cheese")[1]["status"] == "violated"
+    assert status("grated parmesan", "vegan")[1]["status"] == "violated"
+
+
+def test_plan_rejection_names_the_words_missing_from_each_direction() -> None:
+    # 2026-10-06 live session: a faithful plan with "drizzled" for
+    # "drizzle" failed twice on a message naming only the step index.
+    from culinary_copilot.agent.validate import check_plan_evidence
+
+    doc = {
+        "ingredients": [{"canonical": "tofu"}],
+        "directions": ["Simmer the sauce for 5 minutes.", "Serve hot and drizzle with sauce."],
+    }
+    plan = {
+        "steps": ["Simmer the sauce for 5 minutes.", "Serve hot, drizzled with sauce."],
+        "step_sources": [0, 1],
+        "adaptations": [],
+    }
+    errors, steps_source = check_plan_evidence(plan, doc, [])
+    assert steps_source == "model_adaptation"
+    assert len(errors) == 1
+    assert "step 1 uses words not in direction 1: 'drizzled'" in errors[0]
+    assert "cited direction's own words" in errors[0]
+    plan["steps"][1] = "Serve hot and drizzle with sauce."
+    assert check_plan_evidence(plan, doc, []) == ([], "source")
+
+
+def test_app_written_attribution_note() -> None:
+    from culinary_copilot.agent.validate import check_plan_evidence, plan_attribution_note
+
+    doc = {
+        "ingredients": [{"canonical": "tofu"}],
+        "directions": ["Simmer the sauce for 5 minutes.", "Serve hot and drizzle with sauce."],
+    }
+    plan = {
+        "steps": ["Simmer the sauce for 5 minutes.", "Serve hot, drizzled with sauce."],
+        "step_sources": [0, 1],
+        "adaptations": [],
+    }
+    errors, steps_source = check_plan_evidence(plan, doc, [], auto_label=True)
+    assert (errors, steps_source) == ([], "model_adaptation")
+    note = plan_attribution_note(plan, doc)
+    assert note is not None and note.startswith("Labelled by the app")
+    assert "'drizzled'" in note
+    # No note for a source plan, a plan that already admits it, or an
+    # ingredient-only source (which still needs the model's admission).
+    faithful = dict(plan, steps=["Simmer the sauce for 5 minutes.", "Serve hot."])
+    assert plan_attribution_note(faithful, doc) is None
+    admitted = dict(
+        plan, adaptations=[{"label": "adaptation", "description": "Not from the source."}]
+    )
+    assert plan_attribution_note(admitted, doc) is None
+    bare = {"ingredients": [{"canonical": "tofu"}]}
+    assert plan_attribution_note(plan, bare) is None
+    errors, _ = check_plan_evidence(plan, bare, [], auto_label=True)
+    assert errors and "the source has no directions" in errors[0]

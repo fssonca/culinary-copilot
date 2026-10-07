@@ -1,7 +1,9 @@
 # ADR 0002: Bounded agent loop
 
-Status: **implemented (Milestone 3, Phases 1-3, 5 part 2); default
-budgets unchanged; Phase 7 offline measured, live run prepared.**
+Status: **implemented (Milestone 3, Phases 1-7). Budgets raised on
+2026-10-04 to 12 steps and 60k input tokens, after the live run.
+Phase 7 offline harness and live evaluation completed; checkpoint C
+answered on 2026-10-05.**
 This records the design, its limits and what a framework would replace.
 
 ## Context
@@ -47,8 +49,10 @@ reason:
 
 Server-side, per session, never reset (Checkpoint 0 + review):
 
-- Steps 8, tool calls 12 (session row, server-set at create).
-- Input tokens 30,000, output tokens 12,000 (`AGENT_INPUT_TOKEN_CEILING`,
+- Steps 12 (8 until 2026-10-04), tool calls 12 (session row,
+  server-set at create).
+- Input tokens 60,000 (30,000 until 2026-10-04), output tokens 12,000
+  (`AGENT_INPUT_TOKEN_CEILING`,
   `AGENT_OUTPUT_TOKEN_CEILING`, read before every turn; usage summed
   from `session_events`; pre-turn input estimate counts items, offered
   tool defs, directive schema and framing; per-turn output capped at
@@ -60,8 +64,10 @@ Server-side, per session, never reset (Checkpoint 0 + review):
 One step is one provider turn and its tool executions. Budgets say to
 start a new session (`change_request`, 422); the wall clock says to
 retry the run (`retry`, 408). 5xx is for real server/provider faults.
-Phase 7 offline cooperative flows use 4 steps and 4-6 tool calls;
-budgets are unchanged (see `docs/agent-scoreboard.md`).
+Phase 7 offline cooperative flows use 4 steps and 4-6 tool calls. The
+live run measured 3k-4.5k input tokens per turn, and a successful plan
+flow used 34.8k, so the owner raised the ceilings (see
+`docs/agent-scoreboard.md` and `docs/phase7-owner-decisions.md`).
 
 ## Tool boundaries and permission enforcement
 

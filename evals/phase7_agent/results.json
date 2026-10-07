@@ -1,7 +1,7 @@
 {
   "cases_file": "cases.json",
-  "cases_version": "phase7-cases-v3-2026-10-04",
-  "cases_sha256": "26187f375fb41005f4a52be2b12f2df91aae9797d2b3133051f9a25c5c3e4b27",
+  "cases_version": "phase7-cases-v8-2026-10-05",
+  "cases_sha256": "2713af2655a058ae799a5bed6d8c9711b19b0e94ae759f4b1205a01d57c421b8",
   "history_v1": {
     "cases_version": "phase7-cases-v1-2026-10-04",
     "cases_sha256": "5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b",
@@ -36,15 +36,15 @@
   },
   "note": "offline system results (loop control, tools, validators), not model judgement; latency/tokens/cost not measured offline",
   "aggregate": {
-    "total": 30,
-    "scored": 30,
-    "completed": 30,
+    "total": 43,
+    "scored": 43,
+    "completed": 43,
     "task_completion_rate": 1.0,
     "expected_fail_total": 0,
     "expected_fail_completed": 0,
     "stop_reason_distribution": {
-      "agent_sufficient_evidence": 21,
-      "agent_validation_failed": 2,
+      "agent_sufficient_evidence": 32,
+      "agent_validation_failed": 4,
       "agent_needs_user_input": 3,
       "agent_max_steps": 1,
       "agent_tool_budget_exhausted": 1,
@@ -52,11 +52,11 @@
       "agent_wall_clock_exceeded": 1
     },
     "invalid_transitions_total": 1,
-    "tool_argument_validity_mean": 0.9866666666666667,
+    "tool_argument_validity_mean": 0.9906976744186047,
     "unnecessary_call_rate_mean": 0.0,
-    "epicure_compliance_rate": 0.9666666666666667,
+    "epicure_compliance_rate": 0.9767441860465116,
     "source_reference_correctness_rate": 1.0,
-    "unsupported_claim_cases": 0,
+    "unsupported_claim_cases": 3,
     "adversarial_total": 4,
     "adversarial_caught": 4,
     "adversarial_catch_rate": 1.0,
@@ -882,6 +882,245 @@
       "grounding_rejections": 0
     },
     {
+      "id": "p7-time-repeat",
+      "criteria": [
+        "time-claim-repeat",
+        "regression-live-chicken-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_validation_failed",
+        "shape": "error",
+        "expected_rejection": "remove the time"
+      },
+      "stop_reason": "agent_validation_failed",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 1,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 2
+    },
+    {
+      "id": "p7-time-dropped",
+      "criteria": [
+        "time-claim-dropped",
+        "regression-live-chicken-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 1
+    },
+    {
+      "id": "p7-time-stored-title",
+      "criteria": [
+        "time-stored-title",
+        "regression-live-chicken-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 3,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-time-model-title",
+      "criteria": [
+        "time-model-title",
+        "regression-live-chicken-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "first_rejection_contains": "remove the time"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 1
+    },
+    {
+      "id": "p7-honored-misuse",
+      "criteria": [
+        "honored-misuse",
+        "regression-live-peanut-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1,
+        "forbidden_option_ids": [
+          "peanut-3"
+        ],
+        "first_rejection_contains": "checked automatically"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-refetch-duplicate",
+      "criteria": [
+        "refetch-duplicate",
+        "regression-live-peanut-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1,
+        "expect_fetch": [
+          {
+            "dataset_id": "odunola/foodie",
+            "source_id": "curry-1",
+            "duplicate": false
+          }
+        ]
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-refetch-full",
+      "criteria": [
+        "plan-refetch-full",
+        "regression-duplicate-visibility"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "needs_safety_ref": true,
+        "expect_fetch": [
+          {
+            "dataset_id": "odunola/foodie",
+            "source_id": "curry-1",
+            "duplicate": false
+          }
+        ]
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 6,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-double-fetch-pointer",
+      "criteria": [
+        "double-fetch-pointer",
+        "regression-duplicate-visibility"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_fetch": [
+          {
+            "dataset_id": "odunola/foodie",
+            "source_id": "curry-1",
+            "duplicate": true
+          },
+          {
+            "dataset_id": "odunola/foodie",
+            "source_id": "lentil-2",
+            "duplicate": false
+          }
+        ]
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 3,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
       "id": "p7-invalid-transition-caught",
       "criteria": [
         "invalid-transition",
@@ -900,6 +1139,138 @@
       "steps": 2,
       "tool_calls": 4,
       "invalid_transitions": 1,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-false-absence",
+      "criteria": [
+        "plan-false-absence",
+        "regression-live-plan-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_validation_failed",
+        "shape": "error",
+        "expected_rejection": "no directions"
+      },
+      "stop_reason": "agent_validation_failed",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 3,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-faithful-source",
+      "criteria": [
+        "plan-faithful-source",
+        "regression-live-plan-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "needs_safety_ref": true,
+        "steps_source": "source"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-partial-coverage",
+      "criteria": [
+        "plan-partial-coverage",
+        "regression-close-out-review"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "needs_safety_ref": true,
+        "steps_source": "model_adaptation"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-changed-method",
+      "criteria": [
+        "plan-changed-method",
+        "regression-live-plan-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "needs_safety_ref": true,
+        "steps_source": "model_adaptation"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-web-answer-method",
+      "criteria": [
+        "web-discovery-only",
+        "regression-live-search-once"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "web_answer"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "web_answer",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 2,
+      "invalid_transitions": 0,
       "tool_argument_validity": 1.0,
       "unnecessary_call_rate": 0.0,
       "forbidden_call": false,

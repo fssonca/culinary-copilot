@@ -68,6 +68,10 @@ class _ui_security_headers:
                 headers["Content-Security-Policy"] = _UI_CSP
                 headers["X-Content-Type-Options"] = "nosniff"
                 headers["Referrer-Policy"] = "no-referrer"
+                # Revalidate on every load (2026-10-06): without it the
+                # browser kept heuristically cached ES modules after a
+                # UI change. Unchanged files still come back as a 304.
+                headers["Cache-Control"] = "no-cache"
             await send(message)
 
         await self.app(scope, receive, send_with_headers)

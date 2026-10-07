@@ -169,12 +169,45 @@ function renderOptions(result, actions) {
     if (checks.length > 0) {
       card.appendChild(renderConstraintCheck(checks));
     }
+    card.classList.add("option-card");
     const button = document.createElement("button");
     button.type = "button";
+    button.className = "choose-button";
     button.textContent = "Choose this";
-    button.addEventListener("click", () => {
-      if (actions && typeof actions.onSelect === "function") {
-        actions.onSelect(option.dataset_id, option.source_id);
+    button.addEventListener("click", async () => {
+      if (!actions || typeof actions.onSelect !== "function") {
+        return;
+      }
+      // Immediate feedback: mark this card, dim and lock the others;
+      // restored when the selection request fails.
+      const cards = Array.from(wrap.querySelectorAll(".option-card"));
+      for (const other of cards) {
+        other.classList.toggle("option-chosen", other === card);
+        other.classList.toggle("option-dimmed", other !== card);
+        const otherButton = other.querySelector(".choose-button");
+        if (otherButton) {
+          otherButton.disabled = true;
+        }
+      }
+      button.setAttribute("aria-pressed", "true");
+      button.replaceChildren(el("span", "spinner"), document.createTextNode("Preparing your plan…"));
+      card.classList.add("option-busy");
+      card.setAttribute("aria-busy", "true");
+      const ok = await actions.onSelect(option.dataset_id, option.source_id);
+      card.classList.remove("option-busy");
+      card.removeAttribute("aria-busy");
+      if (ok === false) {
+        for (const other of cards) {
+          other.classList.remove("option-chosen", "option-dimmed");
+          const otherButton = other.querySelector(".choose-button");
+          if (otherButton) {
+            otherButton.disabled = false;
+          }
+        }
+        button.textContent = "Choose this";
+        button.removeAttribute("aria-pressed");
+      } else {
+        button.textContent = "Chosen ✓";
       }
     });
     card.appendChild(button);

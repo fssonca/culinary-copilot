@@ -146,3 +146,94 @@ this run could spend at most $0.0708 ($0.10 − $0.0292).
   safety problems.
 - Raw trajectories are in `data/phase7-live/raw-rerun/` (gitignored);
   the summary is in `data/phase7-live/live-summary-phase7-rerun.json`.
+
+## Checkpoint C review (2026-10-05)
+
+Recorded by an AI assistant; not a signature.
+
+The owner reviewed the packet (`evals/phase7_agent/CHECKPOINT_C.md`),
+the saved trajectories and the cited pages. Their answers:
+
+- **Were any claims unsupported? Yes.**
+  - The accepted curry plan (odunola/foodie foodie-013643) said the
+    recipe has no directions, but the stored record has six. The model
+    had never been shown directions. The server still labelled the
+    plan steps "source".
+  - The accepted web answer described a cooking method, which goes
+    beyond the discovery-only boundary.
+  - The owner found that all 24 quantity entries in the two yogurt
+    options match the stored recipes.
+  - The 165°F poultry instruction is supported by the cited FDA chunk.
+- **Were any constraints relaxed?** No explicit constraint relaxation
+  was observed in the reviewed live runs.
+  - Allergy-aware recommendation after resuming is unproven: the
+    peanut sessions stopped without options.
+  - Allergen checks cover listed-ingredient evidence only and cannot
+    establish the absence of cross-contact.
+- **Were the search citations real and relevant? Mostly yes.**
+  - All three URLs are recorded in provider evidence.
+  - The JETRO and Just One Cookbook pages were checked and are
+    relevant.
+  - The PBS page returned 403, so it was not fully reviewed.
+
+**Correction to the re-run section above.** It said unsupported
+claims never reached the user and that the remaining failures were
+not safety problems. Both statements are wrong. The supported
+statement is: the observed failures include recovery and efficiency
+problems; broader safety conclusions remain unproven.
+
+**Decisions:**
+
+- **Status of the Phase 7 live results:** diagnostic evidence, not
+  acceptance.
+- **Checkpoint C:** kept open for an offline correction pass, with no
+  further paid run needed to establish the defects. The pass changed
+  four things:
+  - the model now sees recipe directions;
+  - the plan is labelled "source" only when the steps cite and cover
+    every stored direction;
+  - the web answer guard enforces the discovery-only boundary;
+  - the evaluation record was corrected.
+
+  An AI assistant verified it on 2026-10-05: `make check` 1172
+  passed, 8 skipped; harness `phase7-cases-v8-2026-10-05` 43/43,
+  4/4 adversarial; `verify_packet.py` all claims matched.
+- **Budgets:** unchanged at 12 steps, 12 tool calls and 60k input
+  tokens.
+- **Paid runs:** none further authorized.
+- **Carried to Milestone 4,** each with an acceptance criterion in the
+  packet (the recovery fixes are offline only and not live-evaluated):
+  - live ask-and-resume to checked options;
+  - live allergy-aware recommendation after resuming;
+  - live confirmation of plan attribution and of the web guard;
+  - the technique-mode comparison;
+  - whether a bounded post-answer allowance is needed.
+- **Milestone 3 acceptance:** pending the owner's explicit decision.
+
+## Demo hardening (2026-10-06)
+
+Recorded by an AI assistant; not a signature. These changes came from
+live demo sessions the owner ran with `make demo`; the owner asked for
+fixes to be made directly. None is live-confirmed yet.
+
+- **Plan attribution admission:** the checkpoint C label rule is
+  unchanged (a plan is "source" only when every step is supported and
+  every direction is cited). What changed is the older Phase 3
+  requirement (P3-L-09) that the model write an admission for a
+  `model_adaptation` plan. When the selected source has directions,
+  the app now writes that adaptation note itself, naming the steps
+  and the words that differ, instead of rejecting the plan. Three
+  live plans had failed only on the missing admission.
+  Ingredient-only sources still need the model's own admission.
+  Known implications: no pressure toward faithful plans (expect more
+  `model_adaptation` labels); the model's own note is not checked for
+  claims of fidelity; no harness case covers the new path yet.
+  **Owner decision (2026-10-06): keep as is for now.**
+- **Recovery and retrieval:** technique search matches "poultry" for
+  chicken, turkey, duck and goose; technique excerpts reach the model
+  at 600 characters; a repeat-only step earns one tool-less wrap-up
+  turn; the repeated-call stop now charges its step; the duplicate
+  recipe pointer names the earlier output.
+- **Checks:** `make check` 1192 passed, 8 skipped; harness
+  `phase7-cases-v8-2026-10-05` 43/43, 4/4 adversarial, results
+  unchanged.
