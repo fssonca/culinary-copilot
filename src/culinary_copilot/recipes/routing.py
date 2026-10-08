@@ -3,7 +3,7 @@
 Flow per record::
 
     raw source
-        ↓ deterministic parsing (adapter v2)
+        ↓ deterministic parsing (adapter v5)
         ↓ quality and ambiguity checks (this module)
         ├── acceptable      → deterministic validation (no model call)
         └── ambiguous       → OpenAI Batch extraction → deterministic validation
@@ -30,7 +30,10 @@ from culinary_copilot.recipes.adapters.foodie import (
     suspected_multi_recipe,
 )
 
-ROUTING_VERSION = "2"
+# H5 (2026-10-08): v3 quarantines summary-layout parse failures directly
+# (no title evidence; the targeted extraction contract preserves titles, so
+# paid extraction cannot repair them either). No other rule changed.
+ROUTING_VERSION = "3"
 
 Route = Literal["deterministic_accept", "needs_llm", "quarantine"]
 
@@ -91,6 +94,16 @@ def route_record(
             reason_codes=["multi_recipe_split"],
             affected_fields=["ingredients", "instructions"],
             detail="Two or more Ingredients sections: probable concatenated recipes.",
+        )
+        return base
+    if parse_error == "summary_layout_missing_title":
+        base.update(
+            route="quarantine",
+            reason_codes=["summary_layout_missing_title"],
+            affected_fields=["title", "ingredients", "instructions"],
+            detail="Leading 'summary' label where the title belongs; ingredient "
+            "and instruction blocks are single-line blobs. Raw evidence retained "
+            "for review; title recovery needs an owner decision, not extraction.",
         )
         return base
     if parse_error is not None or recipe is None:

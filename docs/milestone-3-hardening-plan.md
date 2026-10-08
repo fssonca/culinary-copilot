@@ -1,7 +1,8 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
-Status: **H0 to H4 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
-2026-10-07; H2, H3 and H4 on 2026-10-08). H5 onward not started. Harness
+Status: **H0 to H5 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
+2026-10-07; H2 to H5 on 2026-10-08; the H5 re-ingestion is not run and
+needs owner authorization). H6 onward not started. Harness
 cases v9 since H4 (44/44). Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
@@ -298,6 +299,21 @@ search vectors and embeddings stay consistent.
 
 Evidence: parser diff and tests; preview counts (repaired, unchanged,
 still malformed); the proposed re-ingestion procedure.
+
+Done 2026-10-08 (offline; application database untouched): the 158 are
+part of a trailing source block of 218 rows (CSV 19349-19566) with a
+`summary` section label where the title belongs and one-line ingredient
+and instruction blobs. No row carries a title, so no deterministic split
+or paid extraction yields a loadable recipe: adapter v5 refuses the
+layout (`summary_layout_missing_title`) and routing v3 quarantines it.
+Preview: 0 repaired, 218 now quarantined (192 had been routed to
+extraction, 26 accepted as garbage). Full-corpus v4-vs-v5 re-parse: no
+change outside the 218, confirmed independently in review. The preview
+and a proposed re-ingestion procedure (delete the 158, quarantine the
+201 in-scope rows, no paid calls, no new vectors) are in
+`data/h5-repair-preview/`. Title recovery would need human review. The
+version bump invalidates cached LLM extractions for all foodie rows (see
+`docs/hybrid-ingestion.md`).
 
 ## H6. Ranking judgments and regression cases (offline)
 

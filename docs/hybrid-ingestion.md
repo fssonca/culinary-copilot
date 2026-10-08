@@ -360,6 +360,37 @@ refuses before creating an API client or uploading a file. Routing v2 invalidate
 previously prepared runs; prepare into a fresh directory. No live pilot was run
 to verify this guard.
 
+## Summary-layout records (H5, 2026-10-08; re-ingestion NOT run)
+
+Implemented (adapter v5, routing v3; application database untouched): the
+trailing source block (CSV rows 19349–19566, 218 rows) uses a leading
+`summary` label where the title belongs, lowercase
+`ingredients`/`instructions` markers, and single-line blobs for both blocks.
+The parser refuses this layout with `summary_layout_missing_title` and
+routing quarantines it directly — paid extraction cannot invent the missing
+title under the targeted contract, so these rows are never sampled for LLM
+audit (like `single_line_requires_spans`). Full-corpus re-parse (19,566
+rows, v4 vs v5): zero content changes outside the version stamp, zero
+routing changes outside the 218 quarantines. Before the fix, 158 of these
+rows were loaded as recipes titled `summary` (26 of them accepted
+deterministically with no warning signals) and appear in search results.
+The 158 loaded rows were confirmed read-only against the application
+database; an independent v4-vs-v5 re-parse in review reproduced the
+counts above.
+
+Cost note: adapter and routing versions are part of every LLM cache key,
+so the bump invalidates the cached extractions for all foodie rows, not
+only these 218, and previously prepared runs. The scoped re-ingestion below
+needs no extraction, but a future full re-preparation would re-extract
+(paid) every `needs_llm` row.
+
+Planned (needs owner authorization): the offline repair preview and the
+reversible re-ingestion procedure are in `data/h5-repair-preview/`
+(local only, not committed). Deterministic reprocessing quarantines all 218
+but yields zero loadable recipes — title recovery needs human review of the
+descriptions, not extraction. No paid calls and no new embeddings are
+needed for the re-ingestion itself.
+
 ## Completed Foodie migration (2026-09-23)
 
 The application contains 16,033 recipes (1,216 Food.com + 14,817 canonical

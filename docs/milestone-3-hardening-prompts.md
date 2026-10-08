@@ -400,6 +400,14 @@ Facts (verify):
   the top 5 of 14 of 52 frozen Phase 1 cases and moved 11
   judged-relevant hits out of the top 5, replaced by unjudged hits.
 - The judging policy is in evals/results/phase1/README.md.
+- Since Phase 5 (H5, 2026-10-08), adapter v5 refuses the "summary"
+  layout, but the re-ingestion has not run: the application database
+  still holds 158 odunola/foodie recipes titled "summary" (source rows
+  19350 to 19565) and they can appear in results. Flag them as known
+  malformed (H5) wherever they surface, judge them under the existing
+  policy, and report separately how many appear in each ranking's top
+  5 and how the metrics change without them, so the comparison does
+  not depend on the re-ingestion.
 
 Required:
 1. Reproduce the comparison (current ranking versus title-first)
