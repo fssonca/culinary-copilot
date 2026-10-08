@@ -2390,6 +2390,22 @@ def tool_budget_stop_message(store: Any, session_id: str, state: Any, *, excess:
     return f"{head}. Useful results so far: {listing}; start a new session"
 
 
+def confirmed_answer_texts(state: Any) -> list[str]:
+    """The user's answers to the agent's questions, as claim support.
+
+    An answer is the user's own words, like the request (H8 attempt 2,
+    2026-10-08: after the answer "Peanuts." an allergy note saying no
+    listed ingredient is a peanut was rejected as an unsupported pairing
+    claim, ending the run).
+    """
+    texts: list[str] = []
+    for answer in getattr(state, "confirmed_answers", None) or []:
+        text = answer.get("answer") if isinstance(answer, dict) else answer
+        if text is not None and str(text).strip():
+            texts.append(str(text))
+    return texts
+
+
 def stall_stop_message(store: Any, session_id: str, state: Any, *, tool: str) -> str:
     """Stall stop message (``agent_no_progress``) with the results list.
 
@@ -4235,6 +4251,7 @@ async def _handle_finish(
                 )
                 if request_support and request_support.strip():
                     support_texts.append(request_support)
+                support_texts.extend(confirmed_answer_texts(state))
                 for term in _extract_vocab_terms(model_note_text, vocabulary):
                     if _negated_mention(model_note_text, term):
                         continue
@@ -4396,6 +4413,7 @@ async def _handle_finish(
         )
         if request_support and request_support.strip():
             answer_support.append(request_support)
+        answer_support.extend(confirmed_answer_texts(state))
         selected_pair = state.selected_dish or {}
         if selected_pair.get("dataset_id") and selected_pair.get("source_id"):
             try:

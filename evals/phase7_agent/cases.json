@@ -1,6 +1,6 @@
 {
-  "version": "phase7-cases-v11-2026-10-08",
-  "note": "SYNTHETIC scripted model turns, not model output. v11 (stall recovery, after the first H8 attempt) adds 3 cases: a stall gets one tool-less finishing turn that finishes with options (discover) or with the plan (select, the H8 party-baking pattern), and a tool call on that turn still stops with agent_no_progress. SYNTHETIC scripted model turns, not model output. v10 (H7) adds 11 cases: the 2026-10-07 recovery paths (technique answer after a plan, dropped option named, negated pairing mention, wrap-up withholds only repeated tools, repeated search marked, select phase withholds search and pairings, tree-nut allergy checked, allergy line keeps constraints_honored empty) and H2/H3 (swapped quantities, clipped directions, fidelity claim); every case also checks the per-turn decision log. v9 (H4 budget recovery): p7-budget-tools now scripts the tool-less finishing turn after the excess batch (a question), and p7-budget-tools-no-finish keeps the immediate stop when that turn is unaffordable (output ceiling 520: the first turn has the 500-token minimum, the batch leaves less). v8 requires direction coverage for \"source\" (p7-plan-partial-coverage omits the marinade and is model_adaptation; p7-plan-faithful-source cites all six). v7 web guard; v6 plan attribution; v5 duplicate visibility; v4 time/honored/refetch; v3 vector/resume; v2 scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored stop reasons alone; aggregates kept in results.json history. Later edits need a new version, never a silent change.",
+  "version": "phase7-cases-v12-2026-10-08",
+  "note": "SYNTHETIC scripted model turns, not model output. v12 (H8 attempt 2) adds p7-allergy-note-names-allergen: after the answer \"peanuts\", an option note telling the user to check packages for peanut ingredients is not an unsupported pairing claim. SYNTHETIC scripted model turns, not model output. v11 (stall recovery, after the first H8 attempt) adds 3 cases: a stall gets one tool-less finishing turn that finishes with options (discover) or with the plan (select, the H8 party-baking pattern), and a tool call on that turn still stops with agent_no_progress. SYNTHETIC scripted model turns, not model output. v10 (H7) adds 11 cases: the 2026-10-07 recovery paths (technique answer after a plan, dropped option named, negated pairing mention, wrap-up withholds only repeated tools, repeated search marked, select phase withholds search and pairings, tree-nut allergy checked, allergy line keeps constraints_honored empty) and H2/H3 (swapped quantities, clipped directions, fidelity claim); every case also checks the per-turn decision log. v9 (H4 budget recovery): p7-budget-tools now scripts the tool-less finishing turn after the excess batch (a question), and p7-budget-tools-no-finish keeps the immediate stop when that turn is unaffordable (output ceiling 520: the first turn has the 500-token minimum, the batch leaves less). v8 requires direction coverage for \"source\" (p7-plan-partial-coverage omits the marinade and is model_adaptation; p7-plan-faithful-source cites all six). v7 web guard; v6 plan attribution; v5 duplicate visibility; v4 time/honored/refetch; v3 vector/resume; v2 scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored stop reasons alone; aggregates kept in results.json history. Later edits need a new version, never a silent change.",
   "cases": [
     {
       "id": "p7-epicure-default",
@@ -7933,6 +7933,166 @@
       ],
       "forbidden_tools": [
         "search_web"
+      ]
+    },
+    {
+      "id": "p7-allergy-note-names-allergen",
+      "criteria": [
+        "allergy-note-names-allergen",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "I am cooking dinner for a friend who has a food allergy. Suggest something with chicken.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "ask_user",
+            "question": {
+              "question_id": "q-allergy",
+              "question_text": "What is your friend allergic to? I need to avoid it in every suggestion.",
+              "options": [
+                "peanuts",
+                "dairy",
+                "gluten",
+                "other"
+              ]
+            },
+            "note": "need named restriction"
+          }
+        ]
+      ],
+      "answer": {
+        "question_id": "q-allergy",
+        "answer": "peanuts"
+      },
+      "resume_turns": [
+        [
+          "tools",
+          [
+            [
+              "c2",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c4",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ],
+            [
+              "c5",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used in final options"
+              }
+            ],
+            "note": "Checked the listed ingredients of both recipes against the allergy. Before cooking, check every package for peanut ingredients and cross-contact warnings."
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "allergen_checked": "peanut"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "find_substitutions"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ],
+      "epicure_vocab": [
+        "pork",
+        "beef",
+        "chicken",
+        "lentil",
+        "onion",
+        "yogurt",
+        "peanut"
       ]
     }
   ]

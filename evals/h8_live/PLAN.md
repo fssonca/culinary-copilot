@@ -153,3 +153,12 @@ Command: the attempt-1 command with `--ceiling-usd 1.00`,
 `--scenarios-file evals/h8_live/scenarios_v3.json`,
 `--raw-dir data/h8-live/raw-attempt-2` and
 `--summary-out data/h8-live/summary-attempt-2.json`.
+
+## Second attempt result (2026-10-08)
+
+0 of 2 complete; both sessions got further than attempt 1 and the stall
+recovery worked in both. The allergy session's finishing options were
+rejected by a validator false positive (fixed after the run); the bake
+sale's follow-up re-issued the plan instead of a technique answer.
+$0.0423 spent, H8 total $0.0566 of $1.00. Details: `RESULTS.md`,
+"Second attempt".

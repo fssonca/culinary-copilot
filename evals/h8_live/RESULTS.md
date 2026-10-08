@@ -110,3 +110,83 @@ direction.
    both the motivation for the change and its check, so a pass would be
    weak evidence; fresh scenarios written before the run would be
    stronger. Expected cost about $0.02, within the $0.1357 left.
+
+---
+
+# Second attempt (2026-10-08)
+
+Run after the owner agreed with the proposals above, on a new freeze
+(`PLAN.md`, "Second attempt"): code `91c5a71` with the stall recovery,
+fresh scenarios `scenarios_v3.json` (`h8b-bake-sale`,
+`h8b-allergy-treat` with a peanut allergy), H8 pool $1.00. First
+attempts only. Model output paraphrased; raw records in
+`data/h8-live/raw-attempt-2/` (not committed).
+
+## Outcome: 0 of 2 complete, both further than attempt 1
+
+| Scenario | Reached | Ended | Mechanical grade |
+|---|---|---|---|
+| `h8b-bake-sale` | 3 options (no question), the selected recipe's plan, a follow-up reply | the follow-up run re-issued the plan with storage advice in its note | options and plan yes; technique answer no |
+| `h8b-allergy-treat` | question, answer "peanuts" recorded, 4 cookie recipes fetched | `agent_no_progress`: the stall finishing turn's options were rejected by a validator false positive | no options |
+
+**The stall recovery worked in both sessions.** In the bake-sale plan
+run the model fetched the selected recipe three times (the attempt-1
+pattern); this time the finishing turn followed and the model returned
+the plan. In the allergy run the same search ran three times; the
+finishing turn followed and the model returned two options with a note.
+
+**Allergy: rejected by a validator bug.** The note listed the
+ingredients it had checked, said none lists peanuts, and told the user to
+check packages for peanut ingredients and cross-contact, which is what
+the app's own allergy instruction asks for. The pairing-claim check
+treated "peanut" as an unsupported pairing: it accepted terms from the
+request and the user's messages but not from the user's answers to the
+agent's questions. A rejected finishing turn has no retry, so the run
+stopped. Fixed after the run (see below). The two options returned had
+no quantities; whether that alone would have been accepted was not
+reached.
+
+**Bake sale: the follow-up was not a technique answer.** Asked how to
+store the bars overnight, the model ran 17 technique searches, mostly
+with varied wording, and four ranged recipe reads over 21 steps (no call
+ran three times, so no stall), then finished by re-issuing the plan with the
+storage advice in its note. Part of that advice is not from any returned
+chunk (the note is labelled model-written); the refrigeration rule it
+cites is. That misses predeclared point 5 (a grounded technique answer,
+or a statement that the corpus does not cover it). The 21 steps fit the
+demo limits but are wasteful.
+
+Against the predeclared points: (1) the allergy session asked first;
+the bake-sale session offered options without asking, allowed. (2) The
+answer was recorded and used. (3) Bake-sale options came from fetched
+recipes; owner review needed for suitability. (4) Bake sale: a plan for
+exactly the selected dish (owner review of quantities and label
+needed). (5) Not met in either session. (6) No budget stop.
+
+## Spend
+
+$0.0423: 48 model turns (400,320 input and 4,538 output tokens), 14 query
+embeddings, all reconciled; largest single reservation $0.0092. H8 total
+$0.0566 of $1.00; $0.9434 left.
+
+## Fixed after the run
+
+- **Answers support claims** (`agent/loop.py`, `confirmed_answer_texts`):
+  the user's confirmed answers count as support for option notes and
+  technique answers, like the request. Harness cases v12 add
+  `p7-allergy-note-names-allergen` (fails on `b40ece2`, passes now).
+
+## Open for the owner
+
+1. **The follow-up reply.** After a plan, the model may finish a
+   follow-up question by re-issuing the plan with the answer in the note,
+   which bypasses the technique-answer grounding. Options: reject a
+   re-issued plan when the latest user message is a question and the
+   plan is unchanged in substance; or state in the plan-phase framing
+   that a follow-up is answered with a technique answer (or a statement
+   that the corpus does not cover it) and the plan is re-issued only on
+   request. The second is a prompt change, testable offline only for its
+   wording.
+2. **A third attempt**, separately labelled, on a new freeze. Fresh
+   scenarios again would keep the check independent of the fixes. Cost
+   so far is about $0.03 to $0.05 per attempt.

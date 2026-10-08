@@ -490,3 +490,9 @@ tool-less finishing turn (`91c5a71`), and H8 runs again as a separately
 labelled second attempt on fresh scenarios (`scenarios_v3.json`). The
 owner set the H8 pool to **$1.00** (attempt 1's $0.0143 counts against
 it). Push still not authorized.
+
+H8 attempt 2 result (recorded by an AI assistant): 0 of 2 complete, both
+further than attempt 1; the stall recovery worked in both sessions. One
+validator false positive was fixed afterwards; the follow-up-as-plan
+behaviour and a third attempt await the owner. See
+`evals/h8_live/RESULTS.md`, "Second attempt".

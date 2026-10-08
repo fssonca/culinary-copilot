@@ -1487,6 +1487,41 @@ def main() -> int:
         },
         "note": "pre-stall-recovery: the third identical call stopped the run at once",
     }
+    # v11 history: the last result before v12 (H8 attempt 2, 2026-10-08):
+    # v12 adds the allergy note that names the user's allergen.
+    history_v11 = {
+        "cases_version": "phase7-cases-v11-2026-10-08",
+        "cases_sha256": "a91c1d9e3c220e3835a695d037013de98a1bfc195985af5a3bc082a45edbd720",
+        "aggregate": {
+            "total": 58,
+            "scored": 58,
+            "completed": 58,
+            "task_completion_rate": 1.0,
+            "expected_fail_total": 0,
+            "expected_fail_completed": 0,
+            "stop_reason_distribution": {
+                "agent_sufficient_evidence": 45,
+                "agent_validation_failed": 4,
+                "agent_needs_user_input": 4,
+                "agent_max_steps": 1,
+                "agent_tool_budget_exhausted": 1,
+                "agent_token_budget_exhausted": 1,
+                "agent_wall_clock_exceeded": 1,
+                "agent_no_progress": 1,
+            },
+            "invalid_transitions_total": 1,
+            "tool_argument_validity_mean": 0.993103448275862,
+            "unnecessary_call_rate_mean": 0.0,
+            "epicure_compliance_rate": 0.9827586206896551,
+            "source_reference_correctness_rate": 1.0,
+            "unsupported_claim_cases": 5,
+            "adversarial_total": 4,
+            "adversarial_caught": 4,
+            "adversarial_catch_rate": 1.0,
+            "latency_tokens_cost": "not measured offline (scripted provider)",
+        },
+        "note": "pre-v12: 58 cases; an answer-named allergen in a note was not tested",
+    }
     out = {
         "cases_file": "cases.json",
         "cases_version": payload.get("version"),
@@ -1495,6 +1530,7 @@ def main() -> int:
         "history_v8": history_v8,
         "history_v9": history_v9,
         "history_v10": history_v10,
+        "history_v11": history_v11,
         "note": (
             "offline system results (loop control, tools, validators), "
             "not model judgement; latency/tokens/cost not measured offline"
