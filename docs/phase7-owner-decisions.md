@@ -475,3 +475,9 @@ $1 for live calls and no push.
 - **H8:** run with acknowledgement `h8-checkpoint-d-2026-10-08` under the
   freeze recorded in `evals/h8_live/PLAN.md`.
 - **Push:** not authorized; the branch stays local.
+
+H8 result (recorded by an AI assistant): 0 of 2 sessions complete on
+the first attempt, both stopped by the repeat-stall guard; $0.0143
+spent of the $0.15 pool. See `evals/h8_live/RESULTS.md`, which also
+records two grading bugs found and fixed and proposes the next step for
+the owner to decide.

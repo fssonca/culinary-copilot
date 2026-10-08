@@ -174,3 +174,74 @@ def test_h8_flow_fake_end_to_end(engine, tmp_path: Path) -> None:
     events = [e.event_type for e in store.list_events(report["sessions"][0])]
     assert events.count("agent_answer") == 2
     assert json.dumps(report, default=str)
+
+
+# --- H8 grading fixes (2026-10-08 review of the first H8 attempt) ---------------
+
+SCENARIOS_V2 = SCENARIOS.with_name("scenarios_v2.json")
+
+
+class _WorkflowStore:
+    def __init__(self, suggestions: list[dict[str, Any]]) -> None:
+        self._suggestions = suggestions
+
+    def list_events(self, session_id: str) -> list[Any]:
+        return [
+            SimpleNamespace(event_type="agent_question", payload={"question_id": "q-1"}),
+            SimpleNamespace(event_type="agent_answer", payload={"question_id": "q-1"}),
+        ]
+
+    def get(self, session_id: str) -> Any:
+        return SimpleNamespace(
+            confirmed_answers=[{"question_id": "q-1", "answer": "Tree nuts."}],
+            suggestions=list(self._suggestions),
+        )
+
+
+def _allergy_v2() -> dict[str, Any]:
+    payload = live_run.load_scenarios(SCENARIOS_V2)
+    return next(s for s in payload["scenarios"] if s["key"] == "h8-allergy-dessert")
+
+
+def _option(title: str, ingredient: str) -> dict[str, Any]:
+    return {
+        "dataset_id": "odunola/foodie",
+        "source_id": title.lower().replace(" ", "-"),
+        "title": title,
+        "quantities": [{"ingredient": ingredient, "amount": "1", "unit": "cup"}],
+    }
+
+
+def test_v1_stays_frozen_and_v2_only_adds_allergen_terms() -> None:
+    v1 = live_run.load_scenarios(SCENARIOS)
+    v2 = live_run.load_scenarios(SCENARIOS_V2)
+    assert v1["freeze_sha256"].startswith("cb6ed064")
+    for old, new in zip(v1["scenarios"], v2["scenarios"], strict=True):
+        new_expected = dict(new["expected"])
+        terms = new_expected.pop("allergen_terms", None)
+        assert {**new, "expected": new_expected} == old
+        assert (terms is not None) == bool(old["expected"].get("allergy_check"))
+    assert "walnut" in _allergy_v2()["expected"]["allergen_terms"]
+
+
+def test_tree_nut_option_fails_the_allergy_grade() -> None:
+    final = {"technique_answer": {"text": "t"}}
+    store = _WorkflowStore([_option("Walnut Brownies", "chopped walnuts")])
+    grades = live_run.grade_attempt(
+        _allergy_v2(), final, "agent_sufficient_evidence", store, "ses-1"
+    )
+    assert grades["allergy"]["allergen_lines"] == ["Walnut Brownies: chopped walnuts"]
+    assert "peanut_lines" not in grades["allergy"]
+    assert grades["allergy_pass"] is False
+
+
+def test_workflow_followup_grades_the_session_options() -> None:
+    final = {"technique_answer": {"text": "t"}}
+    store = _WorkflowStore([_option("Lemon Bars", "lemon juice")])
+    grades = live_run.grade_attempt(
+        _allergy_v2(), final, "agent_sufficient_evidence", store, "ses-1"
+    )
+    assert grades["allergy"]["resumed_with_options"] is True
+    assert grades["allergy"]["no_allergen_options"] is True
+    assert grades["request_relevance"]["option_titles"] == ["Lemon Bars"]
+    assert grades["allergy_pass"] is True

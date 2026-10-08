@@ -119,3 +119,11 @@ quotes it.
 The same command with `--fake` (scripted model, disposable database
 `culinary_test_h8_fake`): both scenarios completed, workflow complete,
 isolation ok, $0.00. Tests: `tests/test_h8_live_pool.py`.
+
+## Result (2026-10-08)
+
+First attempt: 0 of 2 complete; both sessions hit the repeat-stall stop
+(`agent_no_progress`), $0.0143 spent. Details, two grading bugs found
+and fixed, and the proposed next step: `RESULTS.md`. Any further attempt
+is a separately labelled attempt on a new freeze with
+`scenarios_v2.json`.

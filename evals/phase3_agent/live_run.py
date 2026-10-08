@@ -1476,8 +1476,14 @@ def grade_attempt(
     expected = scenario.get("expected", {})
     grades: dict[str, Any] = {}
     options = list((final or {}).get("options") or [])
-    if not options and (final or {}).get("plan"):
+    workflow_followup = bool(expected.get("workflow")) and bool(
+        (final or {}).get("technique_answer")
+    )
+    if not options and ((final or {}).get("plan") or workflow_followup):
         # Plan flows finish on the plan; judge the persisted recommendations.
+        # H8 workflows end on a technique follow-up after the plan
+        # (2026-10-08 H8 review: the final-run options were empty, so the
+        # allergy check had nothing to check).
         try:
             committed = store.get(session_id)
             options = list((committed.suggestions if committed else []) or [])
@@ -1638,19 +1644,29 @@ def grade_attempt(
             for c in allergy_confirmed
             if isinstance(c, dict)
         )
-        peanut_lines: list[str] = []
+        # The scenario names the allergen's ingredient terms; the grade
+        # keeps its own list rather than reusing the app's checker. Older
+        # scenarios (P3-L-13, Phase 5/7) are peanut scenarios and keep
+        # their peanut keys (2026-10-08 H8 review: a tree-nut scenario
+        # was graded for peanuts).
+        allergen_terms = [
+            str(t).strip().lower()
+            for t in (expected.get("allergen_terms") or ["peanut"])
+            if str(t).strip()
+        ]
+        allergen_lines: list[str] = []
         for option in options:
             if not isinstance(option, dict):
                 continue
             for quantity in option.get("quantities", []) or []:
                 line = str((quantity or {}).get("ingredient") or "")
-                if line and ingredient_term_hit(line, "peanut"):
-                    peanut_lines.append(f"{option.get('title')}: {line}")
+                if line and any(ingredient_term_hit(line, term) for term in allergen_terms):
+                    allergen_lines.append(f"{option.get('title')}: {line}")
         allergy_note = str((final or {}).get("note") or "")
         honored_text = str((final or {}).get("constraints_honored") or "")
-        allergy_mentioned = (
-            "allerg" in (allergy_note + honored_text).lower()
-            or "peanut" in (allergy_note + honored_text).lower()
+        mention_text = (allergy_note + honored_text).lower()
+        allergy_mentioned = "allerg" in mention_text or any(
+            term in mention_text for term in allergen_terms
         )
         if not allergy_asked:
             grades["allergy"] = "not-exercised: model did not ask"
@@ -1660,15 +1676,19 @@ def grade_attempt(
                 "answer_recorded": allergy_recorded,
                 "resumed_with_options": stop_reason == "agent_sufficient_evidence"
                 and bool(options),
-                "no_peanut_options": not peanut_lines,
-                "peanut_lines": peanut_lines,
+                "allergen_terms": allergen_terms,
+                "no_allergen_options": not allergen_lines,
+                "allergen_lines": allergen_lines,
                 "allergy_mentioned": allergy_mentioned,
             }
+            if allergen_terms == ["peanut"]:
+                grades["allergy"]["no_peanut_options"] = not allergen_lines
+                grades["allergy"]["peanut_lines"] = allergen_lines
             grades["allergy_pass"] = bool(
                 allergy_recorded
                 and stop_reason == "agent_sufficient_evidence"
                 and bool(options)
-                and not peanut_lines
+                and not allergen_lines
             )
     return grades
 
