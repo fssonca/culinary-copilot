@@ -30,6 +30,12 @@ fill the top-5), so the comparison does not depend on the re-ingestion.
 Read-only: every connection opens with default_transaction_read_only=on
 (including the production repository calls), so any write would fail.
 
+Metric names: ``hit_at_5`` is 1 when any judged-relevant recipe is in the
+top 5 (Hit@5, also called Success@5). Outputs written before 2026-10-08's
+Checkpoint D called it recall; the numbers are the same. Pool coverage
+reports how many query-recipe pairs in the three rankings' pooled top 5s
+carry a judgment.
+
 Paired metrics: the per-ranking metrics follow run_baseline.py and score a
 case only when its top-5 holds a judged hit, so rankings are scored on
 different case sets. ``paired_vs_*`` scores every ranking on the cases the
@@ -308,9 +314,9 @@ def _score_top5(
         "judged": judged,
         "unjudged": unjudged,
         "malformed": malformed,
-        "recall1": 1.0 if relevant1 else (0.0 if judged else None),
+        "hit1": 1.0 if relevant1 else (0.0 if judged else None),
         "rr1": 1.0 / first1 if first1 else (0.0 if judged else None),
-        "recall2": 1.0 if relevant2 else (0.0 if judged else None),
+        "hit2": 1.0 if relevant2 else (0.0 if judged else None),
         "rr2": 1.0 / first2 if first2 else (0.0 if judged else None),
         "grade2_hits": relevant2,
         "grade1_hits": relevant1 - relevant2,
@@ -428,9 +434,7 @@ def main() -> int:
                 }
             )
 
-        def aggregate(
-            key: str, score: str = "vs_recorded", field: str = "recall1"
-        ) -> dict[str, Any]:
+        def aggregate(key: str, score: str = "vs_recorded", field: str = "hit1") -> dict[str, Any]:
             vals: list[float] = []
             for c in case_results:
                 v = c["rankings"][key][score].get(field)
@@ -457,9 +461,9 @@ def main() -> int:
         def paired_block(score: str) -> dict[str, Any]:
             return {
                 name: {
-                    "recall_at_5_g1": paired(name, score, "recall1"),
+                    "hit_at_5_g1": paired(name, score, "hit1"),
                     "mrr_at_5_g1": paired(name, score, "rr1"),
-                    "recall_at_5_g2": paired(name, score, "recall2"),
+                    "hit_at_5_g2": paired(name, score, "hit2"),
                     "mrr_at_5_g2": paired(name, score, "rr2"),
                 }
                 for name in ("current", "title_first", "title_boost")
@@ -469,13 +473,11 @@ def main() -> int:
             "paired_vs_recorded": paired_block("vs_recorded"),
             "metrics_vs_recorded": {
                 name: {
-                    "recall_at_5_g1": aggregate(name, "vs_recorded", "recall1"),
+                    "hit_at_5_g1": aggregate(name, "vs_recorded", "hit1"),
                     "mrr_at_5_g1": aggregate(name, "vs_recorded", "rr1"),
-                    "recall_at_5_g2": aggregate(name, "vs_recorded", "recall2"),
+                    "hit_at_5_g2": aggregate(name, "vs_recorded", "hit2"),
                     "mrr_at_5_g2": aggregate(name, "vs_recorded", "rr2"),
-                    "recall_at_5_g1_quarantined": aggregate(
-                        name, "vs_recorded_quarantined", "recall1"
-                    ),
+                    "hit_at_5_g1_quarantined": aggregate(name, "vs_recorded_quarantined", "hit1"),
                     "mrr_at_5_g1_quarantined": aggregate(name, "vs_recorded_quarantined", "rr1"),
                 }
                 for name in ("current", "title_first", "title_boost")
@@ -491,7 +493,32 @@ def main() -> int:
                 c["case_id"] for c in case_results if c["top5_changed_title_boost"]
             ),
         }
+
+        def pool_coverage(labels: dict[tuple[str, str, str], dict[str, Any]]) -> dict[str, Any]:
+            # Pooled top-5 judgment coverage (union of the three rankings'
+            # top 5 per case). Unjudged pairs are unknown, not irrelevant.
+            def count(selected: list[dict[str, Any]]) -> dict[str, int]:
+                pool = {
+                    (c["case_id"], str(h["dataset_id"]), str(h["source_id"]))
+                    for c in selected
+                    for name in ("current", "title_first", "title_boost")
+                    for h in c["rankings"][name]["top5"]
+                }
+                judged = sum(
+                    1 for key in pool if (labels.get(key) or {}).get("topical_grade") is not None
+                )
+                return {"cases": len(selected), "pairs": len(pool), "unjudged": len(pool) - judged}
+
+            changed_cases = [
+                c
+                for c in case_results
+                if c["top5_changed_title_first"] or c["top5_changed_title_boost"]
+            ]
+            return {"changed_cases": count(changed_cases), "all_cases": count(case_results)}
+
+        summary["pool_coverage_recorded"] = pool_coverage(recorded)
         if expanded is not None:
+            summary["pool_coverage_expanded"] = pool_coverage(expanded)
             summary["paired_vs_expanded"] = paired_block("vs_expanded")
             summary["unjudged_in_top5_vs_expanded"] = {
                 name: sum(c["rankings"][name]["vs_expanded"]["unjudged"] for c in case_results)
@@ -499,9 +526,9 @@ def main() -> int:
             }
             summary["metrics_vs_expanded"] = {
                 name: {
-                    "recall_at_5_g1": aggregate(name, "vs_expanded", "recall1"),
+                    "hit_at_5_g1": aggregate(name, "vs_expanded", "hit1"),
                     "mrr_at_5_g1": aggregate(name, "vs_expanded", "rr1"),
-                    "recall_at_5_g2": aggregate(name, "vs_expanded", "recall2"),
+                    "hit_at_5_g2": aggregate(name, "vs_expanded", "hit2"),
                     "mrr_at_5_g2": aggregate(name, "vs_expanded", "rr2"),
                 }
                 for name in ("current", "title_first", "title_boost")
@@ -537,19 +564,19 @@ def main() -> int:
     for name in ("current", "title_first", "title_boost"):
         m = summary["metrics_vs_recorded"][name]
         print(
-            f"{name}: recall_g1={m['recall_at_5_g1']['recall1']:.3f} "
+            f"{name}: hit_g1={m['hit_at_5_g1']['hit1']:.3f} "
             f"mrr_g1={m['mrr_at_5_g1']['rr1']:.3f} "
-            f"recall_g2={m['recall_at_5_g2']['recall2']:.3f} "
+            f"hit_g2={m['hit_at_5_g2']['hit2']:.3f} "
             f"mrr_g2={m['mrr_at_5_g2']['rr2']:.3f}"
         )
     for name in ("current", "title_first", "title_boost"):
         m = summary["paired_vs_recorded"][name]
         print(
-            f"paired {name}: n={m['recall_at_5_g1']['n_cases']} "
-            f"no_judged_hit={m['recall_at_5_g1']['top5_without_judged_hit']} "
-            f"recall_g1={m['recall_at_5_g1']['recall1']:.3f} "
+            f"paired {name}: n={m['hit_at_5_g1']['n_cases']} "
+            f"no_judged_hit={m['hit_at_5_g1']['top5_without_judged_hit']} "
+            f"hit_g1={m['hit_at_5_g1']['hit1']:.3f} "
             f"mrr_g1={m['mrr_at_5_g1']['rr1']:.3f} "
-            f"recall_g2={m['recall_at_5_g2']['recall2']:.3f} "
+            f"hit_g2={m['hit_at_5_g2']['hit2']:.3f} "
             f"mrr_g2={m['mrr_at_5_g2']['rr2']:.3f}"
         )
     print(f"out={out}")

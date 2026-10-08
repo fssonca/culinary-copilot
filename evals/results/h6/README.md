@@ -1,7 +1,8 @@
-# H6 ranking evidence (2026-10-08, proposal only)
+# H6 ranking evidence (2026-10-08)
 
-Status: AI-prepared evidence for Checkpoint D. The judgments in
-`additional_judgments_v1.json` await owner review. Production ranking
+Status: evidence for Checkpoint D. **Owner decision (2026-10-08): keep
+the current ranking** (option A in `docs/checkpoint-d-decisions.md`); a
+title boost needs more evaluation after H8. Production ranking
 (`recipes/repository.py`) is unchanged; the frozen Phase 1 results are
 untouched. All database reads ran with `default_transaction_read_only=on`.
 
@@ -9,18 +10,32 @@ untouched. All database reads ran with `default_transaction_read_only=on`.
 
 | File | What it is |
 |---|---|
-| `additional_judgments_v1.json` | 18 labels for hits that title-first newly surfaces, rubric `phase1-rubric-v1`, sha256 `2e79ee34bf7647a9739f499976a91cfa9e762118c72705b2594c840601924c52`. A separate layer: `checkpoint1_corrections.json` is never edited. |
-| `compare.json` | 52 frozen Phase 1 cases, three rankings, scored against the recorded labels and against recorded plus the new layer. |
-| `regression.json` | The 6 dish-versus-ingredient cases in `evals/cases/h6_dish_vs_ingredient_v1.json`. |
+| `additional_judgments_v1.json` | 18 AI-prepared labels for recipes title-first newly surfaces, rubric `phase1-rubric-v1`, sha256 `2e79ee34…`. Superseded by v2; kept as history. |
+| `additional_judgments_v2.json` | Owner-accepted at Checkpoint D: the 18 v1 grades unchanged (row 3 grade 1, the rest 2) with corrected explanations and DEV-25 equipment evidence, plus 5 recipes only the title boost surfaces (all grade 2; Pasta e Fagioli is not suitable for the vegan request). sha256 `3bfb09ff…`. |
+| `compare.json` | First run (judgments v1). Kept as history; its metric keys say `recall`, see "Metric names". |
+| `compare_v2.json` | Current run: recorded labels, recorded plus judgments v2, Hit@5 naming, pool coverage. |
+| `regression.json` | The 6 dish-versus-ingredient cases in `evals/cases/h6_dish_vs_ingredient_v1.json` (no labels; also uses the old `recall` keys). |
+
+The original labels in `evals/results/phase1/checkpoint1_corrections.json`
+are never edited.
 
 Reproduce from the repo root (the application database must be in the
-same state; H5 re-ingestion would change results that contain the
-malformed records):
+same state; the H5 cleanup changes results that contain the malformed
+records):
 
 ```
-uv run python scripts/retrieval_eval/h6_ranking_compare.py --extra-judgments evals/results/h6/additional_judgments_v1.json --out evals/results/h6/compare.json
+uv run python scripts/retrieval_eval/h6_ranking_compare.py --extra-judgments evals/results/h6/additional_judgments_v2.json --out evals/results/h6/compare_v2.json
 uv run python scripts/retrieval_eval/h6_ranking_compare.py --cases evals/cases/h6_dish_vs_ingredient_v1.json --out evals/results/h6/regression.json
 ```
+
+## Metric names
+
+The metric first reported as "Recall@5" is **Hit@5** (also called
+Success@5): 1 for a case when any judged-relevant recipe is in the top 5,
+0 when the top 5 holds judged recipes but none is relevant. It does not
+measure the share of all relevant recipes retrieved. The numbers are the
+same; only the name was wrong. MRR@5 is the reciprocal rank of the first
+judged-relevant recipe.
 
 ## Rankings compared
 
@@ -37,59 +52,57 @@ uv run python scripts/retrieval_eval/h6_ranking_compare.py --cases evals/cases/h
 
 ## Results on the 52 frozen cases
 
-Title-first changes the top 5 of 14 cases; the boost changes 16. Inside
-all top-5 slots, judged grade-2 hits fall from 42 to 36 (title-first) or
-37 (boost), and grade-1 hits from 11 to 6 for both; the freed slots go to
-unjudged recipes.
+Title-first changes the top 5 of 14 cases; the boost changes 16 (17
+cases change under at least one). Inside all top-5 slots, judged grade-2
+hits fall from 42 to 36 (title-first) or 37 (boost), and grade-1 hits
+from 11 to 6 for both; the freed slots go to recipes the original labels
+never judged.
 
-The two tables below score every ranking on the same 23 cases (those
-where the current top 5 holds a judged hit). A top 5 without any judged
-hit counts as 0, which is a lower bound for the experiments.
+**Judgment coverage.** The pooled top 5s of the three rankings hold 111
+query-recipe pairs in the 17 changed cases. The original labels leave 68
+of them unjudged; with judgments v2, 45 remain unjudged. Across all 52
+cases, 105 of 187 pairs remain unjudged. Unjudged pairs are unknown, not
+irrelevant, so every number below is from an incomplete pool.
 
-Against the recorded labels only:
+The tables score every ranking on the same 23 cases: those where the
+current top 5 holds a judged recipe. That set is chosen using the current
+ranking, so it is a paired diagnostic, not a full-suite score (DEV-03,
+DEV-28 and HELD-07, for example, stay outside it even with the new
+labels). A top 5 with no judged recipe counts as 0.
 
-| Ranking | Recall@5 (grade ≥1) | MRR@5 (≥1) | Recall@5 (grade 2) | MRR@5 (2) | Top 5 with no judged hit |
+Against the original labels only:
+
+| Ranking | Hit@5 (grade ≥1) | MRR@5 (≥1) | Hit@5 (grade 2) | MRR@5 (2) | Top 5 with no judged recipe |
 |---|---|---|---|---|---|
 | current | 1.000 | 0.675 | 0.783 | 0.523 | 0 |
 | title-first | 0.870 | 0.607 | 0.696 | 0.462 | 3 (DEV-18, DEV-19, HELD-17) |
 | title boost | 0.870 | 0.664 | 0.696 | 0.491 | 3 (same cases) |
 
-With the 18 AI-prepared judgments added:
+The three cases with no judged recipe are a finding against the original
+labels: with judgments v2 each of them holds a judged-relevant recipe.
 
-| Ranking | Recall@5 (≥1) | MRR@5 (≥1) | Recall@5 (2) | MRR@5 (2) |
+With judgments v2 added:
+
+| Ranking | Hit@5 (≥1) | MRR@5 (≥1) | Hit@5 (2) | MRR@5 (2) |
 |---|---|---|---|---|
 | current | 1.000 | 0.675 | 0.783 | 0.523 |
 | title-first | 1.000 | 0.670 | 0.913 | 0.546 |
-| title boost | 1.000 | 0.706 | 0.913 | 0.551 |
+| title boost | 1.000 | 0.706 | 0.913 | 0.562 |
 
-On the recorded labels alone, both experiments are worse than the
-current ranking. They come out ahead only when the new judgments are
-counted, so the case for either change rests on the owner's review of
-those 18 labels.
+On the original labels both experiments are below the current ranking;
+with the new judgments both are above it, but 45 pairs in the changed
+cases are still unjudged. `compare_v2.json` also holds the per-ranking
+metrics `run_baseline.py` would report, where each ranking is scored only
+on its own judged cases (23, 20 and 20); those should not be used to
+compare rankings.
 
-`compare.json` also holds the per-ranking metrics that `run_baseline.py`
-would report, where each ranking is scored only on the cases its own top
-5 has judged hits for (23, 20 and 20 cases). Those show the boost ahead
-even on recorded labels (MRR@5 0.764 against 0.675), but only because
-the three cases it loses drop out of its denominator. They should not be
-used to compare rankings.
-
-Five recipes that only the boost surfaces have no judgment yet, so the
-boost's expanded numbers count them as not relevant: DEV-03 (a corned
-beef and cabbage soup), DEV-24 (pasta e fagioli), DEV-28 (a Bulgarian
-soup), HELD-07 (a whole deboned chicken with rice) and HELD-09 (a
-chocolate cake).
-
-No malformed `summary` record (H5) appears in any frozen top 5, so these
-results do not depend on the H5 re-ingestion.
+No malformed `summary` record (H5) appears in any frozen top 5.
 
 ## Dish versus ingredient regression cases
 
 Six development cases: a dish request and an ingredient-phrase control
 for adobo, tzatziki and hollandaise. They record evidence; they assert
-nothing automatically. Adobo was found by screening single-word dish
-queries for top-5 title hits; tzatziki and hollandaise by looking for
-sauce-like dishes with the same collision.
+nothing automatically.
 
 | Dish case | current | title-first | title boost |
 |---|---|---|---|
@@ -97,28 +110,21 @@ sauce-like dishes with the same collision.
 | tzatziki | 1 (rank 2) | 3 | 3 |
 | hollandaise: rank of the sauce | 4 | 1 | 2 |
 
-The three phrase controls ("chipotle peppers in adobo sauce", "chicken
-gyro with tzatziki", "eggs benedict with hollandaise") keep the same top
-5 under all rankings. A malformed `summary` record sits in the hollandaise
-and benedict top 5s under every ranking.
+The three phrase controls keep the same top 5 under all rankings. A
+malformed `summary` record sits in the hollandaise and benedict top 5s.
+The boost weight (2.0) was chosen on adobo, so the adobo result is a
+regression check, not independent evidence.
 
-## Recommendation (proposal; Checkpoint D decides)
+## What a future ranking change needs
 
-Do not change production ranking yet. If the owner's review confirms most
-of the 18 judgments, prefer the title boost over title-first: it matches
-title-first on recall, ranks slightly better, and keeps ingredient
-discovery requests unchanged. Before adopting it:
+From the Checkpoint D review:
 
-1. Review the 18 judgments, and judge the 5 boost-only recipes above.
-2. Choose the weight on more than one case: 2.0 is the smallest of
-   0.5, 1.0, 1.5, 2.0 and 4.0 that recovers adobo, and adobo is also a
-   regression case, so it is tuned on its own test.
-3. Decide whether free-text queries should be boosted at all. The agent's
-   searches are free text, so in practice the boost would apply to every
-   agent search, not only to dish requests.
-4. Implement it in `recipes/repository.py` with harness and regression
-   coverage, then re-run this comparison.
-
-Risks: three frozen cases lose every judged hit under either experiment;
-the boost changes more top 5s than title-first (16 against 14); and the
-gain disappears if the owner downgrades a few of the new labels.
+1. An explicit search intent (dish, ingredient or unknown), with the
+   current ranking for unknown intent, instead of boosting all free text.
+2. Complete pooled top-5 judgments on the development cases before
+   choosing, with held-out results reported separately.
+3. A predetermined case set with judgment coverage reported.
+4. The weight chosen on development cases and confirmed on fresh unseen
+   cases; suitable-result metrics reported alongside topical ones.
+5. One explicit rule for broad single-ingredient queries ("garlic"),
+   applied to old and new labels alike.

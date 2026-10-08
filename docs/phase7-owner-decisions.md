@@ -416,3 +416,45 @@ and asked for a plan, now in `docs/milestone-3-hardening-plan.md`.
   coverage and decision logging before any frozen-build live check.
 - **Still needs explicit authorization:** the baseline commit (H0),
   any application-database re-ingestion, and the live check (H8).
+
+## Checkpoint D (2026-10-08)
+
+Recorded by an AI assistant; not a signature. The owner answered the
+decisions in `docs/checkpoint-d-decisions.md`, adopting the
+recommendations in `docs/checkpoint-d-recommendations.md`.
+
+1. **H6 judgments.** The 18 proposed grades stand under the existing
+   conventions (row 3 grade 1, the rest grade 2), with corrected
+   explanations. The 5 recipes only the title boost surfaces are grade
+   2, with suitability recorded separately: Pasta e Fagioli (DEV-24) is
+   not suitable (vegan violated by chicken broth; gluten-free
+   unresolved). Stored as `evals/results/h6/additional_judgments_v2.json`.
+2. **Ranking.** Option A: keep the current ranking. A title boost needs
+   further evaluation after H8: explicit search intent, complete pooled
+   judgments on development cases, a weight chosen on development cases
+   and confirmed on fresh held-out cases. The H6 metric first called
+   Recall@5 is Hit@5; the outputs and README say so.
+3. **Malformed recipes (H5).** The scoped removal and quarantine is
+   approved once the procedure is corrected and rehearsed: every
+   rehearsal write bound to an explicitly named disposable database
+   that refuses the application target; a frozen identity manifest;
+   assertions that abort the transaction; explicit first-run and rerun
+   states with the same import id; quarantine and deletion atomic, or
+   the intermediate state documented and tested. Keep the 38 older
+   quarantine rows as import history (report unique rows separately
+   from quarantine events). Title recovery is deferred.
+4. **H8.** Demo limits, a frozen build on the cleaned corpus, two fresh
+   sessions (party baking and allergy), web search off for both, and
+   **$0.15 total enforced across both sessions** by a shared ledger
+   that reserves before each paid call and reconciles reported usage.
+   `make demo` alone does not enforce a dollar ceiling. Freeze the
+   final reviewed commit, corpus counts and import id, model, reasoning
+   effort, service tier, all limits, retrieval/Epicure/embedding
+   settings and the scenario scripts. Predeclare success per workflow;
+   report first attempts separately; a code change means a new freeze.
+   Reconcile the unrecorded 2026-10-06/07 usage with provider billing
+   first. Running H8 still needs the owner's go-ahead. Two passing
+   sessions demonstrate the workflows under demo limits; they do not
+   establish general reliability or Milestone 3 acceptance.
+5. **Push.** Push the reviewed branch when authorized; decide on
+   merging into `main` after reviewing H8.

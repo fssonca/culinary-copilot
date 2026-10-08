@@ -304,7 +304,8 @@ still malformed); the proposed re-ingestion procedure.
 Done 2026-10-08 (offline; application database untouched): the 158 are
 part of a trailing source block of 218 rows (CSV 19349-19566) with a
 `summary` section label where the title belongs and one-line ingredient
-and instruction blobs. No row carries a title, so no deterministic split
+and instruction blobs. No row has a usable title field (a few
+descriptions name the dish), so no deterministic split
 or paid extraction yields a loadable recipe: adapter v5 refuses the
 layout (`summary_layout_missing_title`) and routing v3 quarantines it.
 Preview: 0 repaired, 218 now quarantined (192 had been routed to

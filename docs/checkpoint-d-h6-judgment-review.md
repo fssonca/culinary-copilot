@@ -1,5 +1,9 @@
 # Checkpoint D: H6 judgment review sheet
 
+**Reviewed 2026-10-08:** the owner accepted the grades (row 3 grade 1,
+all others 2, rows 19–23 grade 2) with corrected explanations and
+suitability; the result is `evals/results/h6/additional_judgments_v2.json`.
+
 Prepared 2026-10-08 with AI assistance, for decision 1 in
 `docs/checkpoint-d-decisions.md`. The grades and reasons below are
 AI-prepared and pending your review; they come from

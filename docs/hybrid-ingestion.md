@@ -381,8 +381,10 @@ counts above.
 Cost note: adapter and routing versions are part of every LLM cache key,
 so the bump invalidates the cached extractions for all foodie rows, not
 only these 218, and previously prepared runs. The scoped re-ingestion below
-needs no extraction, but a future full re-preparation would re-extract
-(paid) every `needs_llm` row.
+needs no extraction. Preparation and finalization are offline; payment
+happens only on a later Batch submission. Before any future full
+re-preparation, check which saved responses are still compatible before
+deciding whether paid extraction is needed.
 
 Planned (needs owner authorization): the offline repair preview and the
 reversible re-ingestion procedure are in `data/h5-repair-preview/`

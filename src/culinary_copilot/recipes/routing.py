@@ -31,7 +31,7 @@ from culinary_copilot.recipes.adapters.foodie import (
 )
 
 # H5 (2026-10-08): v3 quarantines summary-layout parse failures directly
-# (no title evidence; the targeted extraction contract preserves titles, so
+# (no usable title field; the targeted extraction contract preserves titles, so
 # paid extraction cannot repair them either). No other rule changed.
 ROUTING_VERSION = "3"
 

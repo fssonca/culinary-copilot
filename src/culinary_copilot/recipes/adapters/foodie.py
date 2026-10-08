@@ -18,7 +18,8 @@ Known variant (H5, 2026-10-08): the trailing source block (CSV rows
 lowercase ``ingredients``/``instructions`` markers, and single-line blobs
 for both blocks (no newline separators inside ingredients or
 instructions). The literal word "summary" is a section label, not a dish
-title, so these records carry no title evidence; the parser refuses them
+title, so these records have no usable title field (a few descriptions
+name the dish, which needs human review); the parser refuses them
 with ``summary_layout_missing_title`` and routing quarantines them (paid
 extraction cannot invent the missing title either).
 
@@ -572,7 +573,7 @@ def split_sections(text: str) -> dict[str, Any]:
         re.sub(r"(?i)</?[a-z]+>?", "", line).strip()
         for line in block(idx_directions if idx_directions is not None else idx_intro, None)
     ]
-    # H5 (2026-10-08): the "summary" layout has no title evidence — the
+    # H5 (2026-10-08): the "summary" layout has no usable title field — the
     # first line is a section label, not a dish name — and both content
     # blocks are single-line blobs. Accepting it loads bogus "summary"
     # recipes into search, so refuse with a dedicated code. Everything here

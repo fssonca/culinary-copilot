@@ -1,5 +1,9 @@
 # Checkpoint D: decisions for the owner
 
+**Decided 2026-10-08:** the owner adopted the recommendations in
+`docs/checkpoint-d-recommendations.md`; the answers are recorded in
+`docs/phase7-owner-decisions.md` ("Checkpoint D").
+
 Prepared 2026-10-08 with AI assistance. It lists the decisions that close
 the Milestone 3 hardening plan (`docs/milestone-3-hardening-plan.md`) and
 the context for each. Nothing here is decided until the owner answers.
@@ -129,9 +133,10 @@ and a weight chosen on more than one case.
 appear in search results (for example, rank 2 for "hollandaise"). H5
 found the cause: a block of 218 source rows (CSV rows 19349–19566) has
 the word "summary" where the title belongs, and the ingredients and the
-steps each collapsed into one line. None of the 218 rows carries a dish
-title, so they cannot be repaired automatically, and paid extraction
-cannot invent a title either. Since H5 the parser refuses this layout
+steps each collapsed into one line. None of the 218 rows has a usable
+title field (a few descriptions name the dish), so they cannot be
+repaired automatically, and paid extraction cannot invent a title
+either. Since H5 the parser refuses this layout
 and routes it to quarantine, but the application database still holds
 the 158 recipes loaded before.
 
@@ -168,8 +173,9 @@ because the existing load command never deletes.
 
 **Side effect already in the code.** The parser and routing version bump
 in H5 invalidates the cached model extractions for every foodie record,
-not just these 218. This re-ingestion needs no extraction, but any
-future full re-preparation of the foodie data would pay to re-extract.
+not just these 218. This re-ingestion needs no extraction. A future full
+re-preparation is offline; it costs money only if a Batch is then
+submitted, so compatible saved responses should be assessed first.
 
 **Options.** Authorize the re-ingestion with the safeguards above, or
 leave the database as it is (the 158 keep appearing in searches).
