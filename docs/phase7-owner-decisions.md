@@ -481,3 +481,12 @@ the first attempt, both stopped by the repeat-stall guard; $0.0143
 spent of the $0.15 pool. See `evals/h8_live/RESULTS.md`, which also
 records two grading bugs found and fixed and proposes the next step for
 the owner to decide.
+
+### After the first H8 attempt (2026-10-08)
+
+Recorded by an AI assistant; not a signature. The owner agreed with the
+recommendations in `evals/h8_live/RESULTS.md`: a stall now gets one
+tool-less finishing turn (`91c5a71`), and H8 runs again as a separately
+labelled second attempt on fresh scenarios (`scenarios_v3.json`). The
+owner set the H8 pool to **$1.00** (attempt 1's $0.0143 counts against
+it). Push still not authorized.

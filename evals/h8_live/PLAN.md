@@ -127,3 +127,29 @@ First attempt: 0 of 2 complete; both sessions hit the repeat-stall stop
 and fixed, and the proposed next step: `RESULTS.md`. Any further attempt
 is a separately labelled attempt on a new freeze with
 `scenarios_v2.json`.
+
+## Second attempt: freeze record (2026-10-08)
+
+Recorded by an AI assistant at the owner's go-ahead; not a signature.
+The owner agreed with the recommendations in `RESULTS.md` (stall
+recovery, then a separately labelled attempt on fresh scenarios) and set
+the H8 pool to $1.00.
+
+| Item | Value |
+|---|---|
+| Label | H8 attempt 2; acknowledgement `h8-attempt-2-2026-10-08` (the attempt-1 value is refused) |
+| Commit | Code as of `91c5a71` (stall recovery, grading fixes, $1.00 pool). The commit that records this table changes only docs. |
+| Corpus | Unchanged since attempt 1: 15,875 recipes, 644 quarantine rows, 3 imports (last `foodie-repair-v5-20261008`), 0 `summary` titles |
+| Model, reasoning effort, service tier | `gpt-6-luna`, `LLM_REC_REASONING_EFFORT=none`, standard tier |
+| Limits | Demo limits, as in the scenarios file (40 steps, 40 tool calls, 300k/60k tokens, 240 s per run) |
+| Retrieval, Epicure, embeddings | `RETRIEVAL_MODE=fulltext`, technique retrieval fulltext, `EPICURE_ENABLED=true`, `EMBEDDINGS_ENABLED=true`, `WEB_SEARCH_ENABLED=false` |
+| Scenarios | `scenarios_v3.json`, freeze sha256 `9c09c6930238e67a958ac0e8cf90815744ffdf6c5ab0c72681dd138d493de16a`: `h8b-bake-sale`, `h8b-allergy-treat` (peanuts), written before this run |
+| Harness | Cases v11, 58/58 |
+| Budget | H8 pool $1.00 including attempt 1's $0.0143: $0.9857 available |
+| Success | Unchanged from "Success, declared before the run" above |
+
+Command: the attempt-1 command with `--ceiling-usd 1.00`,
+`--acknowledge-live-run h8-attempt-2-2026-10-08`,
+`--scenarios-file evals/h8_live/scenarios_v3.json`,
+`--raw-dir data/h8-live/raw-attempt-2` and
+`--summary-out data/h8-live/summary-attempt-2.json`.
