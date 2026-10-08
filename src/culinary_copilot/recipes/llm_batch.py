@@ -1343,6 +1343,40 @@ def _find_request(run_dir: Path, custom_id: str) -> dict[str, Any]:
 # ------------------------------------------------------------------- load ---
 
 
+def upsert_quarantine_rows(conn: Any, import_id: str, entries: list[dict[str, Any]]) -> None:
+    """Upsert fully-rejected rows into recipe_quarantine on ``conn``.
+
+    Each entry carries row_number, source_id, status, reason, verdict,
+    problems and raw. Runs inside the caller's transaction (cmd_load, and
+    the H5 summary-layout cleanup, which deletes in the same transaction).
+    """
+    from sqlalchemy import text
+
+    for entry in entries:
+        conn.execute(
+            text("""
+            INSERT INTO recipe_quarantine (import_id, row_number, source_id,
+                status, reason, verdict, problems, raw)
+            VALUES (:import_id, :row_number, :source_id,
+                :status, :reason, :verdict, CAST(:problems AS jsonb), CAST(:raw AS jsonb))
+            ON CONFLICT (import_id, row_number) DO UPDATE SET
+                source_id=EXCLUDED.source_id, status=EXCLUDED.status,
+                reason=EXCLUDED.reason, verdict=EXCLUDED.verdict,
+                problems=EXCLUDED.problems, raw=EXCLUDED.raw
+            """),
+            {
+                "import_id": import_id,
+                "row_number": entry["row_number"],
+                "source_id": entry["source_id"],
+                "status": entry["status"],
+                "reason": entry["reason"],
+                "verdict": entry["verdict"],
+                "problems": json.dumps(entry["problems"]),
+                "raw": json.dumps(entry["raw"]),
+            },
+        )
+
+
 def cmd_load(args: argparse.Namespace, settings: Settings) -> dict[str, Any]:
     """Load boundary: upsert ready records AND fully-rejected rows.
 
@@ -1478,29 +1512,7 @@ def cmd_load(args: argparse.Namespace, settings: Settings) -> dict[str, Any]:
                         "raw": {"texts": source.get("texts", "")},
                     }
                 )
-            for entry in rejected:
-                conn.execute(
-                    text("""
-                    INSERT INTO recipe_quarantine (import_id, row_number, source_id,
-                        status, reason, verdict, problems, raw)
-                    VALUES (:import_id, :row_number, :source_id,
-                        :status, :reason, :verdict, CAST(:problems AS jsonb), CAST(:raw AS jsonb))
-                    ON CONFLICT (import_id, row_number) DO UPDATE SET
-                        source_id=EXCLUDED.source_id, status=EXCLUDED.status,
-                        reason=EXCLUDED.reason, verdict=EXCLUDED.verdict,
-                        problems=EXCLUDED.problems, raw=EXCLUDED.raw
-                    """),
-                    {
-                        "import_id": args.import_id,
-                        "row_number": entry["row_number"],
-                        "source_id": entry["source_id"],
-                        "status": entry["status"],
-                        "reason": entry["reason"],
-                        "verdict": entry["verdict"],
-                        "problems": json.dumps(entry["problems"]),
-                        "raw": json.dumps(entry["raw"]),
-                    },
-                )
+            upsert_quarantine_rows(conn, args.import_id, rejected)
     finally:
         engine.dispose()
     print(
