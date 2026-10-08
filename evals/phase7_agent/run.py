@@ -1178,11 +1178,50 @@ def main() -> int:
         },
         "note": "v1 scored dietary/adversarial cases on the stop reason alone",
     }
+    # v8 history: the last result before H4 (2026-10-08). p7-budget-tools
+    # then stopped at the excess batch; since H4 it gets a finishing turn,
+    # so v9 scripts that turn and adds p7-budget-tools-no-finish.
+    history_v8 = {
+        "cases_version": "phase7-cases-v8-2026-10-05",
+        "cases_sha256": "2713af2655a058ae799a5bed6d8c9711b19b0e94ae759f4b1205a01d57c421b8",
+        "aggregate": {
+            "total": 43,
+            "scored": 43,
+            "completed": 43,
+            "task_completion_rate": 1.0,
+            "expected_fail_total": 0,
+            "expected_fail_completed": 0,
+            "stop_reason_distribution": {
+                "agent_sufficient_evidence": 32,
+                "agent_validation_failed": 4,
+                "agent_needs_user_input": 3,
+                "agent_max_steps": 1,
+                "agent_tool_budget_exhausted": 1,
+                "agent_token_budget_exhausted": 1,
+                "agent_wall_clock_exceeded": 1,
+            },
+            "invalid_transitions_total": 1,
+            "tool_argument_validity_mean": 0.9906976744186047,
+            "unnecessary_call_rate_mean": 0.0,
+            "epicure_compliance_rate": 0.9767441860465116,
+            "source_reference_correctness_rate": 1.0,
+            "unsupported_claim_cases": 3,
+            "adversarial_total": 4,
+            "adversarial_caught": 4,
+            "adversarial_catch_rate": 1.0,
+            "latency_tokens_cost": "not measured offline (scripted provider)",
+        },
+        "note": (
+            "pre-H4: p7-budget-tools stopped at the excess batch "
+            "(agent_tool_budget_exhausted) with no finishing turn"
+        ),
+    }
     out = {
         "cases_file": "cases.json",
         "cases_version": payload.get("version"),
         "cases_sha256": cases_sha256,
         "history_v1": history_v1,
+        "history_v8": history_v8,
         "note": (
             "offline system results (loop control, tools, validators), "
             "not model judgement; latency/tokens/cost not measured offline"

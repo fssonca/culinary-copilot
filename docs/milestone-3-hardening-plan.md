@@ -1,8 +1,8 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
 Status: **H0 to H4 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
-2026-10-07; H2, H3 and H4 on 2026-10-08). H5 onward not started. Known
-failure until H7: harness case `p7-budget-tools` (see H4). Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
+2026-10-07; H2, H3 and H4 on 2026-10-08). H5 onward not started. Harness
+cases v9 since H4 (44/44). Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
 `docs/phase7-owner-decisions.md`). Baseline: branch
@@ -264,12 +264,14 @@ a duplicated affordability check (it left out the plan-requirement
 lines) with the real checks, stopped a second model call when the
 finishing turn calls tools anyway, and sorted the list.
 
-Known failure until H7: harness case `p7-budget-tools` (cases v8) scripts
-no finishing turn, so it now ends as `internal_error` and the harness
-test fails (42/43; no other case changes). Cutting a new case version
-during H4 was not permitted, so H7 makes the fix: script a finishing
-turn for that case and add a case that keeps the immediate stop when the
-finishing turn is unaffordable (for example an output ceiling of 600).
+Harness: under cases v8, `p7-budget-tools` scripted no finishing turn
+and ended as `internal_error` (42/43; no other case changed). Cases v9
+(2026-10-08, 44 cases) script a question on that turn and add
+`p7-budget-tools-no-finish`, which keeps the immediate stop when the
+finishing turn is unaffordable (output ceiling 520: the first turn has
+the 500-token minimum, the batch leaves less; at 600 the short batch
+left enough and the turn ran). 44/44; the v8 aggregate is kept in
+`results.json` as `history_v8`.
 
 ## H5. Malformed-record repair preview (offline)
 
@@ -330,14 +332,14 @@ Evidence: judgment file and version; comparison table; proposal.
 ```text
 Implement step H7.
 
-1. Add a new harness case version (do not edit cases v8) covering the
+1. Add a new harness case version (v10; do not edit cases v9) covering the
    2026-10-07 recovery paths: technique answer after a plan keeps the
    phase; a dropped option is named in the feedback; a negated mention
    is not a pairing claim; the wrap-up withholds only repeated tools; a
    repeated search is marked; the select phase withholds recipe search
    and pairings; a named allergy ("tree nuts") is checked; the
-   allergy line keeps constraints_honored empty; plus H2-H4 behaviour,
-   including the `p7-budget-tools` fix described under H4.
+   allergy line keeps constraints_honored empty; plus H2-H3 behaviour
+   (H4 is covered in v9).
    Re-baseline results for the new version only and update
    verify_packet.py.
 2. Record observable decisions in session events: tools offered and

@@ -1,6 +1,6 @@
 {
-  "version": "phase7-cases-v8-2026-10-05",
-  "note": "SYNTHETIC scripted model turns, not model output. v8 requires direction coverage for \"source\" (p7-plan-partial-coverage omits the marinade and is model_adaptation; p7-plan-faithful-source cites all six). v7 web guard; v6 plan attribution; v5 duplicate visibility; v4 time/honored/refetch; v3 vector/resume; v2 scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored stop reasons alone; aggregates kept in results.json history. Later edits need a new version, never a silent change.",
+  "version": "phase7-cases-v9-2026-10-08",
+  "note": "SYNTHETIC scripted model turns, not model output. v9 (H4 budget recovery): p7-budget-tools now scripts the tool-less finishing turn after the excess batch (a question), and p7-budget-tools-no-finish keeps the immediate stop when that turn is unaffordable (output ceiling 520: the first turn has the 500-token minimum, the batch leaves less). v8 requires direction coverage for \"source\" (p7-plan-partial-coverage omits the marinade and is model_adaptation; p7-plan-faithful-source cites all six). v7 web guard; v6 plan attribution; v5 duplicate visibility; v4 time/honored/refetch; v3 vector/resume; v2 scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored stop reasons alone; aggregates kept in results.json history. Later edits need a new version, never a silent change.",
   "cases": [
     {
       "id": "p7-epicure-default",
@@ -2452,6 +2452,78 @@
         "tool_calls_remaining": 2
       },
       "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "a"
+              }
+            ],
+            [
+              "c2",
+              "search_recipes",
+              {
+                "query": "b"
+              }
+            ],
+            [
+              "c3",
+              "search_recipes",
+              {
+                "query": "c"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "ask_user",
+            "question": {
+              "question_id": "q-narrow",
+              "question_text": "I could run two searches before the tool limit. Which two chicken dishes should I compare?",
+              "options": [
+                "the first two found",
+                "I will name them"
+              ]
+            },
+            "note": "tool budget reached after two searches"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_needs_user_input",
+        "shape": "question"
+      },
+      "required_tools": [
+        "search_recipes"
+      ],
+      "allowed_tools": [
+        "search_recipes"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-budget-tools-no-finish",
+      "criteria": [
+        "budget-tool-calls"
+      ],
+      "adversarial": false,
+      "request": "Compare five chicken dishes.",
+      "session": {
+        "tool_calls_remaining": 2
+      },
+      "settings": {
+        "agent_output_token_ceiling": 520
+      },
       "epicure_enabled": true,
       "search_rows": "default",
       "turns": [

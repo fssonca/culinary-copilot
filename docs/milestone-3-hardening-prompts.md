@@ -82,10 +82,7 @@ Checks (run all of them; report the actual output lines)
   must stay byte-identical unless the phase says otherwise (verify with
   git diff --stat evals/; restore it with
   git checkout -- evals/phase7_agent/results.json after a run).
-  Known since H4 (2026-10-08), until Phase 7: case p7-budget-tools
-  fails (internal_error, 42/43), so make check reports exactly one
-  failure, tests/test_phase7_harness.py. Report any other change; do
-  not fix this one before Phase 7.
+  Since H4 (2026-10-08) the cases are v9, 44/44.
 - uv run python evals/phase7_agent/verify_packet.py
 
 Report (your final message, in this order)
@@ -442,35 +439,30 @@ Phase 7 (plan step H7): cover the new behaviour in the offline harness
 and record observable decisions.
 
 Facts (verify):
-- evals/phase7_agent/cases.json is version phase7-cases-v8-2026-10-05
-  (43 cases, sha256 2713af26...). A new version is made by editing
-  cases.json with a new version string; run.py keeps the previous
-  version's summary as history (see how history_v1 is kept) so the
-  change stays auditable. Do not change the meaning of existing cases.
+- evals/phase7_agent/cases.json is version phase7-cases-v9-2026-10-08
+  (44 cases, sha256 808cc23c...). v9 was cut during H4: it scripts the
+  finishing turn for p7-budget-tools and adds p7-budget-tools-no-finish.
+  A new version is made by editing cases.json with a new version
+  string; run.py keeps the previous version's summary as history (see
+  history_v1 and history_v8) so the change stays auditable. Do not
+  change the meaning of existing cases.
 - evals/phase7_agent/verify_packet.py checks the Checkpoint C packet
   claims against raw files.
 
 Required:
-1. Create cases version v9 adding cases for: a technique answer after
+1. Create cases version v10 adding cases for: a technique answer after
    a plan keeps the phase; a dropped option is named in the feedback;
    a negated mention is not a pairing claim; the wrap-up withholds
    only the repeated tools; a repeated search is marked; the select
    phase withholds recipe search and pairings; a named allergy
    ("tree nuts") is checked; the allergy line keeps
-   constraints_honored empty; plus phases 1 to 4 (swapped quantities,
-   clipped directions, fidelity claims, budget-exhaustion finishing).
-   Since H4, v8 case p7-budget-tools fails: its script has no turn
-   after the excess batch, so the new finishing turn exhausts the
-   script (internal_error). In v9, give it a scripted finishing turn
-   (a question or a valid finish) with the matching expected result,
-   and add a case that keeps the immediate tool-budget stop when the
-   finishing turn is unaffordable (for example settings
-   agent_output_token_ceiling 600). The v8 history must record that
-   43/43 was the pre-H4 result.
-   Keep the v8 results as history. Re-baseline results.json for v9
-   only; this phase may change results.json. Update verify_packet.py
-   so it still checks the Checkpoint C claims against their own
-   version.
+   constraints_honored empty; plus phases 1 to 3 (swapped quantities,
+   clipped directions, fidelity claims). Budget-exhaustion finishing
+   (phase 4) is already covered in v9.
+   Keep the v9 results as history (history_v9, as history_v8 is kept).
+   Re-baseline results.json for v10 only; this phase may change
+   results.json. Update verify_packet.py so it still checks the
+   Checkpoint C claims against their own version.
 2. Record observable decisions in session_events: tools offered and
    withheld per turn with the reason, repeated results, validation
    failures, and remaining budgets. Never record raw model reasoning.
@@ -485,7 +477,7 @@ Required:
 STOP after the report.
 ```
 
-Review focus: v8 history kept and auditable; each new case fails on
+Review focus: v8 and v9 history kept and auditable; each new case fails on
 the pre-fix code where possible (say which); event sizes; no
 reasoning text recorded.
 

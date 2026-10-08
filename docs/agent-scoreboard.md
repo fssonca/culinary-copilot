@@ -1,6 +1,6 @@
 # Agent scoreboard (Milestone 3, Phase 7)
 
-Status: offline harness v8, updated 2026-10-05. The harness makes no
+Status: offline harness v9, updated 2026-10-08. The harness makes no
 model calls, embedding calls, web requests or downloads. Writes go to
 the disposable `culinary_check_phase7` database only (dropped
 afterward). The live evaluation (11 sessions, part 2) is summarized
@@ -25,11 +25,14 @@ Model quality is measured only by the live run.
   `uv run python evals/phase7_agent/run.py`. Writes `results.json` and
   `epicure_compare.json` into that directory.
 - `evals/phase7_agent/cases.json`: version
-  `phase7-cases-v8-2026-10-05`, 43 cases, sha256
-  `2713af2655a058ae799a5bed6d8c9711b19b0e94ae759f4b1205a01d57c421b8`
-  (recorded in `results.json` as `cases_sha256`; v1 sha and aggregate
-  kept as `history_v1`). A later edit means a new version, never a
-  silent change.
+  `phase7-cases-v9-2026-10-08`, 44 cases, sha256
+  `808cc23c7ad04025854e25c8f2893bbdd088b31a5a806fd169cb8ee494f987ee`
+  (recorded in `results.json` as `cases_sha256`; v1 and v8 sha and
+  aggregate kept as `history_v1` and `history_v8`). v9 follows the H4
+  budget recovery: `p7-budget-tools` scripts the finishing turn after
+  the excess batch, and `p7-budget-tools-no-finish` keeps the immediate
+  stop when that turn is unaffordable. A later edit means a new
+  version, never a silent change.
 - `evals/phase7_agent/METRICS.md`: metric definitions. Latency, tokens
   and cost are "not measured offline (scripted provider)".
 - Real agent loop (`agent/loop.py`), real tools (`tools/`) and real
@@ -40,26 +43,26 @@ Model quality is measured only by the live run.
   permission-off backend gate is additionally probed directly with
   `run_tool`.
 
-## Aggregates (43 cases, v8)
+## Aggregates (44 cases, v9)
 
-- Task completion (scored): 43/43 (rate 1.0). Expected-fail: none.
+- Task completion (scored): 44/44 (rate 1.0). Expected-fail: none.
 - Adversarial catch rate: 4/4 (1.0), each with its pinned rejection
   text. Adversarial cases: `p7-epicure-skip-unjustified` ("needs
   Epicure consulted"), `p7-search-invented-url` ("was not returned in
   this session"), `p7-tool-invalid-args`, `p7-invalid-transition-caught`.
 - Stop reasons: `agent_sufficient_evidence` 32,
-  `agent_validation_failed` 4, `agent_needs_user_input` 3,
+  `agent_validation_failed` 4, `agent_needs_user_input` 4,
   `agent_max_steps` 1, `agent_tool_budget_exhausted` 1,
   `agent_token_budget_exhausted` 1, `agent_wall_clock_exceeded` 1.
 - Invalid transitions: 1 total (in `p7-invalid-transition-caught`,
   recovered then finished).
-- Tool-argument validity (mean): 0.990. Below 1.0:
+- Tool-argument validity (mean): 0.991. Below 1.0:
   `p7-tool-invalid-args` (0.8) and `p7-vector-unconfigured` (0.8:
   the refused vector call, recovered with fulltext).
 - Unnecessary-call rate (mean): 0.0. No forbidden calls.
-- Epicure compliance: 42/43 (0.977). The single non-compliant case is
+- Epicure compliance: 43/44 (0.977). The single non-compliant case is
   the adversarial unjustified skip, correctly caught.
-- Source-reference correctness: 43/43 (1.0).
+- Source-reference correctness: 44/44 (1.0).
 - Unsupported-claim cases: 3 (the time-claim regression cases,
   whose first finishes are rejected on purpose; all recover or fail
   as designed).
@@ -101,7 +104,8 @@ Model quality is measured only by the live run.
   caught and recovered.
 - `p7-tool-unavailable` (transient unavailable, then recovered): pass.
 - `p7-budget-steps` (`agent_max_steps`): pass.
-- `p7-budget-tools` (`agent_tool_budget_exhausted`): pass.
+- `p7-budget-tools` (excess batch, then the finishing turn asks; `agent_needs_user_input`): pass.
+- `p7-budget-tools-no-finish` (finishing turn unaffordable; `agent_tool_budget_exhausted`): pass.
 - `p7-budget-tokens` (`agent_token_budget_exhausted`): pass.
 - `p7-budget-wallclock` (`agent_wall_clock_exceeded`): pass.
 - `p7-restart-survives` (fresh store/app on same disposable DB,
