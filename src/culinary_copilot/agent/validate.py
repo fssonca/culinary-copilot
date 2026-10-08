@@ -54,6 +54,19 @@ import re
 import unicodedata
 from typing import Any, Callable
 
+from culinary_copilot.agent.plan_quantities import (  # noqa: F401 -- re-exported for backwards compatibility
+    DESCRIPTOR_WORDS,
+    FUNCTION_WORDS,
+    GLUED_PREFIX_MIN,
+    PREP_WORDS,
+    PROSE_MEASURE_UNITS,
+    _normalize_prose_text,
+    _token_prefix_match,
+    plan_prose_quantity_errors,
+    prose_quantities,
+    prose_quantities_with_spans,
+    source_quantities,
+)
 from culinary_copilot.domain.clarification import HARD_CONSTRAINT_TARGETS
 
 RecipeResolver = Callable[[str, str], dict[str, Any] | None]
@@ -1033,115 +1046,6 @@ def validate_plan(
         if not isinstance(adaptation, dict) or adaptation.get("label") != "adaptation":
             errors.append("plan adaptation not labelled as adaptation")
     return errors
-
-
-#: Units whose amounts in plan prose must match the source (mass and
-#: volume). Count-like units (clove, head, can, ...) and times or
-#: temperatures are not checked.
-PROSE_MEASURE_UNITS = frozenset(
-    {"mg", "g", "kg", "oz", "lb", "ml", "cl", "l", "tsp", "tbsp", "fl_oz", "cup"}
-    | {"pint", "quart", "gallon"}
-)
-
-_VULGAR_FRACTIONS = {
-    "½": "1/2",
-    "⅓": "1/3",
-    "⅔": "2/3",
-    "¼": "1/4",
-    "¾": "3/4",
-    "⅕": "1/5",
-    "⅙": "1/6",
-    "⅛": "1/8",
-    "⅜": "3/8",
-    "⅝": "5/8",
-    "⅞": "7/8",
-}
-
-#: A number (mixed, fraction, decimal or whole) followed by up to two
-#: words that may name a unit ("5 1/2 pounds", "2-cup", "4 fluid ounces").
-_PROSE_QUANTITY_RE = re.compile(
-    r"(?<![\w/.])(\d+\s+\d+/\d+|\d+/\d+|\d+\.\d+|\d+)(?:\s*-\s*|\s*)"
-    r"([A-Za-z]+)(?:\s+([A-Za-z]+))?"
-)
-
-
-def prose_quantities(text: Any) -> list[tuple[str, str, str]]:
-    """Mass/volume amounts in free text as (claim, exact value, unit)."""
-    from culinary_copilot.recipes.llm_validate import canonical_unit
-    from culinary_copilot.recipes.normalize import quantity
-
-    normalized = str(text or "").replace("\u2044", "/")
-    for char, fraction in _VULGAR_FRACTIONS.items():
-        normalized = re.sub(rf"(\d)\s*{char}", rf"\1 {fraction}", normalized)
-        normalized = normalized.replace(char, fraction)
-    found: list[tuple[str, str, str]] = []
-    for match in _PROSE_QUANTITY_RE.finditer(normalized):
-        number, first, second = match.group(1), match.group(2), match.group(3)
-        unit = canonical_unit(f"{first} {second}") if second else None
-        claim = match.group(0)
-        if unit is None:
-            unit = canonical_unit(first)
-            claim = normalized[match.start() : match.end(2)]
-        if unit not in PROSE_MEASURE_UNITS:
-            continue
-        value = quantity(" ".join(number.split()))
-        if value is not None:
-            found.append((claim.strip(), value, unit))
-    return found
-
-
-def source_quantities(doc: dict[str, Any]) -> set[tuple[str, str]]:
-    """Every (exact value, unit) the source states, in fields or text."""
-    from culinary_copilot.recipes.llm_validate import canonical_unit
-    from culinary_copilot.recipes.normalize import quantity
-
-    stated: set[tuple[str, str]] = set()
-    texts: list[Any] = list(_ingredient_line_texts(doc)) + doc_directions(doc)
-    for item in _ingredient_entries(doc):
-        unit = canonical_unit(str(item.get("unit") or ""))
-        value = quantity(str(item.get("amount") or ""))
-        if unit and value:
-            stated.add((value, unit))
-        texts.append(item.get("original"))
-    for text in texts:
-        stated.update((value, unit) for _, value, unit in prose_quantities(text))
-    return stated
-
-
-def plan_prose_quantity_errors(plan: dict[str, Any], doc: dict[str, Any]) -> list[str]:
-    """Mass/volume amounts in plan text that the source never states.
-
-    2026-10-07 live plan: the mise en place said "1 1/2 lb cut-up
-    chicken parts" for a source amount of 5 1/2 pounds (stored "11/2"),
-    and only the structured quantities were checked. The amount must
-    equal (exactly, any notation) a quantity the source states with the
-    same unit, in its ingredients or directions. Adaptations are not
-    checked: they are labelled as not from the source.
-
-    Limited amount/unit check: amounts are pooled, without the
-    ingredient each belongs to, so "1 1/2 lb chicken" passes for a
-    5 1/2 lb source when another ingredient is 1 1/2 lb. Ingredient-aware
-    validation is hardening step H2.
-    """
-    stated = source_quantities(doc)
-    texts = [
-        ("mise_en_place", item) for item in plan.get("mise_en_place") or [] if isinstance(item, str)
-    ]
-    texts += [("steps", item) for item in plan.get("steps") or [] if isinstance(item, str)]
-    if isinstance(plan.get("plating"), str):
-        texts.append(("plating", plan["plating"]))
-    errors: list[str] = []
-    for field, text in texts:
-        for claim, value, unit in prose_quantities(text):
-            if (value, unit) in stated:
-                continue
-            error = (
-                f"plan {field} says {claim!r}, but the source states no {unit} amount "
-                "of that size; copy each amount exactly as get_recipe shows it"
-            )
-            if error not in errors:
-                errors.append(error)
-    return errors[:5]
 
 
 #: Option keys that would smuggle a technique reference into a dish

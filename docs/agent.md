@@ -276,15 +276,55 @@ removed), and the next run substitutes (labelled `adaptation`,
   asked (`scale_recipe` is not offered when the selected source lists
   no servings). The plan source must equal the selected dish **and** come from
   a `get_recipe` full document in this session's events (a search row
-  is not enough). Mass and volume amounts written in the mise en
-  place, steps or plating must equal (exactly, in any notation) an
-  amount the source states with the same unit; the `get_recipe`
-  summary shows amounts in the source's own notation ("5 1/2", not the
-  stored exact fraction "11/2") when both parse to the same value. This
-  is a limited amount/unit check: each amount is compared with every
-  amount the recipe states, without the ingredient it belongs to, so a
-  swapped amount passes when another ingredient has it (ingredient-aware
-  validation is planned as hardening step H2). Plan/cook steps
+  is not enough). Mass and volume amounts in mise en place, steps or
+  plating must equal (exactly, in any notation) an amount the source
+  states for the same ingredient with the same unit (hardening step
+  H2, 2026-10-07/08; `agent/plan_quantities.py`, re-exported from
+  `agent/validate.py`). How an amount is tied to its ingredient:
+  - by the ingredient names written in the same line: whole words,
+    plural-aware, never substrings ("oil" never matches "boiled");
+    the nearest mention wins, and an amount passes if any ingredient
+    that mention can refer to states it, so a recipe listing butter
+    twice (1/2 cup and 3 tablespoons) accepts either amount;
+  - function words ("of", "the"), size words ("inch") and containers
+    ("can", "package") never identify an ingredient, so "1 (28 ounce)
+    can of pumpkin" is not credited to the canned tomatoes;
+  - descriptors ("chopped", "ground", "fresh", "warm") identify an
+    ingredient only when the line names no ingredient otherwise, so
+    "1/2 cup chopped walnuts" is checked against the walnuts, not
+    against "chopped pecans";
+  - words run together in the source ("Buttersoftened") match by a
+    prefix of at least 5 letters, only when the rest is a preparation
+    word or another listed ingredient ("buttermilk" is not butter);
+  - a line identical to a source ingredient line is that ingredient;
+    a second amount in parentheses ("3/4 cup (178 ml)") belongs to the
+    same ingredient; "chicken, 5 1/2 lb, potatoes, 1 1/2 lb" pairs
+    names and amounts in order.
+
+  An amount in a step may also match a direction the step cites via
+  `step_sources`, but only when that direction states it for the same
+  ingredient. An amount tied to no ingredient ("2 cups of the liquid")
+  passes in a step only when a cited direction states it; mise en
+  place and plating cite nothing, so there it is rejected. Rejections
+  name the plan line, the amount and what the source states (or the
+  candidate ingredients when the name is ambiguous).
+
+  Limits: an ambiguous name ("1 cup oil" with vegetable oil 1 cup and
+  olive oil 2 tablespoons) passes when any candidate states the
+  amount; a longer name match wins ("chicken bouillon" over "chicken
+  stock"); ranges ("2-3 lb") are read by one value; lines the model
+  truncates mid-parenthesis may be rejected. Evidence, read-only
+  (`scripts/datasets/h2_quantity_selfcheck.py`, 2026-10-08): plans
+  made of each recipe's own lines pass for 16,033 of 16,033 recipes,
+  "AMOUNT UNIT of NAME" lines for 16,033 of 16,033, and shortened
+  model-style lines for 14,558 of 14,570 (false rejections); amounts
+  swapped between two same-unit ingredients are rejected in 11,227 of
+  11,229 recipes, also with a descriptor added, and the 2 misses are
+  amounts the source states for both. These counts show which lines
+  pass or fail on this corpus; they do not prove every wrong amount is
+  caught. The `get_recipe` summary shows amounts in the source's own
+  notation
+  ("5 1/2", not "11/2") when both parse to the same value. Plan/cook steps
   may cite `technique_refs` (`doc_id` + `chunk_id`, max 10): each must
   resolve in the technique corpus **and** have been returned by a
   `search_techniques` call in the same session

@@ -1,7 +1,8 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
-Status: **H0 and H1 done 2026-10-07** (H0 baseline commit `eae6f00`,
-authorized by the owner; H1 wording uncommitted). H2 onward not started. This plan follows the
+Status: **H0, H1 and H2 done** (H0 baseline `eae6f00` and H1 `a8aa69d`
+on 2026-10-07; H2 on 2026-10-08 after three review rounds). H3 onward
+not started. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
 `docs/phase7-owner-decisions.md`). Baseline: branch
@@ -172,6 +173,20 @@ that it shows source text passes, not that wrong amounts are caught.
 
 Evidence: new and updated tests; self-check counts; the decision on
 prose versus rendered amounts.
+
+Done 2026-10-08 (three review rounds; the reviews found false
+rejections of the source's own lines, swaps passing through "of",
+containers, descriptors and cited directions, all fixed and tested).
+Matcher in `agent/plan_quantities.py`; rules and limits in
+`docs/agent.md`. Unattributable amounts: decision (a), pass only
+through a cited direction. Rendering mise en place from structured
+quantities: evaluated, not adopted (it loses preparation wording and
+needs handling for unknown amounts); revisit if live plans still need
+quantity retries. Read-only self-check
+`scripts/datasets/h2_quantity_selfcheck.py`: own lines 16,033/16,033,
+"of" form 16,033/16,033, model-style 14,558/14,570, swaps rejected
+11,227/11,229 (with and without descriptors; the 2 misses are amounts
+the source states for both).
 
 ## H3. Clipped directions and authoritative labels
 

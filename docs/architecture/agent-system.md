@@ -247,13 +247,18 @@ The validators run on every finish, with no model call:
 - **Plans:**
   - the source must be the selected dish, fetched in full;
   - mass and volume amounts in the plan text must equal an amount the
-    source states with the same unit (amounts reach the model in the
-    source's own notation, and the UI shows exact fractions such as
-    11/2 as mixed numbers). This is a limited amount/unit check: it
-    compares each amount with every amount the recipe states, without
-    the ingredient it belongs to, so a swapped amount passes when
-    another ingredient has it. Ingredient-aware validation is planned
-    (step H2 of `docs/milestone-3-hardening-plan.md`);
+    source states for the same ingredient with the same unit
+    (hardening step H2, `agent/plan_quantities.py`; amounts reach the
+    model in the source's own notation, and the UI shows 11/2 as a
+    mixed number). Amounts are tied to ingredients by the names in the
+    same line: whole words, ignoring function words, size words,
+    containers and, when a real name is present, descriptors. An
+    amount passes if any ingredient its name can refer to states it. A
+    step may also rely on a cited direction that states the amount for
+    the same ingredient; amounts tied to no ingredient pass only
+    through a cited direction. Rules, limits and corpus counts are in
+    `docs/agent.md` (self-check script
+    `scripts/datasets/h2_quantity_selfcheck.py`);
   - steps are labelled `source` only when each step cites a stored
     direction that supports it and every direction is covered;
     otherwise `model_adaptation`. When the source has directions,

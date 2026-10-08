@@ -871,6 +871,9 @@ def test_attribution_detail_does_not_call_cited_directions_uncited() -> None:
 def test_plan_prose_amounts_must_match_the_source() -> None:
     # 2026-10-07 live session: the mise en place said "1 1/2 lb" for a
     # source amount of 5 1/2 pounds (stored as the exact fraction 11/2).
+    # 2026-10-07 H2: ingredient-aware — direction-only amounts need a
+    # citation, and plating must name its ingredient (generic "sauce"
+    # no longer passes pooled).
     from culinary_copilot.agent.validate import plan_prose_quantity_errors, prose_quantities
 
     doc = {
@@ -887,11 +890,688 @@ def test_plan_prose_amounts_must_match_the_source() -> None:
     right = {
         "mise_en_place": ["Have 5 ½ pounds chicken parts and 1.5 tsp annatto powder."],
         "steps": ["Heat 2 tablespoons oil, 4 minutes per side, to 165°F."],
-        "plating": "Serve 3 tablespoons of sauce over each plate with 10 bay leaves.",
+        "step_sources": [0],
+        "plating": "Serve 3 tablespoons vegetable oil over each plate with 10 bay leaves.",
     }
     assert plan_prose_quantity_errors(right, doc) == []
     # Counts, times and temperatures are not amounts this check reads.
     assert prose_quantities("1 head garlic, 2 cloves, 20 minutes, 165 F") == []
+
+
+def _h2_doc() -> dict[str, Any]:
+    return {
+        "ingredients": [
+            {
+                "canonical": "cut-up chicken parts",
+                "name": "cut-up chicken parts",
+                "amount": "11/2",
+                "amount_text": "5 1/2",
+                "unit": "lb",
+                "original": "5 1/2 lb cut-up chicken parts",
+            },
+            {
+                "canonical": "potatoes",
+                "name": "potatoes",
+                "amount": "3/2",
+                "amount_text": "1 1/2",
+                "unit": "lb",
+                "original": "1 1/2 lb potatoes",
+            },
+            {
+                "canonical": "vegetable oil",
+                "name": "vegetable oil",
+                "amount": "3",
+                "amount_text": "3",
+                "unit": "tbsp",
+                "original": "3 tbsp vegetable oil",
+            },
+        ],
+        "instructions": ["Heat 2 tablespoons vegetable oil; cook."],
+    }
+
+
+def test_h2_swapped_ingredients_rejected() -> None:
+    # H2: pooled check let "1 1/2 lb chicken" pass for a 5 1/2 lb source
+    # when potatoes were 1 1/2 lb. Ingredient-aware rejects both swaps.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = _h2_doc()
+    swapped_chicken = {
+        "mise_en_place": ["Have 1 1/2 lb cut-up chicken parts."],
+        "steps": ["Serve."],
+        "plating": "Serve.",
+    }
+    errors = plan_prose_quantity_errors(swapped_chicken, doc)
+    assert len(errors) == 1 and "cut-up chicken parts" in errors[0]
+    assert "5 1/2" in errors[0] or "11/2" in errors[0]
+    swapped_potatoes = {
+        "mise_en_place": ["Have 5 1/2 lb potatoes."],
+        "steps": ["Serve."],
+        "plating": "Serve.",
+    }
+    errors = plan_prose_quantity_errors(swapped_potatoes, doc)
+    assert len(errors) == 1 and "potatoes" in errors[0]
+    assert (
+        plan_prose_quantity_errors(
+            {
+                "mise_en_place": ["Have 5 1/2 lb cut-up chicken parts."],
+                "steps": ["S."],
+                "plating": "S.",
+            },
+            doc,
+        )
+        == []
+    )
+    assert (
+        plan_prose_quantity_errors(
+            {"mise_en_place": ["Have 1 1/2 lb potatoes."], "steps": ["S."], "plating": "S."},
+            doc,
+        )
+        == []
+    )
+
+
+def test_h2_notation_variants_pass() -> None:
+    # H2: 5 1/2, 5 ½, 11/2 and 5.5 are the same exact rational (11/2).
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = _h2_doc()
+    for amount in ("5 1/2", "5 ½", "11/2", "5.5"):
+        plan = {
+            "mise_en_place": [f"Have {amount} lb cut-up chicken parts."],
+            "steps": ["Serve."],
+            "plating": "Serve.",
+        }
+        assert plan_prose_quantity_errors(plan, doc) == [], amount
+
+
+def test_h2_unit_variants_pass_through_canonical_unit() -> None:
+    # H2: tablespoons/tbsp/Tbsp. all canonicalize to tbsp.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = _h2_doc()
+    for unit in ("tablespoons", "tbsp", "Tbsp.", "Tablespoons"):
+        plan = {
+            "mise_en_place": [f"Have 3 {unit} vegetable oil."],
+            "steps": ["Serve."],
+            "plating": "Serve.",
+        }
+        assert plan_prose_quantity_errors(plan, doc) == [], unit
+    wrong = {
+        "mise_en_place": ["Have 3 cups vegetable oil."],
+        "steps": ["Serve."],
+        "plating": "Serve.",
+    }
+    assert plan_prose_quantity_errors(wrong, doc) != []
+
+
+def test_h2_per_serving_amount_rejected() -> None:
+    # H2: a per-serving amount the source never states is rejected, even
+    # when the total is stated.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = _h2_doc()
+    plan = {
+        "mise_en_place": ["Have 1/2 lb cut-up chicken parts per serving."],
+        "steps": ["Serve."],
+        "plating": "Serve.",
+    }
+    errors = plan_prose_quantity_errors(plan, doc)
+    assert len(errors) == 1 and "cut-up chicken parts" in errors[0]
+
+
+def test_h2_direction_only_amount_needs_citation() -> None:
+    # H2: "Heat 2 tablespoons oil" is stated only in a direction: it
+    # passes when the step cites that direction, and is rejected when it
+    # does not. The rejection names the direction to cite for the retry.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = _h2_doc()
+    cited = {
+        "mise_en_place": ["Prep."],
+        "steps": ["Heat 2 tablespoons oil."],
+        "step_sources": [0],
+        "plating": "Serve.",
+    }
+    assert plan_prose_quantity_errors(cited, doc) == []
+    uncited = {
+        "mise_en_place": ["Prep."],
+        "steps": ["Heat 2 tablespoons oil."],
+        "step_sources": [None],
+        "plating": "Serve.",
+    }
+    errors = plan_prose_quantity_errors(uncited, doc)
+    assert len(errors) == 1 and "[0]" in errors[0] and "step_sources" in errors[0]
+    nocitation = {
+        "mise_en_place": ["Prep."],
+        "steps": ["Heat 2 tablespoons oil."],
+        "plating": "Serve.",
+    }
+    assert plan_prose_quantity_errors(nocitation, doc) != []
+
+
+def test_h2_plural_singular_adjective_forms_match() -> None:
+    # H2: "chicken parts" and "cut-up chicken" both match the source
+    # entry "cut-up chicken parts"; "potato" matches "potatoes".
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = _h2_doc()
+    assert (
+        plan_prose_quantity_errors(
+            {"mise_en_place": ["Have 5 1/2 lb chicken parts."], "steps": ["S."], "plating": "S."},
+            doc,
+        )
+        == []
+    )
+    assert (
+        plan_prose_quantity_errors(
+            {"mise_en_place": ["Have 5 1/2 lb cut-up chicken."], "steps": ["S."], "plating": "S."},
+            doc,
+        )
+        == []
+    )
+    assert (
+        plan_prose_quantity_errors(
+            {"mise_en_place": ["Have 1 1/2 lb potato."], "steps": ["S."], "plating": "S."},
+            doc,
+        )
+        == []
+    )
+
+
+def test_h2_name_match_needs_more_than_a_contained_word() -> None:
+    # H2 review focus: a match is token-contiguous, never substring, so
+    # "oil" never matches "boiled", and "chicken broth" prefers the broth
+    # entry over bare "chicken" by longer match.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = {
+        "ingredients": [
+            {"canonical": "vegetable oil", "amount": "3", "unit": "tbsp", "original": "3 tbsp oil"},
+            {"canonical": "potatoes", "amount": "1", "unit": "lb", "original": "1 lb potatoes"},
+        ],
+        "instructions": ["Boil the potatoes."],
+    }
+    boiled = {
+        "mise_en_place": ["Add 3 tbsp boiled potatoes."],
+        "steps": ["Serve."],
+        "plating": "Serve.",
+    }
+    errors = plan_prose_quantity_errors(boiled, doc)
+    assert errors and "potatoes" in errors[0] and "vegetable oil" not in errors[0]
+    broth_doc = {
+        "ingredients": [
+            {"canonical": "chicken", "amount": "1", "unit": "lb", "original": "1 lb chicken"},
+            {
+                "canonical": "chicken broth",
+                "amount": "2",
+                "unit": "cup",
+                "original": "2 cups chicken broth",
+            },
+        ],
+        "instructions": ["Simmer."],
+    }
+    assert (
+        plan_prose_quantity_errors(
+            {"mise_en_place": ["Add 2 cups chicken broth."], "steps": ["S."], "plating": "S."},
+            broth_doc,
+        )
+        == []
+    )
+    errors = plan_prose_quantity_errors(
+        {"mise_en_place": ["Add 1 cup chicken broth."], "steps": ["S."], "plating": "S."},
+        broth_doc,
+    )
+    assert errors and "chicken broth" in errors[0]
+
+
+def test_h2_unattributable_amounts_need_a_cited_direction() -> None:
+    # H2 decision (a): "2 cups of the liquid" passes only when the same
+    # amount and unit appear in a direction the step cites; mise_en_place
+    # and plating have nothing to cite and are rejected. Never silent.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = {
+        "ingredients": [
+            {"canonical": "flour", "amount": "2", "unit": "cup", "original": "2 cups flour"},
+        ],
+        "instructions": ["Add 2 cups of the liquid; stir."],
+    }
+    cited = {
+        "mise_en_place": ["Prep."],
+        "steps": ["Add 2 cups of the liquid."],
+        "step_sources": [0],
+        "plating": "Serve.",
+    }
+    assert plan_prose_quantity_errors(cited, doc) == []
+    uncited_step = {
+        "mise_en_place": ["Prep."],
+        "steps": ["Add 2 cups of the liquid."],
+        "step_sources": [None],
+        "plating": "Serve.",
+    }
+    errors = plan_prose_quantity_errors(uncited_step, doc)
+    assert len(errors) == 1 and "no source ingredient matches" in errors[0]
+    mise = {
+        "mise_en_place": ["Have 2 cups of the liquid."],
+        "steps": ["Serve."],
+        "plating": "Serve.",
+    }
+    errors = plan_prose_quantity_errors(mise, doc)
+    assert len(errors) == 1 and "no source ingredient matches" in errors[0]
+
+
+def test_h2_model_adaptation_steps_are_still_checked() -> None:
+    # H2 rule: amounts in model_adaptation steps keep today's rule —
+    # checked like any other step (adaptations descriptions stay
+    # unchecked as labelled non-source text).
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = _h2_doc()
+    plan = {
+        "mise_en_place": ["Prep."],
+        "steps": ["Add 9 lb cut-up chicken parts as a twist."],
+        "step_sources": [None],
+        "plating": "Serve.",
+        "adaptations": [{"label": "adaptation", "description": "Not from the source."}],
+    }
+    errors = plan_prose_quantity_errors(plan, doc)
+    assert len(errors) == 1 and "cut-up chicken parts" in errors[0]
+    ok = {
+        "mise_en_place": ["Prep."],
+        "steps": ["Add 5 1/2 lb cut-up chicken parts as a twist."],
+        "step_sources": [None],
+        "plating": "Serve.",
+        "adaptations": [{"label": "adaptation", "description": "Not from the source."}],
+    }
+    assert plan_prose_quantity_errors(ok, doc) == []
+
+
+def test_h2r_function_words_never_match() -> None:
+    # 2026-10-07 H2 revision: "of" alone never attributes "1 cup of
+    # rice" to "cream of mushroom soup"; "2 cups of rice" passes.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = {
+        "ingredients": [
+            {
+                "canonical": "cream of mushroom soup",
+                "amount": "1",
+                "unit": "cup",
+                "original": "1 cup cream of mushroom soup",
+            },
+            {"canonical": "rice", "amount": "2", "unit": "cup", "original": "2 cups rice"},
+        ],
+        "instructions": ["Cook."],
+    }
+    wrong = {"mise_en_place": ["Have 1 cup of rice."], "steps": ["S."], "plating": "S."}
+    errors = plan_prose_quantity_errors(wrong, doc)
+    assert len(errors) == 1 and "rice" in errors[0] and "2 cup" in errors[0]
+    right = {"mise_en_place": ["Have 2 cups of rice."], "steps": ["S."], "plating": "S."}
+    assert plan_prose_quantity_errors(right, doc) == []
+
+
+def test_h2r_glued_prefix_needs_min_length() -> None:
+    # 2026-10-07 H2 revision: bounded prefix (min 5) for glued text;
+    # "oil" never matches "boiled", "salt" never matches "salted" via
+    # prefix, but "butter" matches "Buttersoftened".
+    from culinary_copilot.agent.validate import _token_prefix_match, plan_prose_quantity_errors
+
+    assert not _token_prefix_match("boiled", "oil")
+    assert not _token_prefix_match("oil", "boiled")
+    assert not _token_prefix_match("salted", "salt")
+    assert _token_prefix_match("buttersoftened", "butter")
+    assert _token_prefix_match("pepperschopped", "peppers")
+    doc = {
+        "ingredients": [
+            {"canonical": "butter", "amount": "75", "unit": "g", "original": "75 g butter"},
+        ],
+        "instructions": ["Cook."],
+    }
+    assert (
+        plan_prose_quantity_errors(
+            {"mise_en_place": ["Have 75 g Buttersoftened."], "steps": ["S."], "plating": "S."},
+            doc,
+        )
+        == []
+    )
+
+
+def test_h2r_cited_direction_needs_same_ingredient() -> None:
+    # 2026-10-07 H2 revision: pooled cited-direction bypass closed. A
+    # step claiming chicken citing a potatoes direction still fails;
+    # unattributed amounts keep the direction-only rule.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = {
+        "ingredients": [
+            {
+                "canonical": "cut-up chicken parts",
+                "amount": "11/2",
+                "unit": "lb",
+                "original": "5 1/2 lb chicken",
+            },
+            {
+                "canonical": "potatoes",
+                "amount": "3/2",
+                "unit": "lb",
+                "original": "1 1/2 lb potatoes",
+            },
+        ],
+        "instructions": ["Add 1 1/2 pounds potatoes."],
+    }
+    swapped = {
+        "mise_en_place": ["Prep."],
+        "steps": ["Add 1 1/2 lb chicken."],
+        "step_sources": [0],
+        "plating": "S.",
+    }
+    errors = plan_prose_quantity_errors(swapped, doc)
+    assert len(errors) == 1 and "different ingredient" in errors[0]
+    unattributed = {
+        "mise_en_place": ["Prep."],
+        "steps": ["Add 1 1/2 pounds of the mixture."],
+        "step_sources": [0],
+        "plating": "S.",
+    }
+    assert plan_prose_quantity_errors(unattributed, doc) == []
+
+
+def test_h2r_name_then_amount_lists_pair_in_order() -> None:
+    # 2026-10-07 H2 revision: "chicken, 5 1/2 lb, potatoes, 1 1/2 lb"
+    # (correct) passes via order pairing; swapped amounts still fail.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = _h2_doc()
+    right = {
+        "mise_en_place": ["chicken, 5 1/2 lb, potatoes, 1 1/2 lb"],
+        "steps": ["S."],
+        "plating": "S.",
+    }
+    assert plan_prose_quantity_errors(right, doc) == []
+    wrong = {
+        "mise_en_place": ["chicken, 1 1/2 lb, potatoes, 5 1/2 lb"],
+        "steps": ["S."],
+        "plating": "S.",
+    }
+    errors = plan_prose_quantity_errors(wrong, doc)
+    assert len(errors) == 2
+
+
+def test_h2r_ambiguous_names_candidates() -> None:
+    # 2026-10-07 H2 revision: "1 cup oil" with two oils says ambiguous
+    # and names candidates, not "no source ingredient matches".
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = {
+        "ingredients": [
+            {
+                "canonical": "vegetable oil",
+                "amount": "1",
+                "unit": "cup",
+                "original": "1 cup vegetable oil",
+            },
+            {
+                "canonical": "olive oil",
+                "amount": "2",
+                "unit": "tbsp",
+                "original": "2 tbsp olive oil",
+            },
+        ],
+        "instructions": ["Cook."],
+    }
+    # 2026-10-07 H2R candidate-set: amount disambiguates tied names —
+    # "1 cup oil" passes via vegetable oil (only it states 1 cup).
+    assert (
+        plan_prose_quantity_errors(
+            {"mise_en_place": ["Have 1 cup oil."], "steps": ["S."], "plating": "S."}, doc
+        )
+        == []
+    )
+    # Ambiguous remains when none states it ("3 tbsp oil" matches neither
+    # 1 cup nor 2 tbsp): names candidates, not "no source ingredient".
+    errors = plan_prose_quantity_errors(
+        {"mise_en_place": ["Have 3 tbsp oil."], "steps": ["S."], "plating": "S."}, doc
+    )
+    assert len(errors) == 1 and "ambiguous between" in errors[0]
+    assert "vegetable oil" in errors[0] and "olive oil" in errors[0]
+    assert "no source ingredient matches" not in errors[0]
+
+
+def test_h2r2_same_ingredient_twice_passes_via_candidates() -> None:
+    # 2026-10-07 H2R: model-style "1/2 cup butter" (stripped ", chilled")
+    # passes when chilled states 1/2 cup, even though melted shares
+    # "butter" (2 cups vs 2 1/4 cups flour likewise).
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = {
+        "ingredients": [
+            {
+                "canonical": "butter, chilled",
+                "amount": "1/2",
+                "unit": "cup",
+                "original": "1/2 cup butter, chilled",
+            },
+            {
+                "canonical": "butter, melted",
+                "amount": "3",
+                "unit": "tbsp",
+                "original": "3 tablespoons butter, melted",
+            },
+        ],
+        "instructions": ["Cook."],
+    }
+    assert (
+        plan_prose_quantity_errors(
+            {"mise_en_place": ["have 1/2 cup butter"], "steps": ["S."], "plating": "S."},
+            doc,
+        )
+        == []
+    )
+    assert (
+        plan_prose_quantity_errors(
+            {"mise_en_place": ["have 3 tablespoons butter"], "steps": ["S."], "plating": "S."},
+            doc,
+        )
+        == []
+    )
+
+
+def test_h2r2_containers_never_match() -> None:
+    # 2026-10-07 H2R: "can" never attributes pumpkin amounts to tomatoes.
+    # Sources copy Vegetarian Pumpkin Spinach Chili originals.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = {
+        "ingredients": [
+            {
+                "canonical": "can diced tomatoes",
+                "amount": "1",
+                "unit": None,
+                "original": "1 (28 ounce) can diced tomatoes",
+            },
+            {
+                "canonical": "100% pure pumpkin",
+                "amount": "1",
+                "unit": "can",
+                "original": "1 (14 ounce) can 100% pure pumpkin",
+            },
+        ],
+        "instructions": ["Cook."],
+    }
+    wrong = {
+        "mise_en_place": ["Have 1 (28 ounce) can of pure pumpkin."],
+        "steps": ["S."],
+        "plating": "S.",
+    }
+    errors = plan_prose_quantity_errors(wrong, doc)
+    assert errors and "pure pumpkin" in errors[0]
+    right = {
+        "mise_en_place": ["Have 1 (14 ounce) can of pure pumpkin."],
+        "steps": ["S."],
+        "plating": "S.",
+    }
+    assert plan_prose_quantity_errors(right, doc) == []
+    libby = {
+        "ingredients": [
+            {
+                "canonical": "100% pure pumpkin",
+                "amount": "15",
+                "unit": "oz",
+                "original": "1 (15 ounce) can pure pumpkin",
+            }
+        ],
+        "instructions": ["Cook."],
+    }
+    assert (
+        plan_prose_quantity_errors(
+            {
+                "mise_en_place": ["Have 1 (15 ounce) can pure pumpkin."],
+                "steps": ["S."],
+                "plating": "S.",
+            },
+            libby,
+        )
+        == []
+    )
+
+
+def test_h2r2_parenthetical_seconds_share_ingredient() -> None:
+    # 2026-10-07 H2R: copies Turkey Injector Marinade originals.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = {
+        "ingredients": [
+            {
+                "canonical": "chicken stock",
+                "amount": "3/4",
+                "unit": "cup",
+                "original": "¾ cup 178ml) chicken stock",
+            },
+            {
+                "canonical": "chicken bouillon powder",
+                "amount": "1",
+                "unit": "tbsp",
+                "original": "1 tablespoon (36g) chicken bouillon powder",
+            },
+        ],
+        "instructions": ["Cook."],
+    }
+    assert (
+        plan_prose_quantity_errors(
+            {
+                "mise_en_place": ["Have 3/4 cup (178 ml) of chicken stock."],
+                "steps": ["S."],
+                "plating": "S.",
+            },
+            doc,
+        )
+        == []
+    )
+    errors = plan_prose_quantity_errors(
+        {
+            "mise_en_place": ["Have 3/4 cup (178 ml) of chicken bouillon powder."],
+            "steps": ["S."],
+            "plating": "S.",
+        },
+        doc,
+    )
+    assert errors and "chicken bouillon powder" in errors[0]
+
+
+def test_h2r2_glued_prefix_needs_prep_or_ingredient() -> None:
+    # 2026-10-07 H2R: "1 cup buttermilk" (butter 1 cup, flour 2 cups)
+    # must be rejected, not credited to butter via "butter"+"milk".
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = {
+        "ingredients": [
+            {"canonical": "butter", "amount": "1", "unit": "cup", "original": "1 cup butter"},
+            {"canonical": "flour", "amount": "2", "unit": "cup", "original": "2 cups flour"},
+        ],
+        "instructions": ["Cook."],
+    }
+    errors = plan_prose_quantity_errors(
+        {"mise_en_place": ["Have 1 cup buttermilk."], "steps": ["S."], "plating": "S."}, doc
+    )
+    assert errors and "no source ingredient matches" in errors[0]
+
+
+def _mise_errors(lines: list[str], *ingredients: tuple[str, str | None, str, str]) -> list[str]:
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = {
+        "ingredients": [
+            {"amount": amount, "unit": unit, "canonical": canonical, "original": original}
+            for amount, unit, canonical, original in ingredients
+        ],
+        "instructions": ["Cook."],
+    }
+    return plan_prose_quantity_errors(
+        {"mise_en_place": lines, "steps": ["S."], "plating": "S."}, doc
+    )
+
+
+def test_h2r3_descriptor_words_never_carry_a_swap() -> None:
+    # 2026-10-07 H2 third revision: a descriptor the model adds ("chopped",
+    # "ground", "fresh") must not attribute the amount to the ingredient
+    # whose name holds that descriptor.
+    pecans = ("1/2", "cup", "chopped pecans", "1/2 cup chopped pecans")
+    walnuts = ("1", "cup", "walnuts", "1 cup walnuts")
+    assert _mise_errors(["1/2 cup chopped walnuts"], pecans, walnuts)
+    assert not _mise_errors(["1 cup chopped walnuts"], pecans, walnuts)
+    cumin = ("1", "tbsp", "ground cumin", "1 tablespoon ground cumin")
+    cinnamon = ("1", "tsp", "cinnamon", "1 teaspoon cinnamon")
+    assert _mise_errors(["1 tbsp ground cinnamon"], cumin, cinnamon)
+    assert not _mise_errors(["1 tsp ground cinnamon"], cumin, cinnamon)
+    basil = ("2", "cup", "fresh basil leaves", "2 cups fresh basil leaves")
+    parsley = ("1/4", "cup", "parsley", "1/4 cup parsley")
+    assert _mise_errors(["2 cups fresh parsley"], basil, parsley)
+    assert not _mise_errors(["1/4 cup fresh parsley"], basil, parsley)
+
+
+def test_h2r3_descriptor_ignored_when_names_carry_trailing_notes() -> None:
+    # 2026-10-08 review: the head noun is the last distinctive token of
+    # the whole name ("chunks" in "carrots, cut into large chunks"), so
+    # no line mention held a head and "cut" sent "3 pound cut carrots" to
+    # the corned beef ("..., cut in half").
+    carrots = (
+        "1",
+        "pound",
+        "carrots, cut into large chunks",
+        "1 pound carrots, cut into large chunks",
+    )
+    beef = (
+        "3",
+        "pound",
+        "corned beef brisket with spice packet, cut in half",
+        "1 (3 pound) corned beef brisket with spice packet, cut in half",
+    )
+    assert _mise_errors(["3 pound cut carrots"], carrots, beef)
+    assert not _mise_errors(["1 pound cut carrots"], carrots, beef)
+    milk = ("3/4", "cup", "warm 2% milk, or as needed", "3/4 cup warm 2% milk, or as needed")
+    butter = (
+        "1/2",
+        "cup",
+        "softened butter, cut into chunks",
+        "1/2 cup softened butter, cut into chunks",
+    )
+    assert _mise_errors(["1/2 cup softened warm 2% milk"], milk, butter)
+    assert not _mise_errors(["3/4 cup warm 2% milk"], milk, butter)
+
+
+def test_h2r3_size_words_never_match() -> None:
+    # 2026-10-08 review: "inch" in "(1/4 inch)" attributed the celery
+    # root amount to "apples, cut into 1/2-inch cubes".
+    apples = (
+        "2",
+        None,
+        "large crisp, sweet apples, cut into 1/2-inch cubes",
+        "2 large crisp, sweet apples, cut into 1/2-inch cubes",
+    )
+    celery = ("1", "cup", "cubed celery root", "1 cup cubed (1/4 inch) celery root, drained well")
+    assert not _mise_errors(["1 cup cubed (1/4 inch) celery root"], apples, celery)
+    assert _mise_errors(["2 cups cubed (1/4 inch) celery root"], apples, celery)
 
 
 def test_app_written_attribution_note() -> None:
