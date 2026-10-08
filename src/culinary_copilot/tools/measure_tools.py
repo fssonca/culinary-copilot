@@ -103,7 +103,8 @@ def _parse_amount(raw: Any) -> Fraction | None:
         return Fraction(value).limit_denominator(10000)
 
 
-def _servings_of(doc: dict[str, Any]) -> float | None:
+def servings_of(doc: dict[str, Any]) -> float | None:
+    """Source servings count when known and positive, else None."""
     raw = doc.get("servings")
     if isinstance(raw, bool):
         return None
@@ -189,7 +190,7 @@ async def scale_recipe_impl(args: ScaleRecipeArgs, context: ToolContext) -> dict
             REASON_TOOL_INVALID_ARGUMENTS,
             "scale_recipe: recipe not found for (dataset_id, source_id)",
         )
-    source_servings = _servings_of(doc)
+    source_servings = servings_of(doc)
     if source_servings is None:
         return _refusal(
             REASON_SCALE_MISSING_SERVINGS,

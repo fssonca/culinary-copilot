@@ -179,6 +179,10 @@ def _unavailable(message: str) -> dict[str, Any]:
     }
 
 
+#: Full-text result count below which the tool suggests broadening.
+FEW_RESULTS = 3
+
+
 async def search_recipes_impl(args: SearchRecipesArgs, context: ToolContext) -> dict[str, Any]:
     """Run full-text or vector recipe search; never silently falls back."""
     from culinary_copilot.embeddings.query import embed_query
@@ -197,7 +201,22 @@ async def search_recipes_impl(args: SearchRecipesArgs, context: ToolContext) -> 
             )
         except Exception as exc:
             return _unavailable(f"search_recipes unavailable: {type(exc).__name__}")
-        return {"ok": True, "mode_ran": "fulltext", "cost_class": "free", "results": list(rows)}
+        result: dict[str, Any] = {
+            "ok": True,
+            "mode_ran": "fulltext",
+            "cost_class": "free",
+            "results": list(rows),
+        }
+        if len(rows) < FEW_RESULTS:
+            # 2026-10-07 live session: "hearty lentil dinner" matched one
+            # recipe (every word must match) and the model asked the user
+            # about a soup it had never found instead of searching again.
+            result["message"] = (
+                f"only {len(rows)} result(s): full-text requires every word; "
+                "retry with the dish or main ingredient only, or mode vector, "
+                "before concluding the corpus lacks it"
+            )
+        return result
     # Vector mode: embeddings required, fail closed without fallback.
     # Missing/disabled embeddings is permanent configuration, never a retry.
     settings = getattr(context, "settings", None)

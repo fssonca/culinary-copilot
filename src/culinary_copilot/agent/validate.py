@@ -51,6 +51,7 @@ feeds back to the model once as a tool-style error, then stops.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Callable
 
 from culinary_copilot.domain.clarification import HARD_CONSTRAINT_TARGETS
@@ -367,6 +368,10 @@ ALLERGEN_VIOLATED_TERMS: dict[str, frozenset[str]] = {
     "peanut": frozenset({"peanut"}),
     "tree nuts": frozenset(
         {
+            # A generic "nut(s)" line is a tree-nut violation (2026-10-07:
+            # "1 cup chopped nuts" was not flagged at all). The matcher
+            # never hits nutmeg, coconut, butternut or doughnut.
+            "nut",
             "almond",
             "walnut",
             "cashew",
@@ -443,6 +448,8 @@ ALLERGEN_UNVERIFIED_TERMS: dict[str, frozenset[str]] = {
     "egg": frozenset({"custard", "pasta", "batter"}),
     "soy": frozenset({"lecithin"}),
     "sesame": frozenset({"furikake"}),
+    # Generic "nuts" may or may not include peanuts.
+    "peanut": frozenset({"nut"}),
 }
 
 #: Multi-word unverified phrases per allergen.
@@ -596,25 +603,47 @@ def unresolved_unnamed_restriction(
     return True
 
 
+#: Allergen names that name a mapped label without being one of its
+#: ingredient terms (2026-10-07 live session: the answer "Tree nuts"
+#: mapped to no allergen, so the options were never checked). A bare
+#: "nut" names both tree nuts and peanut (conservative).
+ALLERGEN_NAME_ALIASES: dict[str, tuple[str, ...]] = {
+    "peanut": ("nut",),
+    "tree nuts": ("tree nut",),
+    "wheat/gluten": ("celiac", "coeliac"),
+}
+
+
 def allergens_named_in_answers(answer_texts: list[str]) -> list[str]:
     """Mapped allergen labels named in the answer texts (map order)."""
     from culinary_copilot.recommendations.policy import ingredient_term_hit
 
     labels: list[str] = []
+    texts = [str(text or "") for text in (answer_texts or [])]
     for label in ALLERGEN_VIOLATED_TERMS:
-        words = ALLERGEN_VIOLATED_TERMS[label]
-        phrases = ALLERGEN_VIOLATED_PHRASES.get(label, ())
-        if any(
-            ingredient_term_hit(str(text or ""), term)
-            for text in (answer_texts or [])
-            for term in sorted(words)
-        ) or any(
-            _phrase_hit(str(text or ""), phrase)
-            for text in (answer_texts or [])
-            for phrase in phrases
+        words = sorted(ALLERGEN_VIOLATED_TERMS[label])
+        aliases = ALLERGEN_NAME_ALIASES.get(label, ())
+        phrases = ALLERGEN_VIOLATED_PHRASES.get(label, ()) + tuple(
+            alias for alias in aliases if " " in alias
+        )
+        # "tree nuts" names tree nuts only: the bare "nut" alias reads
+        # the text without those mentions.
+        bare_texts = [_TREE_NUT_RE.sub(" ", text) for text in texts]
+        if (
+            any(ingredient_term_hit(text, term) for text in texts for term in words)
+            or any(_phrase_hit(text, phrase) for text in texts for phrase in phrases)
+            or any(
+                ingredient_term_hit(text, alias)
+                for text in bare_texts
+                for alias in aliases
+                if " " not in alias
+            )
         ):
             labels.append(label)
     return labels
+
+
+_TREE_NUT_RE = re.compile(r"\btree[\s-]+nuts?\b", re.IGNORECASE)
 
 
 #: Avoidance cues in an answer's own words ("no peanuts", "without
@@ -999,10 +1028,115 @@ def validate_plan(
     for claim in plan.get("quantities") or []:
         if not isinstance(claim, dict) or not quantity_in_source(claim, doc):
             errors.append(f"plan quantity {claim!r} not in source (invented)")
+    errors.extend(plan_prose_quantity_errors(plan, doc))
     for adaptation in plan.get("adaptations") or []:
         if not isinstance(adaptation, dict) or adaptation.get("label") != "adaptation":
             errors.append("plan adaptation not labelled as adaptation")
     return errors
+
+
+#: Units whose amounts in plan prose must match the source (mass and
+#: volume). Count-like units (clove, head, can, ...) and times or
+#: temperatures are not checked.
+PROSE_MEASURE_UNITS = frozenset(
+    {"mg", "g", "kg", "oz", "lb", "ml", "cl", "l", "tsp", "tbsp", "fl_oz", "cup"}
+    | {"pint", "quart", "gallon"}
+)
+
+_VULGAR_FRACTIONS = {
+    "½": "1/2",
+    "⅓": "1/3",
+    "⅔": "2/3",
+    "¼": "1/4",
+    "¾": "3/4",
+    "⅕": "1/5",
+    "⅙": "1/6",
+    "⅛": "1/8",
+    "⅜": "3/8",
+    "⅝": "5/8",
+    "⅞": "7/8",
+}
+
+#: A number (mixed, fraction, decimal or whole) followed by up to two
+#: words that may name a unit ("5 1/2 pounds", "2-cup", "4 fluid ounces").
+_PROSE_QUANTITY_RE = re.compile(
+    r"(?<![\w/.])(\d+\s+\d+/\d+|\d+/\d+|\d+\.\d+|\d+)(?:\s*-\s*|\s*)"
+    r"([A-Za-z]+)(?:\s+([A-Za-z]+))?"
+)
+
+
+def prose_quantities(text: Any) -> list[tuple[str, str, str]]:
+    """Mass/volume amounts in free text as (claim, exact value, unit)."""
+    from culinary_copilot.recipes.llm_validate import canonical_unit
+    from culinary_copilot.recipes.normalize import quantity
+
+    normalized = str(text or "").replace("\u2044", "/")
+    for char, fraction in _VULGAR_FRACTIONS.items():
+        normalized = re.sub(rf"(\d)\s*{char}", rf"\1 {fraction}", normalized)
+        normalized = normalized.replace(char, fraction)
+    found: list[tuple[str, str, str]] = []
+    for match in _PROSE_QUANTITY_RE.finditer(normalized):
+        number, first, second = match.group(1), match.group(2), match.group(3)
+        unit = canonical_unit(f"{first} {second}") if second else None
+        claim = match.group(0)
+        if unit is None:
+            unit = canonical_unit(first)
+            claim = normalized[match.start() : match.end(2)]
+        if unit not in PROSE_MEASURE_UNITS:
+            continue
+        value = quantity(" ".join(number.split()))
+        if value is not None:
+            found.append((claim.strip(), value, unit))
+    return found
+
+
+def source_quantities(doc: dict[str, Any]) -> set[tuple[str, str]]:
+    """Every (exact value, unit) the source states, in fields or text."""
+    from culinary_copilot.recipes.llm_validate import canonical_unit
+    from culinary_copilot.recipes.normalize import quantity
+
+    stated: set[tuple[str, str]] = set()
+    texts: list[Any] = list(_ingredient_line_texts(doc)) + doc_directions(doc)
+    for item in _ingredient_entries(doc):
+        unit = canonical_unit(str(item.get("unit") or ""))
+        value = quantity(str(item.get("amount") or ""))
+        if unit and value:
+            stated.add((value, unit))
+        texts.append(item.get("original"))
+    for text in texts:
+        stated.update((value, unit) for _, value, unit in prose_quantities(text))
+    return stated
+
+
+def plan_prose_quantity_errors(plan: dict[str, Any], doc: dict[str, Any]) -> list[str]:
+    """Mass/volume amounts in plan text that the source never states.
+
+    2026-10-07 live plan: the mise en place said "1 1/2 lb cut-up
+    chicken parts" for a source amount of 5 1/2 pounds (stored "11/2"),
+    and only the structured quantities were checked. The amount must
+    equal (exactly, any notation) a quantity the source states with the
+    same unit, in its ingredients or directions. Adaptations are not
+    checked: they are labelled as not from the source.
+    """
+    stated = source_quantities(doc)
+    texts = [
+        ("mise_en_place", item) for item in plan.get("mise_en_place") or [] if isinstance(item, str)
+    ]
+    texts += [("steps", item) for item in plan.get("steps") or [] if isinstance(item, str)]
+    if isinstance(plan.get("plating"), str):
+        texts.append(("plating", plan["plating"]))
+    errors: list[str] = []
+    for field, text in texts:
+        for claim, value, unit in prose_quantities(text):
+            if (value, unit) in stated:
+                continue
+            error = (
+                f"plan {field} says {claim!r}, but the source states no {unit} amount "
+                "of that size; copy each amount exactly as get_recipe shows it"
+            )
+            if error not in errors:
+                errors.append(error)
+    return errors[:5]
 
 
 #: Option keys that would smuggle a technique reference into a dish
@@ -1154,9 +1288,27 @@ _NO_DIRECTIONS_PATTERNS = (
 )
 
 
+#: A bare citation tag inside step text ("[Source direction 2]",
+#: "(direction 3)"): it restates step_sources and carries no cooking
+#: content. A tag with any other words is not matched and still counts.
+_CITATION_TAG_RE = re.compile(
+    r"[\[(]\s*(?:source\s+)?(?:direction|step)s?\s*#?\s*\d+"
+    r"(?:\s*(?:,|&|and|-|–)\s*\d+)*\s*[\])]",
+    re.IGNORECASE,
+)
+
+
 def _plan_content_words(text: str) -> set[str]:
-    """Lowercased content words of plan/direction text for attribution."""
-    words = re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)?", str(text or "").lower())
+    """Lowercased content words of plan/direction text for attribution.
+
+    Accents are folded first (2026-10-07 live fix: "jalapeños" split
+    into "jalape" and "os" and never matched "jalapeno"), and bare
+    citation tags are dropped.
+    """
+    cleaned = _CITATION_TAG_RE.sub(" ", str(text or ""))
+    folded = unicodedata.normalize("NFKD", cleaned)
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    words = re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)?", folded.lower())
     return {w for w in words if w not in _PLAN_ATTRIBUTION_STOPWORDS}
 
 
@@ -1245,9 +1397,13 @@ def _attribution_detail(
             + ", ".join(repr(word) for word in words)
             for index, (citation, words) in missing_words.items()
         )
-    if uncovered:
+    # Directions cited only by ungrounded steps are named above; listing
+    # them as "not cited" contradicted step_sources (2026-10-07 live fix).
+    cited_by_ungrounded = {citation for citation, _ in missing_words.values()}
+    uncited = [index for index in uncovered if index not in cited_by_ungrounded]
+    if uncited:
         detail += ("; " if detail else "") + (
-            f"source directions {uncovered} are not cited by any step"
+            f"source directions {uncited} are not cited by any step"
         )
     return detail
 
@@ -1279,6 +1435,23 @@ def plan_attribution_note(plan: dict[str, Any], doc: dict[str, Any] | None) -> s
     detail = _attribution_detail(unsupported, uncovered, missing_words)
     note = f"Labelled by the app: these steps are not from the source verbatim ({detail})."
     return note if len(note) <= 500 else note[:497].rstrip() + "…"
+
+
+def raw_protein_hits(doc: dict[str, Any] | None) -> list[str]:
+    """Raw meat/poultry/fish/egg terms in a source's ingredient lines.
+
+    A line containing "cooked" is exempt. A non-empty result means a
+    plan for this source needs a food-safety technique_ref.
+    """
+    hits: list[str] = []
+    for line in _ingredient_line_texts(doc or {}):
+        lowered = line.lower()
+        if _word_hit(lowered, "cooked"):
+            continue
+        hit = next((term for term in sorted(RAW_PROTEIN_TERMS) if _word_hit(lowered, term)), None)
+        if hit is not None and hit not in hits:
+            hits.append(hit)
+    return hits
 
 
 def check_plan_evidence(
@@ -1344,14 +1517,7 @@ def check_plan_evidence(
                 f"plan claims the source has no directions, but the stored "
                 f"record has {len(directions)} directions; remove the claim"
             )
-    raw_hits: list[str] = []
-    for line in _ingredient_line_texts(source):
-        lowered = line.lower()
-        if _word_hit(lowered, "cooked"):
-            continue
-        hit = next((term for term in sorted(RAW_PROTEIN_TERMS) if _word_hit(lowered, term)), None)
-        if hit is not None and hit not in raw_hits:
-            raw_hits.append(hit)
+    raw_hits = raw_protein_hits(source)
     if raw_hits:
         safety = [
             row

@@ -1631,10 +1631,13 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
             from culinary_copilot.tools.registry import strict_violations as _check_strict
 
             assert len(seen_tools) == 11
-            # Every turn is sent the tool schemas except the one wrap-up
-            # turn after c7, which only repeats c2's fetch (2026-10-06).
-            tool_less = [i for i, t in enumerate(seen_tools) if not t]
-            assert tool_less == [7]
+            # Every turn is sent the tool schemas; the one wrap-up turn
+            # after c7 (which only repeats c2's fetch) withholds only
+            # get_recipe (2026-10-07: the repeated tools, not all tools).
+            assert all(seen_tools)
+            names_per_turn = [{t["name"] for t in turn} for turn in seen_tools]
+            withheld = [i for i, names in enumerate(names_per_turn) if "get_recipe" not in names]
+            assert withheld == [7]
             for payload_tools in seen_tools:
                 for _tool in payload_tools:
                     assert _tool["strict"] is True

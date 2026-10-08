@@ -35,6 +35,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from culinary_copilot.agent.validate import (
     ALLERGEN_VIOLATED_TERMS,
+    SAFETY_DOC_IDS,
     RecipeResolver,
     TechniqueResolver,
     allergen_claim_allowed,
@@ -50,6 +51,7 @@ from culinary_copilot.agent.validate import (
     hard_constraint_keys,
     mentions_restriction,
     plan_attribution_note,
+    raw_protein_hits,
     unresolved_unnamed_restriction,
     validate_one_option,
     validate_plan,
@@ -83,6 +85,7 @@ from culinary_copilot.services.session_store import (
 )
 from culinary_copilot.services.store import new_id
 from culinary_copilot.tools import all_tool_definitions, all_tool_impls, run_tool
+from culinary_copilot.tools.measure_tools import servings_of
 from culinary_copilot.tools.registry import ToolContext, ToolDefinition, args_digest
 
 # Epicure skip allowlist (server-set, never caller-set): the only recorded
@@ -145,6 +148,16 @@ _MAX_IDENTICAL_CALLS = 3
 # input (session_events keeps the full record). User messages travel
 # outside history and are never trimmed here.
 _HISTORY_KEEP = 13
+# Phases where a dish is selected or being cooked: a technique or web
+# answer given here keeps the phase instead of moving to recommend.
+_DISH_PHASES = frozenset({"select", "plan", "cook", "plate"})
+# Beyond the newest 13 items, older whole groups stay while the kept
+# history fits this many characters, up to _HISTORY_MAX_ITEMS
+# (2026-10-07 live session: after a 3-recipe step pushed the small
+# first step out, the model re-ran a pairing query it could no longer
+# see). Large outputs still cap at the 13-item window as before.
+_HISTORY_CHAR_BUDGET = 16000
+_HISTORY_MAX_ITEMS = 31
 # User messages: event type plus the per-run window (oldest first) and
 # the per-message character bound. Stored in session_events, never
 # trimmed by the history cap.
@@ -670,6 +683,9 @@ def session_evidence_digest(
                             f"{str(hit.get('title') or '')!r}"
                         )
         elif tool == "get_recipe":
+            if facts.get("duplicate"):
+                # A repeat-fetch pointer adds nothing the first fetch's line lacks.
+                continue
             title = str(facts.get("title") or "")
             identities = payload.get("returned_identities")
             if isinstance(identities, list):
@@ -783,6 +799,34 @@ def _extract_vocab_terms(text: str, vocabulary: set[str]) -> list[str]:
             for pos in range(match.start(), match.end()):
                 chars[pos] = " "
     return sorted(found)
+
+
+#: Negation or exclusion cue before an ingredient name in a note.
+_NEGATION_CUE_RE = re.compile(
+    r"\b(?:no|not|without|never|omit\w*|exclud\w*|avoid\w*|skip\w*|"
+    r"instead of|rather than|free of)\b"
+)
+
+
+def _negated_mention(text: str, term: str) -> bool:
+    """True when every mention of ``term`` is negated or excluded.
+
+    2026-10-07 live session: a vegetarian note saying the options
+    "contain no meat" and that recipes "with chicken broth" were
+    omitted was rejected twice as naming unsupported pairings. A cue
+    within the eight words before the mention, in the same clause, marks
+    it as an exclusion rather than a pairing claim.
+    """
+    lowered = str(text or "").lower()
+    mentions = list(re.finditer(r"\b" + re.escape(term) + r"\b", lowered))
+    if not mentions:
+        return False
+    for mention in mentions:
+        clause_start = max(lowered.rfind(mark, 0, mention.start()) for mark in ".!?;:") + 1
+        before = " ".join(lowered[clause_start : mention.start()].split()[-8:])
+        if not _NEGATION_CUE_RE.search(before):
+            return False
+    return True
 
 
 #: Numeric time/temperature claims: a number (or range) with a time or
@@ -1080,7 +1124,12 @@ _TASK_FRAMING = (
     "Adaptations are labelled as adaptations, never presented as source "
     "facts. Call tools via function calls, or return a directive "
     "(ask_user/finish). Ask only when the answer would materially change "
-    "the recommendation. Epicure pairings are queried by default before "
+    "the recommendation (party size or servings never does: offer options "
+    "first; scaling waits for the plan). A party size the user gives is "
+    "not a filter: most recipes list no servings, so finish with options "
+    "and say servings are unknown rather than searching for a yield. "
+    "Never ask permission to search or fetch more: do it. "
+    "Epicure pairings are queried by default before "
     "recommend; skipping needs an allowlisted reason: "
     "simple_technique_question (a technique-only question with no pairing "
     "cue) or epicure_not_configured (Epicure is unavailable, and the "
@@ -1100,10 +1149,11 @@ _TASK_FRAMING = (
     "words (allergens, diets like 'peanut-free' or 'vegan') are not "
     "searchable text: search by dish or ingredients, then check "
     "constraints on fetched recipes with get_recipe — a 0-result "
-    "search never proves an option unsafe, and a recipe fetched "
-    "earlier in this session (see the evidence digest) is already "
-    "retrieved: never fetch the same (dataset_id, source_id) twice "
-    "in one session (a repeat returns only a pointer). When the user asks for a dish the corpus "
+    "search never proves an option unsafe. A get_recipe output still "
+    "in this conversation is not fetched again (a repeat returns only a "
+    "pointer); a recipe the evidence digest lists from an earlier run "
+    "is not in this conversation, so fetch it again whenever you need "
+    "its ingredients or directions. When the user asks for a dish the corpus "
     "does not have and a web search returned sources, answer with "
     "web_answer citing them: one bounded description per page of what "
     "the page is, never how to cook it — no method, no step sequences, "
@@ -1111,19 +1161,36 @@ _TASK_FRAMING = (
     "when the request itself is ambiguous. The typical path is one "
     "search, get_recipe on the top 2-3, one Epicure query on the main "
     "base ingredient, then finish; do not repeat a query listed in the "
-    "evidence digest. Put independent calls in the same step (they run "
+    "evidence digest. A question about the selected dish is answered "
+    "from its cooking_plan_steps (the plan already given) first, with "
+    "cited chunks for anything beyond them. "
+    "Put independent calls in the same step (they run "
     "in parallel): search with the Epicure query, then every get_recipe "
-    "together. Food-safety searches and scaling belong to the plan, "
-    "after a dish is selected, not to options. Quantities are copied exactly from get_recipe, or "
-    "omitted. constraints_honored lists each hard-constraint key exactly "
-    "(e.g. dietary_constraints), and every option must satisfy it. When "
-    "Epicure was consulted, finish with at least 1 epicure_line naming a "
+    "together. Food-safety searches belong to the plan, after a dish "
+    "is selected, not to options. Call scale_recipe only when the user "
+    "asked for a number of servings, and never retry a refused scale. "
+    "Quantities are copied exactly from get_recipe (amounts are exact: "
+    "'5 1/2' is five and a half), in the quantities list and in any "
+    "text, or omitted. constraints_honored lists exactly the keys in "
+    "hard_constraints, and is empty when hard_constraints is empty (an "
+    "allergy answer is not a key: the app checks it), and every option "
+    "must satisfy them. When "
+    "Epicure was consulted, finish options with at least 1 epicure_line naming a "
     "returned pairing (at least 3, or all returned pairings if fewer, "
     "when the request has a pairing cue); skipped or degraded Epicure is "
-    "exempt. If no retrieved recipe is the requested dish or a close "
+    "exempt. A plan needs no epicure_lines; a technique answer to a "
+    "question with no pairing cue uses epicure_skip_reason "
+    "simple_technique_question; neither needs a new pairing query. If no "
+    "retrieved recipe is the requested dish or a close "
     "match, ask one question offering a concrete alternative that was "
     "found (e.g. a similar frozen dessert) instead of finishing with a "
-    "loosely related recipe. When the session has a dietary constraint, "
+    "loosely related recipe; that alternative must be a recipe already "
+    "found, and a search that returned fewer than 3 recipes is broadened "
+    "first (fewer words, or mode vector). When fetched recipes fail a "
+    "dietary constraint, fetch more candidates from results you already "
+    "have before searching again. Every option is a recommendation: "
+    "never include a recipe you know fails a constraint. When the "
+    "session has a dietary constraint, "
     "every option's source ingredients must satisfy it: clear violations "
     "drop the option, while broth-, stock-, bouillon- or "
     "Worcestershire-based items without vegetable or vegan stay "
@@ -1139,11 +1206,58 @@ _TASK_FRAMING = (
     "directions; an ingredient-only source (directions_total 0) needs "
     "your own adaptation saying the steps are not from the source. "
     "Never claim the source has no directions when the fetched record "
-    "lists directions_total above 0. A plan with raw meat, "
+    "lists directions_total above 0. A direction ending in '…' (listed "
+    "in directions_clipped) continues in the source: never call its "
+    "missing tail absent. Step text is the instruction only; "
+    "step_sources carries the citation, so add no '[Source direction N]' "
+    "tags, and put an added safety check in its own adaptation rather "
+    "than inside a cited step. A plan with raw meat, "
     "poultry, fish or eggs needs a "
     "technique_ref to a food-safety chunk: search_techniques for safe "
     "internal temperatures."
 )
+
+
+def resolve_selected_doc(
+    selected_dish: dict[str, Any] | None, resolve: RecipeResolver
+) -> dict[str, Any] | None:
+    """The selected dish's source document (None when unresolved)."""
+    dish = selected_dish or {}
+    dataset_id = str(dish.get("dataset_id") or "")
+    source_id = str(dish.get("source_id") or "")
+    if not dataset_id or not source_id:
+        return None
+    try:
+        doc = resolve(dataset_id, source_id)
+    except Exception:
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def food_safety_requirement(
+    raw_hits: list[str], returned_chunks: set[tuple[str, int]]
+) -> str | None:
+    """Plan-phase line stating the food-safety citation up front.
+
+    2026-10-07 live fix: the requirement is deterministic, but the model
+    learned it only from a rejected plan, one wasted turn per raw-protein
+    plan. Once a food-safety chunk was returned this run, the line names
+    it instead.
+    """
+    if not raw_hits:
+        return None
+    safety = sorted(f"{doc}#{chunk}" for doc, chunk in returned_chunks if doc in SAFETY_DOC_IDS)
+    if safety:
+        return (
+            f"Plan requirement met: food-safety chunks {', '.join(safety[:3])} were "
+            "returned in this run; cite the one that supports the plan in technique_refs."
+        )
+    return (
+        f"Plan requirement: the selected recipe has raw {', '.join(raw_hits[:3])}, so "
+        "the plan must cite a food-safety chunk in technique_refs. Call "
+        f"search_techniques (e.g. '{raw_hits[0]} safe internal temperature') in the "
+        "same step as get_recipe, before finishing."
+    )
 
 
 def build_turn_input(
@@ -1156,6 +1270,8 @@ def build_turn_input(
     evidence_digest: str | None = None,
     final_turn: bool = False,
     wrap_up: bool = False,
+    plan_requirement: str | None = None,
+    withheld_tools: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Model input: user messages + history + task framing snapshot.
 
@@ -1169,8 +1285,11 @@ def build_turn_input(
     the ``epicure_not_configured`` skip reason. ``evidence_digest`` is
     the session evidence rebuilt from events (it survives the history
     cap). On a ``final_turn`` no tools are sent and the framing says
-    so. A ``wrap_up`` turn is also tool-less, after a step that only
-    repeated earlier calls; a rejected wrap-up gets the normal retry.
+    so. A ``wrap_up`` turn, after a step that only repeated earlier
+    calls, withholds the repeated tools (``withheld_tools``); a rejected
+    wrap-up is retried with the same tools withheld.
+    ``plan_requirement`` (see ``food_safety_requirement``) states a
+    plan's food-safety citation before the plan is drafted.
     """
     snapshot = {
         "phase": state.current_phase,
@@ -1189,6 +1308,12 @@ def build_turn_input(
         "has_suggestions": bool(state.suggestions),
         "selected_dish": state.selected_dish,
     }
+    plan_steps = (state.cooking_plan or {}).get("steps")
+    if isinstance(plan_steps, list) and plan_steps:
+        # Follow-up questions about the dish (2026-10-07 live session: a
+        # doneness answer suggested a toothpick test for a crumb-topped
+        # cake whose plan says "bake until the top is golden").
+        snapshot["cooking_plan_steps"] = [str(step)[:300] for step in plan_steps[:12]]
     text = _TASK_FRAMING + "\nSession: " + json.dumps(snapshot, default=str)
     if final_turn:
         text += (
@@ -1197,19 +1322,64 @@ def build_turn_input(
             "was found."
         )
     elif wrap_up:
+        names = ", ".join(withheld_tools or []) or "those tools"
         text += (
             "\nWrap-up: your last step only repeated calls already made in "
-            "this run, so no tools are offered this turn. Finish now from "
-            "the evidence gathered (what the phase requires: options, the "
-            "plan, or the answer), or ask one question if nothing suitable "
-            "was found."
+            f"this run, so {names} is not offered this turn. Use what you "
+            "already have: fetch candidates you have not fetched yet, or "
+            "finish now (what the phase requires: options, the plan, or the "
+            "answer), or ask one question if nothing suitable was found."
         )
+    answer_texts = [
+        str(a.get("answer") if isinstance(a, dict) else a) for a in (state.confirmed_answers or [])
+    ]
+    named_allergens = allergens_named_in_answers(answer_texts)
+    if named_allergens and not state.selected_dish:
+        # 2026-10-07 live session: after "tree nuts" the model fetched
+        # six suitable cakes over two runs but never finished, as if it
+        # had to vouch for the allergy itself.
+        text += (
+            f"\nAllergy check: the app checks each option's listed ingredients "
+            f"for {', '.join(named_allergens)} and drops or flags options "
+            "itself. Offer 2-3 fetched recipes whose listed ingredients show "
+            "none, say in the note which listed ingredients were checked, and "
+            "leave the allergy out of constraints_honored."
+        )
+    dish = state.selected_dish or {}
+    if state.current_phase == "select" and dish and not state.cooking_plan:
+        text += (
+            f"\nSelected dish: {dish.get('title')!r} ({dish.get('dataset_id')}/"
+            f"{dish.get('source_id')}). The user chose it from your options, so "
+            "the earlier request is answered: finish with its cooking plan "
+            "(fetch it with get_recipe if its output is not in this conversation)."
+        )
+    if plan_requirement:
+        text += "\n" + plan_requirement
     if last_outcome:
         text += "\nLast step outcome: " + last_outcome
     items = [{"role": "user", "content": message} for message in (user_messages or [])]
     items.extend(history)
     items.append({"role": "user", "content": text})
     return items
+
+
+def readable_amount(item: dict[str, Any]) -> Any:
+    """Model-facing ingredient amount: the source's own text when exact.
+
+    Stored amounts are exact fractions ("11/2" for "5 1/2 pounds"). A
+    2026-10-07 live plan read "11/2 lb" as "1 1/2 lb", so the model
+    sees the mixed form whenever it parses to the same value. The
+    quantity check compares values, so either form validates.
+    """
+    from culinary_copilot.recipes.normalize import quantity
+
+    amount = item.get("amount", item.get("amount_text"))
+    text = str(item.get("amount_text") or "").strip()
+    if text and amount is not None:
+        parsed = quantity(text)
+        if parsed is not None and parsed == quantity(str(amount)):
+            return text
+    return amount
 
 
 def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
@@ -1253,7 +1423,14 @@ def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
         from culinary_copilot.agent.validate import doc_directions
 
         stored_directions = doc_directions(doc)
-        shown_directions = [str(d)[:200] for d in stored_directions[:6]]
+        shown_directions: list[str] = []
+        clipped_directions: list[int] = []
+        for index, direction in enumerate(stored_directions[:_DIRECTIONS_SHOWN]):
+            direction_text = str(direction)
+            if len(direction_text) > _DIRECTION_CHARS:
+                direction_text = direction_text[:_DIRECTION_CHARS].rstrip() + "…"
+                clipped_directions.append(index)
+            shown_directions.append(direction_text)
         summary["recipe"] = {
             "dataset_id": doc.get("dataset_id"),
             "source_id": doc.get("source_id"),
@@ -1262,7 +1439,7 @@ def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
             "ingredients": [
                 {
                     "canonical": i.get("canonical") or i.get("name"),
-                    "amount": i.get("amount", i.get("amount_text")),
+                    "amount": readable_amount(i),
                     "unit": i.get("unit"),
                 }
                 for i in (doc.get("ingredients") or [])[:30]
@@ -1272,11 +1449,13 @@ def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
             # never saw directions before, so it invented method and
             # mislabelled absence. directions_total 0 ("absent from the
             # source") is distinct from truncated True ("omitted from
-            # this response").
+            # this response"). directions_clipped lists shown directions
+            # cut at _DIRECTION_CHARS (they end with "…").
             "directions": shown_directions,
             "directions_total": len(stored_directions),
             "directions_shown": len(shown_directions),
             "directions_truncated": len(stored_directions) > len(shown_directions),
+            "directions_clipped": clipped_directions,
         }
     elif name in _PAIRING_TOOLS and result.get("ok"):
         key = "candidates" if name == "find_substitutions" else "pairings"
@@ -1598,7 +1777,38 @@ _TOOL_OUTPUT_LIMIT = 4000
 #: Technique hits carry attribution per hit, so five full excerpts
 #: need more room than the default bound.
 _TECHNIQUE_EXCERPT_LIMIT = 600
-_TOOL_OUTPUT_LIMITS = {"search_techniques": 6500}
+#: Source directions shown per get_recipe (2026-10-07 live fix): a
+#: 200-char cut per direction hid a simmer time, two ingredients and
+#: the source's own thermometer check from a live plan, and 64% of
+#: corpus recipes have a direction longer than 200 chars. A direction
+#: cut at this bound ends with "…" and is listed in directions_clipped
+#: (184 of 16,033 records). Measured summaries peak at 3,926 chars; the
+#: get_recipe bound covers the 12 x 600 worst case plus ingredients.
+_DIRECTION_CHARS = 600
+_DIRECTIONS_SHOWN = 12
+_TOOL_OUTPUT_LIMITS = {"search_techniques": 6500, "get_recipe": 9000}
+
+
+_SEARCH_TOOLS = frozenset({"search_recipes", "search_techniques"})
+#: Tools not offered while a selected dish awaits its plan.
+_PLAN_PHASE_WITHHELD = frozenset({"search_recipes"}) | _PAIRING_TOOLS
+
+
+def _mark_repeat_search(summary: dict[str, Any], repeated: bool) -> dict[str, Any]:
+    """Tell the model an identical search returned nothing new.
+
+    2026-10-07 live session: asked for "more cookie options", the model
+    re-ran the same search in three steps (searches have no paging) and
+    the run hit the stall stop.
+    """
+    if repeated and summary.get("tool") in _SEARCH_TOOLS and summary.get("ok"):
+        summary["message"] = (
+            "identical to an earlier search in this run, so these are the same "
+            "results; for more or different ones change the query (a specific "
+            "type, ingredient or mode), or fetch results you have not fetched "
+            "yet. A third identical search stops the run."
+        )
+    return summary
 
 
 def tool_output_limit(name: str) -> int:
@@ -1869,15 +2079,25 @@ async def _run_agent(
     fingerprints: dict[str, dict[str, Any]] = {}
     # Wrap-up (2026-10-06 live fix): a step whose calls all repeat
     # earlier calls with identical results gains nothing, so the next
-    # turn is tool-less and asks for the answer. Once per run; the
-    # identical-call stall stop stays the backstop.
+    # turn withholds the repeated tools and asks for progress or the
+    # answer. Once per run; the identical-call stall stop stays the
+    # backstop. Only the repeated tools are withheld (2026-10-07 live
+    # session: a tool-less wrap-up after a repeated search left one
+    # fetched recipe, so the model could only ask the user questions).
     wrap_up_next = False
     wrap_up_used = False
+    wrap_up_withheld: list[str] = []
     ok_count = 0
     validation_retries = 0
     run_epicure_ok = False
     pairing_lines: list[str] = []
     returned_technique_chunks: set[tuple[str, int]] = set()
+    # The selected dish's source, resolved once per run: its raw-protein
+    # terms drive the plan-phase food-safety line, and a source without
+    # servings is never offered scale_recipe (2026-10-07 live session:
+    # an unrequested scale was refused twice, two wasted turns).
+    selected_doc: dict[str, Any] | None = None
+    selected_doc_resolved = False
     last_outcome: str | None = None
     # Last turn's accounted input/output tokens (provider-reported
     # when present, else the byte-bound estimate used for that turn):
@@ -1929,6 +2149,9 @@ async def _run_agent(
         # next turn could cross either ceiling. The input estimate counts
         # everything the provider is sent (items, offered tool defs, the
         # directive schema); output is capped per turn (see below).
+        if state.selected_dish and not selected_doc_resolved:
+            selected_doc = resolve_selected_doc(state.selected_dish, resolve)
+            selected_doc_resolved = True
         offered = offered_tools(
             state=state,
             excluded=excluded,
@@ -1936,6 +2159,14 @@ async def _run_agent(
             epicure_enabled=bool(getattr(settings, "epicure_enabled", False)),
             settings=settings,
         )
+        if selected_doc is not None and servings_of(selected_doc) is None:
+            offered = [d for d in offered if d.name != "scale_recipe"]
+        if state.current_phase == "select" and not state.cooking_plan:
+            # 2026-10-07 live session: the run after "Choose this" has no
+            # new message, so the model re-read the original request,
+            # redid discovery and returned options (rejected). A selected
+            # dish only needs its plan: no recipe search or pairings.
+            offered = [d for d in offered if d.name not in _PLAN_PHASE_WITHHELD]
         # Duplicate-fetch rule (Phase 7 close-out): get_recipe returns
         # its short pointer only for pairs whose full outputs are still
         # in this run's capped history. A new run starts empty, and
@@ -1943,12 +2174,21 @@ async def _run_agent(
         context.visible_full_recipes = visible_full_recipe_pairs(history)
         wrap_up = wrap_up_next and not final_turn
         wrap_up_next = False
-        if final_turn or wrap_up:
+        # Only before a plan exists: after it, the line made a technique
+        # question re-run the safety search and the recipe fetch.
+        plan_requirement = (
+            food_safety_requirement(raw_protein_hits(selected_doc), returned_technique_chunks)
+            if selected_doc is not None and not state.cooking_plan
+            else None
+        )
+        if final_turn:
             # No tools are sent on the final turn: the request carries
             # an empty tool list, so the model can only return a
             # directive (finish/ask). Calls the model makes anyway are
             # rejected as unoffered.
             offered = []
+        elif wrap_up:
+            offered = [d for d in offered if d.name not in wrap_up_withheld]
         offered_by_name = {d.name: d for d in offered}
         tool_defs = function_defs_for(offered)
         turn_input = build_turn_input(
@@ -1961,6 +2201,8 @@ async def _run_agent(
             evidence_digest=session_evidence_digest(store, session_id),
             final_turn=final_turn,
             wrap_up=wrap_up,
+            plan_requirement=plan_requirement,
+            withheld_tools=wrap_up_withheld if wrap_up else None,
         )
         est_in = estimate_turn_input(turn_input, tool_defs, response_schema=directive_schema)
         if used_in + est_in >= in_ceiling or used_out >= out_ceiling:
@@ -2020,6 +2262,7 @@ async def _run_agent(
                 and not all(tool in excluded for tool in _PAIRING_TOOLS),
                 evidence_digest=session_evidence_digest(store, session_id),
                 final_turn=True,
+                plan_requirement=plan_requirement,
             )
             est_in = estimate_turn_input(turn_input, tool_defs, response_schema=directive_schema)
         # Local invariant, checked pre-send and unbilled: an unpaired
@@ -2268,18 +2511,28 @@ async def _run_agent(
             # The stop happens after the step commit below, so the step
             # and its executed calls are charged (2026-10-06 live fix:
             # stopping first left the stored budgets one step behind).
+            # A duplicate-fetch pointer is a repeat too (2026-10-07 live
+            # fix): its summary differs from the full output it points
+            # at, so full -> pointer -> pointer had two digests, delayed
+            # the wrap-up a step and could never trigger the stall stop.
             stalled_tool: str | None = None
             repeats = 0
+            repeated_names: set[str] = set()
+            repeated_call_ids: set[str] = set()
             for call, result in zip(runnable, ran_results):
                 fingerprint = f"{call['name']}:{args_digest(call['args'])}"
                 digest = json.dumps(
                     _summarize_result(call["name"], result), sort_keys=True, default=str
                 )
+                pointer = bool(result.get("duplicate_of_session_evidence"))
                 slot = fingerprints.setdefault(fingerprint, {"count": 0, "digests": set()})
-                if slot["count"] >= 1 and digest in slot["digests"]:
+                if slot["count"] >= 1 and (pointer or digest in slot["digests"]):
                     repeats += 1
+                    repeated_names.add(call["name"])
+                    repeated_call_ids.add(str(call.get("call_id") or ""))
                 slot["count"] += 1
-                slot["digests"].add(digest)
+                if not pointer or not slot["digests"]:
+                    slot["digests"].add(digest)
                 if (
                     stalled_tool is None
                     and slot["count"] >= _MAX_IDENTICAL_CALLS
@@ -2289,6 +2542,7 @@ async def _run_agent(
             if runnable and repeats == len(runnable) and not wrap_up_used:
                 wrap_up_next = True
                 wrap_up_used = True
+                wrap_up_withheld = sorted(repeated_names)
 
             executed = len(ran_results)
             state = _apply_step_commit(
@@ -2339,7 +2593,10 @@ async def _run_agent(
                     "call_id": (c.get("call_id") or ""),
                     "output": json.dumps(
                         truncate_tool_output(
-                            _summarize_result(c.get("name", ""), r),
+                            _mark_repeat_search(
+                                _summarize_result(c.get("name", ""), r),
+                                str(c.get("call_id") or "") in repeated_call_ids,
+                            ),
                             tool_output_limit(c.get("name", "")),
                         ),
                         default=str,
@@ -2501,6 +2758,12 @@ async def _run_agent(
             state, revision, validation_retries, last_outcome, history_note = finish_outcome
             history.append({"role": "user", "content": history_note})
             history = _cap_history(history)
+            # A rejected wrap-up answer is retried with the same tools
+            # withheld (2026-10-07 live session: the retry re-ran a
+            # search a third time and hit the stall stop with a valid
+            # option in hand; the errors were about the note).
+            if wrap_up:
+                wrap_up_next = True
             consecutive_errors += 1
             if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
                 return await _stop(
@@ -2631,16 +2894,24 @@ def _turn_groups(history: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
 def _cap_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep the newest whole-turn groups that fit the cap.
 
+    Groups fit while the kept items stay within ``_HISTORY_KEEP``, or,
+    beyond that, while the kept history stays within
+    ``_HISTORY_CHAR_BUDGET`` characters and ``_HISTORY_MAX_ITEMS`` items.
     Whole older groups are dropped; the newest group is always kept
     whole even when it alone exceeds the cap (pairing beats size).
     """
     if len(history) <= _HISTORY_KEEP:
         return history
     kept: list[dict[str, Any]] = []
+    kept_chars = 0
     for group in reversed(_turn_groups(history)):
-        if kept and len(kept) + len(group) > _HISTORY_KEEP:
-            break
+        group_chars = sum(len(json.dumps(item, default=str)) for item in group)
+        items = len(kept) + len(group)
+        if kept and items > _HISTORY_KEEP:
+            if items > _HISTORY_MAX_ITEMS or kept_chars + group_chars > _HISTORY_CHAR_BUDGET:
+                break
         kept = group + kept
+        kept_chars += group_chars
     return kept
 
 
@@ -2916,7 +3187,17 @@ async def _handle_finish(
             turn_usage,
             final_turn=final_turn,
         )
-    target = directive.move_to or ("plan" if wants_plan else "recommend")
+    if directive.move_to:
+        target = directive.move_to
+    elif wants_plan:
+        target = "plan"
+    elif (wants_answer or wants_web) and state.current_phase in _DISH_PHASES:
+        # A question answered while a dish is in progress keeps its
+        # phase (2026-10-07 live session: "plan -> recommend" rejected
+        # every technique answer asked after the plan).
+        target = state.current_phase
+    else:
+        target = "recommend"
     try:
         validate_transition(state.current_phase, target)
     except ValueError as exc:
@@ -3248,6 +3529,8 @@ async def _handle_finish(
                 if request_support and request_support.strip():
                     support_texts.append(request_support)
                 for term in _extract_vocab_terms(model_note_text, vocabulary):
+                    if _negated_mention(model_note_text, term):
+                        continue
                     checkable_claims += 1
                     if not (
                         any(_term_in_text(term, name) for name in pairing_names)
@@ -3309,6 +3592,24 @@ async def _handle_finish(
                         )
                         break
         errors.extend(grounding_errors)
+        if grounding_errors and dropped_options and selections:
+            # 2026-10-07 live session: an option dropped for a dietary
+            # violation was silent (one survivor is allowed), so the
+            # model saw only "note names unsupported pairing" for the
+            # dropped recipe's ingredients and searched again until the
+            # stall stop. Name the drop so the retry can fix the note.
+            for dropped in dropped_options:
+                index = int(dropped["index"])
+                label = (
+                    _option_label(submitted[index])
+                    if 0 <= index < len(submitted)
+                    else f"option {index}"
+                )
+                reasons = "; ".join(_strip_option_prefix(index, e) for e in dropped["errors"])
+                errors.append(
+                    f"option {index} ({label}) was dropped ({reasons}); finish with the "
+                    "remaining option and a note that does not describe the dropped one"
+                )
     elif wants_answer:
         answer = result.technique_answer
         assert answer is not None
@@ -3377,13 +3678,37 @@ async def _handle_finish(
         answer_pairing_names = {
             _normalize_line_name(n) for n in session_pairing_names(store, session_id, pairing_lines)
         }
+        # The user's own words and the selected dish's source support
+        # an ingredient name too, as for option notes (2026-10-07 live
+        # session: "how do I keep the lentils from turning mushy?" got
+        # its answer rejected for naming "lentil").
+        answer_support = list(chunk_texts)
+        request_support = effective_request_text(
+            getattr(deps, "request_text", None),
+            user_messages_from_events(store, session_id),
+        )
+        if request_support and request_support.strip():
+            answer_support.append(request_support)
+        selected_pair = state.selected_dish or {}
+        if selected_pair.get("dataset_id") and selected_pair.get("source_id"):
+            try:
+                selected_source = resolve(
+                    str(selected_pair["dataset_id"]), str(selected_pair["source_id"])
+                )
+            except Exception:
+                selected_source = None
+            if isinstance(selected_source, dict):
+                answer_support.append(doc_text(selected_source))
+                answer_support.append(str(selected_source.get("title") or ""))
         answer_vocabulary = _session_vocabulary(deps)
         if answer_vocabulary:
             for term in _extract_vocab_terms(answer_text, answer_vocabulary):
+                if _negated_mention(answer_text, term):
+                    continue
                 checkable_claims += 1
                 if not (
                     any(_term_in_text(term, name) for name in answer_pairing_names)
-                    or any(_term_in_text(term, text) for text in chunk_texts)
+                    or any(_term_in_text(term, text) for text in answer_support)
                 ):
                     grounding_errors.append(
                         f"technique answer names unsupported pairing {term!r} "

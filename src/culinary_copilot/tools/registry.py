@@ -478,6 +478,9 @@ def _result_facts(tool_name: str, result: dict[str, Any]) -> dict[str, Any] | No
     if tool_name == "get_recipe":
         recipe = result.get("recipe")
         title = recipe.get("title") if isinstance(recipe, dict) else None
+        if result.get("duplicate_of_session_evidence"):
+            # Repeat-fetch pointer: no recipe body, the title is top level.
+            return {"title": str(result.get("title") or "")[:120], "duplicate": True}
         return {"title": str(title or "")[:120]}
     if tool_name == "search_web":
         sources = result.get("sources")

@@ -54,6 +54,32 @@ model reasoning.
 - Tools that returned `tool_not_configured` in this session (current run
   or the `tool_call` event log) are not offered again — permanent
   failures are never retried.
+- While a selected dish awaits its plan (phase `select`, no plan yet),
+  `search_recipes` and the Epicure pairing tools are not offered and
+  the turn names the selected dish (2026-10-07: the run after "Choose
+  this" carries no new message, and the model redid discovery).
+- `scale_recipe` is not offered when the selected source lists no
+  servings.
+- A wrap-up turn withholds the tools whose calls were just repeated.
+
+## Turn input additions (2026-10-07 live evaluation)
+
+- Before a plan exists, a selected source with raw meat, poultry, fish
+  or eggs adds a line requiring a food-safety `technique_ref`.
+- After a plan exists, the snapshot carries its steps
+  (`cooking_plan_steps`) so follow-up questions use them.
+- When a confirmed answer names a mapped allergen, a line says the app
+  checks each option's listed ingredients itself and that the allergy
+  is not a `constraints_honored` key. Allergen names map to labels
+  ("tree nuts", "nut allergy" and "celiac" included); a generic "nut"
+  ingredient line violates tree nuts and is unverified for peanut.
+- A technique or web answer given once a dish is selected keeps the
+  session's phase (it used to move to `recommend`, which "plan" does
+  not allow, so every follow-up question failed).
+- Note and technique-answer checks skip ingredient names that are only
+  negated or excluded ("contains no meat"); a technique answer may also
+  name what the user's question or the selected recipe names. When a
+  note fails while an option was dropped, the feedback names the drop.
 
 ## Limits (Checkpoint 0 + review, all server-side)
 
@@ -105,7 +131,7 @@ provider faults (provider failures, DB outage, internal defects).
 | `agent_wall_clock_exceeded` | error | 408 | `retry` |
 | `agent_sufficient_evidence` | final (normal completion) | — | — (terminal success, not in the error mapping) |
 | `agent_needs_user_input` | final (question in `unresolved_questions`, phase `clarify`) | — | — (the question is the call to action) |
-| `agent_no_progress` (3 failed steps, 3 identical calls with identical results, or repeated empty turns; the first step that only repeats earlier calls earns one tool-less wrap-up turn first) | error | 422 | `change_request` |
+| `agent_no_progress` (3 failed steps, 3 identical calls with identical results, or repeated empty turns; the first step that only repeats earlier calls earns one wrap-up turn first, which withholds the repeated tools; a repeat-fetch pointer counts as a repeat) | error | 422 | `change_request` |
 | `agent_validation_failed` (second rejection) | error | 422 | `change_request` |
 | `invalid_phase_transition` (model-requested illegal move: defect, fails immediately) | error | 422 | `change_request` |
 
@@ -245,9 +271,14 @@ removed), and the next run substitutes (labelled `adaptation`,
   technique or general answers.
 - `plan`: `cooking_plan` (mise en place, steps, plating) from the
   selected source, with `scale_recipe` / `convert_units` results where
-  asked. The plan source must equal the selected dish **and** come from
+  asked (`scale_recipe` is not offered when the selected source lists
+  no servings). The plan source must equal the selected dish **and** come from
   a `get_recipe` full document in this session's events (a search row
-  is not enough). Plan/cook steps
+  is not enough). Mass and volume amounts written in the mise en
+  place, steps or plating must equal (exactly, in any notation) an
+  amount the source states with the same unit; the `get_recipe`
+  summary shows amounts in the source's own notation ("5 1/2", not the
+  stored exact fraction "11/2") when both parse to the same value. Plan/cook steps
   may cite `technique_refs` (`doc_id` + `chunk_id`, max 10): each must
   resolve in the technique corpus **and** have been returned by a
   `search_techniques` call in the same session
@@ -265,7 +296,13 @@ removed), and the next run substitutes (labelled `adaptation`,
   cut hid the poultry row of the FDA temperature table).
   Minimum plan evidence (P3-L-09, tightened at Phase 7 close-out): the
   `get_recipe` summary shows the model bounded directions with
-  `directions_total` / `directions_shown` / `directions_truncated`.
+  `directions_total` / `directions_shown` / `directions_truncated`
+  (up to 12 directions of up to 600 characters; a direction cut at
+  600 ends with "…" and is listed in `directions_clipped`. Raised from
+  6 x 200 on 2026-10-07 after a live plan lost a simmer time, two
+  ingredients and the source's own thermometer check to the cut).
+  Attribution folds accents ("jalapeño" matches "jalapeno") and
+  ignores bare citation tags such as "[Source direction 2]".
   `steps_source` is `"source"` only when every plan step cites a
   stored direction index (`step_sources`) whose direction contains all
   the step's content words, **and** every stored direction is cited by
@@ -277,7 +314,10 @@ removed), and the next run substitutes (labelled `adaptation`,
   from a food-safety manifest doc (`tech-fda-safe-32`,
   `tech-fsis-temp-34`, `tech-fda-kitchen-33`, `tech-fsis-leftover-36`);
   the feedback tells the model to `search_techniques` for safe
-  internal temperatures.
+  internal temperatures. Since 2026-10-07 the turn input also states
+  this requirement once a dish is selected (and names the returned
+  food-safety chunks once found), so the model no longer learns it
+  from a rejected plan.
 
 ## Endpoints (`api/agent.py`)
 

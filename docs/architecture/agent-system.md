@@ -128,10 +128,17 @@ normal endings. The error stops are:
 
 Before `agent_no_progress`, the loop tries once to recover: when a
 step only repeats earlier calls with identical results, the next
-turn offers no tools and asks the model to answer from the evidence
-it already has (a wrap-up turn). A rejected wrap-up answer gets the
-normal fix-and-retry; repeating the same call a third time still
-stops the run.
+turn withholds the repeated tools and asks the model to use what it
+has: fetch candidates it has not fetched yet, or answer (a wrap-up
+turn). Until 2026-10-07 the wrap-up offered no tools at all; with
+one recipe fetched, the model could then only ask the user a
+question. A rejected wrap-up answer is retried with the same tools
+withheld; repeating the same call a third time still stops the run.
+A repeat `get_recipe` that returns the "already fetched" pointer
+counts as a repeat for both rules, even though the pointer differs
+from the full output it points at. An identical repeated search is
+marked in its output as returning nothing new, and a full-text
+search with fewer than 3 results suggests broadening the query.
 
 The UI renders one outcome card per reason.
 
@@ -149,19 +156,26 @@ in-memory transcript.
   lists searches, fetched recipes, web sources and technique hits, so
   the model knows what it already has after history is trimmed or a
   new run starts.
-- **Capped history:** the newest whole turn groups up to 13 items. A
+- **Capped history:** the newest whole turn groups up to 13 items,
+  plus older whole groups while the history stays within 16,000
+  characters (at most 31 items), so small outputs such as pairings
+  are not pushed out by one large recipe step. A
   function call is never separated from its output. Each tool output
   is summarized to IDs and the facts needed, bounded at 4,000
   characters (6,500 for technique search, whose hits carry
-  attribution and 600-character excerpts) with structural truncation
-  that stays valid JSON.
+  attribution and 600-character excerpts; 9,000 for `get_recipe`)
+  with structural truncation that stays valid JSON.
 - **Repeat fetches:** a recipe already visible in the run is not
   re-sent. The model gets a named pointer to its earlier output, never
   an empty recipe it could misread as "no directions".
-- **Recipe evidence:** ingredients plus bounded directions, with
-  `directions_total`, `directions_shown` and `directions_truncated`.
-  "The source has no directions" and "directions were cut here" are
-  therefore different facts.
+- **Recipe evidence:** ingredients plus bounded directions (up to 12,
+  each up to 600 characters), with `directions_total`,
+  `directions_shown`, `directions_truncated` and `directions_clipped`
+  (directions cut at 600 characters, which end with "…"). "The source
+  has no directions" and "directions were cut here" are therefore
+  different facts. The bound was 6 x 200 until 2026-10-07: 64% of
+  corpus recipes had a longer direction, and the cut was silent; now
+  184 of 16,033 recipes have a clipped direction.
 - **Visibility-aware de-duplication:** a repeated `get_recipe` returns
   a short pointer only when the full document is still in the model's
   visible history. Otherwise it returns the full document.
@@ -230,15 +244,22 @@ The validators run on every finish, with no model call:
   Times and temperatures must appear in the cited chunk or recipe.
 - **Plans:**
   - the source must be the selected dish, fetched in full;
+  - mass and volume amounts in the plan text must equal an amount the
+    source states with the same unit (amounts reach the model in the
+    source's own notation, and the UI shows exact fractions such as
+    11/2 as mixed numbers);
   - steps are labelled `source` only when each step cites a stored
     direction that supports it and every direction is covered;
     otherwise `model_adaptation`. When the source has directions,
     the app writes the adaptation note itself, naming the steps and
     the words that differ; an ingredient-only source still needs the
-    model's own admission;
+    model's own admission. Matching folds accents and ignores bare
+    citation tags in step text;
   - raw meat, poultry, fish or eggs require a food-safety technique
     reference (technique search treats chicken, turkey, duck and goose
-    as also matching "poultry", the word the FDA guidance uses);
+    as also matching "poultry", the word the FDA guidance uses). Once
+    a dish is selected, the turn input states this requirement up
+    front instead of leaving it to a rejected plan;
   - a plan that claims the source has no directions is rejected when
     it does.
 - **Web answers:**
@@ -306,7 +327,7 @@ The validators run on every finish, with no model call:
 
 | Layer | What it proves | Size |
 |---|---|---|
-| Unit and integration tests | Contracts, validators, tools, CAS, UI headers (`make check`, disposable databases) | 1,192 passed, 8 skipped |
+| Unit and integration tests | Contracts, validators, tools, CAS, UI headers (`make check`, disposable databases) | 1,209 passed, 8 skipped |
 | Offline scenario harness (`evals/phase7_agent/run.py`) | The real loop, tools and validators against scripted model turns, including adversarial ones (skipped Epicure, invented URL, bad arguments, illegal transition) | 43/43 cases, 4/4 adversarial caught |
 | Scorer mutation tests | Each scoring check actually fails when the behaviour breaks | `tests/test_phase7_scorer.py` |
 | Bounded live runs | What the real model does: 7 scenarios, then 4 re-runs after fixes, all trajectories saved | First run 3/7 expected stops; re-runs 2/4 |

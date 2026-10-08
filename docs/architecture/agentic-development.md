@@ -148,7 +148,7 @@ and pinned offline. Live confirmation is a Milestone 4 acceptance item.
 | Measure | Value |
 |---|---|
 | Commits since 2026-09-15 | 36 |
-| Tests (`make check`) | 1,192 passed, 8 skipped |
+| Tests (`make check`) | 1,209 passed, 8 skipped |
 | Offline agent scenarios | 43 (4 adversarial), all passing |
 | Live agent sessions reviewed | 11 (7 first run, 4 re-runs) |
 | Milestone 3 live spend | about $0.28 of $1.00 |

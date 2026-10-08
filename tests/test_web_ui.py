@@ -21,6 +21,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -715,3 +717,21 @@ def test_agent_router_wires_search_provider_only_when_enabled(
     )
     assert captured["search_provider"] is (provider if enabled else None)
     assert _settings().web_search_enabled is False
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_quantities_show_improper_fractions_as_mixed_numbers() -> None:
+    # 2026-10-07 live session: "11/2 lb" (an exact 5 1/2) was misread.
+    script = (
+        "import { mixedAmount } from './src/culinary_copilot/web/js/render.js';"
+        "console.log(JSON.stringify(['11/2', '3/2', '1/2', '4/2', '2', null].map(mixedAmount)));"
+    )
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        cwd=Path(__file__).parent.parent,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    assert json.loads(out.stdout) == ["5 1/2", "1 1/2", "1/2", "2", "2", None]

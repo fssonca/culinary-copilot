@@ -237,3 +237,167 @@ fixes to be made directly. None is live-confirmed yet.
 - **Checks:** `make check` 1192 passed, 8 skipped; harness
   `phase7-cases-v8-2026-10-05` 43/43, 4/4 adversarial, results
   unchanged.
+
+## Demo hardening follow-up (2026-10-07)
+
+Recorded by an AI assistant; not a signature. From the owner's
+2026-10-07 adobo session, whose technique search found and cited the
+right FDA chunk but whose plan phase took 6 model turns and lost
+source content. The owner asked for the fixes. None is live-confirmed
+yet.
+
+- **Directions reach the model in full:** `get_recipe` showed each
+  direction cut at 200 characters, and `directions_truncated` stayed
+  false because it only counts dropped directions. The plan lost a
+  simmer time, two ingredients and the source's own thermometer check,
+  and the model said those were absent from the source. Directions now
+  reach the model at up to 600 characters (12 directions), and a
+  direction cut there is listed in `directions_clipped`. 64% of
+  corpus recipes had a direction over 200 characters; 184 of 16,033
+  now have one over 600. The largest summary measured over the corpus
+  is 3,926 characters.
+- **Food-safety requirement stated up front:** once a dish is
+  selected and its source has raw meat, poultry, fish or eggs, the
+  turn input says the plan needs a food-safety `technique_ref`, and
+  names the safety chunks once returned. The validator is unchanged;
+  this removes the rejected-plan turn.
+- **Repeat-fetch pointers count as repeats:** full fetch, then
+  pointer, then pointer used to look like two different results. The
+  wrap-up came a step late, and the stall stop could never fire.
+- **Attribution matching:** accents are folded ("jalapeño" matches
+  "jalapeno"); bare citation tags such as "[Source direction 2]" in
+  step text are ignored (a tag with other words still counts); the
+  note no longer calls directions "not cited" when they are cited by
+  ungrounded steps. The framing asks for no tags in step text and for
+  added safety checks as their own adaptation.
+- **Checks:** `make check` 1198 passed, 8 skipped; harness
+  `phase7-cases-v8-2026-10-05` 43/43, 4/4 adversarial, results
+  unchanged; `verify_packet.py` all claims match.
+
+### Second 2026-10-07 session
+
+Recorded by an AI assistant; not a signature. From the owner's second
+adobo session: the follow-up fixes above worked (safety search in the
+first plan step, all five directions in the plan, no rejection), and
+the session exposed the items below. None is live-confirmed yet.
+
+- **Wrong amount in plan text:** the mise en place said "1 1/2 lb" for
+  a source amount of 5 1/2 pounds, stored as the exact fraction
+  "11/2". The model now sees the source's own notation ("5 1/2") when
+  it parses to the same value; the UI shows improper fractions as
+  mixed numbers; and a validator rejects mass or volume amounts in the
+  mise en place, steps or plating that the source never states with
+  that unit. Checked against the corpus: a plan made of each recipe's
+  own ingredient lines and directions passes for all 16,033 recipes.
+- **Unrequested scaling:** the model scaled a source without servings
+  and retried the refusal. The framing now says to scale only when
+  the user asks for a number of servings, and `scale_recipe` is not
+  offered when the selected source lists no servings.
+- **History cap:** older whole turn groups now stay while the history
+  is within 16,000 characters (at most 31 items), beyond the newest
+  13 items.
+- **Title-first recipe ranking: tried and reverted, owner decision
+  open.** "adobo" ranked ten "chipotle peppers in adobo sauce" recipes
+  above all 14 adobo dishes. Ranking full title matches first fixed
+  that, but on the frozen Phase 1 cases (read-only, results written
+  outside the repository) it changed the top 5 of 14 of 52 cases and
+  moved 11 judged-relevant hits out of the top 5 (grade 2: 42 to 36,
+  grade 1: 11 to 6), replaced by unjudged hits. The same ranking
+  serves the HTTP search and the recommendation pipeline, so it was
+  not kept. The agent recovered in this session with one vector
+  search.
+- **Checks:** `make check` 1202 passed, 8 skipped; harness
+  `phase7-cases-v8-2026-10-05` 43/43, 4/4 adversarial, results
+  unchanged; `verify_packet.py` all claims match.
+
+## Live evaluation, five sessions (2026-10-07)
+
+Recorded by an AI assistant; not a signature. The owner authorized
+five live sessions (request, then answers or a choice, then a
+technique question). They ran against a separate local server with
+the `make demo` limits (40 steps, 40 tool calls, 300k/60k tokens,
+240 s per run), driven through the same HTTP API as the UI. Fixes were
+made between runs, so later runs in a session used newer code.
+About 736k input and 14k output tokens in total.
+
+| Session | Request | Outcome |
+|---|---|---|
+| `ses-395e87afd7d2` | adobo | options, plan (`source`), technique answer after a phase fix |
+| `ses-61347af29b8d` | lentil dinner, vegetarian | one option after three failed runs, plan, technique answer |
+| `ses-983446426ab7` | baking for a party | three questions, two stall stops, tool budget exhausted |
+| `ses-fc99a4ef228c` | baking for a party (rerun) | options, plan, technique answer |
+| `ses-0b0a3c7d4ea2` | dessert, friend's allergy | question, two stall stops, tool budget exhausted |
+
+**Fixed (tests added; harness unchanged):**
+
+- A technique or web answer after a plan always failed ("plan ->
+  recommend" is not allowed); answers now keep the dish phase.
+- The answer "Tree nuts" mapped to no allergen, so options were never
+  checked for tree nuts; generic names now map, and a generic "nut"
+  ingredient line now violates tree nuts (unverified for peanut).
+- An option dropped for a dietary violation was silent, so a note that
+  described it failed with no explanation and the run stalled; the
+  feedback now names the drop.
+- Note and answer checks treated negations ("contains no meat") and the
+  user's own ingredient ("lentils") as unsupported pairings.
+- The framing forbade re-fetching a recipe fetched in an earlier run,
+  which is not in the new run's history, so the model asked the user
+  instead; re-fetching across runs is now allowed.
+- A tool-less wrap-up after one repeated search left one fetched
+  recipe, so the model could only ask questions; the wrap-up now
+  withholds only the repeated tools, and repeated searches say they
+  returned nothing new.
+- After "Choose this" the model redid discovery; recipe search and
+  pairings are not offered until the plan exists.
+- The food-safety requirement line kept appearing after the plan and
+  re-triggered the safety search; the plan's steps now reach follow-up
+  questions; the framing no longer invites `dietary_constraints` in
+  `constraints_honored` when the session has none.
+
+**Not fixed, for the owner:**
+
+- **Data:** 158 `odunola/foodie` records are titled "summary", with
+  their ingredients and directions collapsed into one line each (an
+  ingestion parsing bug); they appear in search results. Fixing them
+  needs a re-ingestion of the application database.
+- **Budgets:** failed runs spend the session's 40 tool calls, so two
+  sessions ended with "start a new session". A batch larger than the
+  remaining calls stops the run at once (documented behaviour) instead
+  of giving a final tool-less turn.
+- **Unconfirmed:** the party-baking and allergy scenarios did not
+  complete; the fixes made for them are tested offline only and need
+  live runs to confirm.
+- **Technique coverage:** the corpus has little on crisping skin; full
+  text found only weak partial matches and the useful chunk came from
+  one vector search.
+- **Observability:** the trajectory does not record the model's
+  reasoning, so why the model kept searching instead of finishing is
+  inferred, not observed.
+
+## Owner review of the hardening work (2026-10-07)
+
+Recorded by an AI assistant; not a signature. The owner reviewed the
+demo hardening, its follow-ups and the five-session live evaluation,
+and asked for a plan, now in `docs/milestone-3-hardening-plan.md`.
+
+- **Kept:** the hardening changes (expanded directions with explicit
+  clipping, the up-front safety requirement, accent and citation-tag
+  normalization, the app-written adaptation note, scaling refused
+  without servings, history retention). Global title-first ranking
+  stays reverted.
+- **Corrections to earlier wording here:** directions are not "in
+  full" (12 directions of up to 600 characters; 184 recipes still have
+  a clipped direction and 421 have more than 12); the prose quantity
+  check is a limited amount/unit check, since it compares amounts with
+  every amount in the recipe without their ingredient (a swapped
+  "1 1/2 lb chicken" for a 5 1/2 lb source passes when another
+  ingredient is 1 1/2 lb); the instruction that party size "never"
+  matters is too absolute; the 16,000-character history setting is a
+  retention heuristic, not a spending guarantee.
+- **Priorities:** ingredient-aware quantity validation; access to
+  clipped directions; an offline repair preview for the 158 malformed
+  records; budget-exhaustion recovery without raising limits; expanded
+  ranking judgments and dish-versus-ingredient regression cases; harness
+  coverage and decision logging before any frozen-build live check.
+- **Still needs explicit authorization:** the baseline commit (H0),
+  any application-database re-ingestion, and the live check (H8).

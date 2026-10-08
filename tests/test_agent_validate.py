@@ -835,6 +835,65 @@ def test_plan_rejection_names_the_words_missing_from_each_direction() -> None:
     assert check_plan_evidence(plan, doc, []) == ([], "source")
 
 
+def test_attribution_folds_accents_and_ignores_bare_citation_tags() -> None:
+    # 2026-10-07 live session: "jalapeños" split into "jalape" and "os",
+    # and "[Source direction N]" tags made faithful steps ungrounded.
+    from culinary_copilot.agent.validate import direction_supports_step
+
+    direction = "Whisk soy sauce, jalapeno peppers, and garlic together."
+    assert direction_supports_step(direction, "Whisk soy sauce, jalapeño peppers and garlic.")
+    assert direction_supports_step(direction, "Whisk soy sauce and garlic. [Source direction 1]")
+    assert direction_supports_step(direction, "Whisk the garlic (directions 1-2).")
+    # A tag carrying other words is content and still has to match.
+    assert not direction_supports_step(
+        direction, "Whisk soy sauce. [Source direction 1; temperature guidance cited below]"
+    )
+
+
+def test_attribution_detail_does_not_call_cited_directions_uncited() -> None:
+    from culinary_copilot.agent.validate import plan_attribution_note
+
+    doc = {
+        "ingredients": [{"canonical": "tofu"}],
+        "directions": ["Simmer the sauce.", "Serve hot.", "Garnish with herbs."],
+    }
+    plan = {
+        "steps": ["Simmer the sauce.", "Serve hot with rice."],
+        "step_sources": [0, 1],
+        "adaptations": [],
+    }
+    note = plan_attribution_note(plan, doc)
+    assert note is not None
+    assert "step 1 uses words not in direction 1: 'rice'" in note
+    assert "source directions [2] are not cited by any step" in note
+
+
+def test_plan_prose_amounts_must_match_the_source() -> None:
+    # 2026-10-07 live session: the mise en place said "1 1/2 lb" for a
+    # source amount of 5 1/2 pounds (stored as the exact fraction 11/2).
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors, prose_quantities
+
+    doc = {
+        "ingredients": [
+            {"canonical": "cut-up chicken parts", "amount": "11/2", "unit": "lb"},
+            {"canonical": "annatto powder", "amount": "3/2", "unit": "tsp"},
+            {"canonical": "vegetable oil, divided", "amount": "3", "unit": "tbsp"},
+        ],
+        "instructions": ["Heat 2 tablespoons vegetable oil; cook 4 minutes per side."],
+    }
+    wrong = {"mise_en_place": ["Have 1 1/2 lb cut-up chicken parts."], "steps": ["Serve."]}
+    errors = plan_prose_quantity_errors(wrong, doc)
+    assert len(errors) == 1 and "'1 1/2 lb'" in errors[0] and "mise_en_place" in errors[0]
+    right = {
+        "mise_en_place": ["Have 5 ½ pounds chicken parts and 1.5 tsp annatto powder."],
+        "steps": ["Heat 2 tablespoons oil, 4 minutes per side, to 165°F."],
+        "plating": "Serve 3 tablespoons of sauce over each plate with 10 bay leaves.",
+    }
+    assert plan_prose_quantity_errors(right, doc) == []
+    # Counts, times and temperatures are not amounts this check reads.
+    assert prose_quantities("1 head garlic, 2 cloves, 20 minutes, 165 F") == []
+
+
 def test_app_written_attribution_note() -> None:
     from culinary_copilot.agent.validate import check_plan_evidence, plan_attribution_note
 
@@ -864,3 +923,28 @@ def test_app_written_attribution_note() -> None:
     assert plan_attribution_note(plan, bare) is None
     errors, _ = check_plan_evidence(plan, bare, [], auto_label=True)
     assert errors and "the source has no directions" in errors[0]
+
+
+def test_generic_allergen_names_map_to_checked_labels() -> None:
+    # 2026-10-07 live session: the answer "Tree nuts" named no mapped
+    # allergen, so the options were never checked for tree nuts.
+    from culinary_copilot.agent.validate import allergens_named_in_answers
+
+    assert allergens_named_in_answers(["Tree nuts"]) == ["tree nuts"]
+    assert allergens_named_in_answers(["tree-nut allergy"]) == ["tree nuts"]
+    assert allergens_named_in_answers(["nuts"]) == ["peanut", "tree nuts"]
+    assert allergens_named_in_answers(["celiac"]) == ["wheat/gluten"]
+    assert allergens_named_in_answers(["coconut and nutmeg are fine"]) == []
+
+
+def test_generic_nut_lines_fail_tree_nuts_and_stay_unverified_for_peanut() -> None:
+    from culinary_copilot.agent.validate import check_allergen_option
+
+    doc = {"ingredients": [{"canonical": "chopped nuts"}, {"canonical": "nutmeg"}]}
+    errors, entry = check_allergen_option(0, {"title": "Nut Bars"}, doc, "tree nuts")
+    assert errors and entry["status"] == "violated"
+    errors, entry = check_allergen_option(0, {"title": "Nut Bars"}, doc, "peanut")
+    assert not errors and entry["status"] == "unverified"
+    clean = {"ingredients": [{"canonical": "nutmeg"}, {"canonical": "coconut milk"}]}
+    errors, entry = check_allergen_option(0, {"title": "Spiced Rice"}, clean, "tree nuts")
+    assert not errors and entry["status"] != "violated"

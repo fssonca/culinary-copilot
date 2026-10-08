@@ -48,9 +48,26 @@ function badge(text, kind) {
   return el("span", "badge" + (kind ? " " + kind : ""), text);
 }
 
+// Stored amounts are exact fractions ("11/2" is 5 1/2): show improper
+// fractions as mixed numbers so "11/2 lb" is never read as 1 1/2 lb.
+export function mixedAmount(amount) {
+  const match = /^(\d+)\/(\d+)$/.exec(String(amount ?? "").trim());
+  if (!match) {
+    return amount;
+  }
+  const numerator = Number(match[1]);
+  const denominator = Number(match[2]);
+  if (denominator === 0 || numerator < denominator) {
+    return amount;
+  }
+  const whole = Math.floor(numerator / denominator);
+  const rest = numerator % denominator;
+  return rest === 0 ? String(whole) : `${whole} ${rest}/${denominator}`;
+}
+
 function quantityText(item) {
   const parts = [item.ingredient || ""];
-  const amount = [item.amount, item.unit].filter(Boolean).join(" ");
+  const amount = [mixedAmount(item.amount), item.unit].filter(Boolean).join(" ");
   if (amount) {
     parts.push("— " + amount);
   }
