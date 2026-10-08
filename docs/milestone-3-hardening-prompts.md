@@ -80,7 +80,12 @@ Checks (run all of them; report the actual output lines)
 - make check
 - uv run python evals/phase7_agent/run.py: evals/phase7_agent/results.json
   must stay byte-identical unless the phase says otherwise (verify with
-  git diff --stat evals/).
+  git diff --stat evals/; restore it with
+  git checkout -- evals/phase7_agent/results.json after a run).
+  Known since H4 (2026-10-08), until Phase 7: case p7-budget-tools
+  fails (internal_error, 42/43), so make check reports exactly one
+  failure, tests/test_phase7_harness.py. Report any other change; do
+  not fix this one before Phase 7.
 - uv run python evals/phase7_agent/verify_packet.py
 
 Report (your final message, in this order)
@@ -454,6 +459,14 @@ Required:
    ("tree nuts") is checked; the allergy line keeps
    constraints_honored empty; plus phases 1 to 4 (swapped quantities,
    clipped directions, fidelity claims, budget-exhaustion finishing).
+   Since H4, v8 case p7-budget-tools fails: its script has no turn
+   after the excess batch, so the new finishing turn exhausts the
+   script (internal_error). In v9, give it a scripted finishing turn
+   (a question or a valid finish) with the matching expected result,
+   and add a case that keeps the immediate tool-budget stop when the
+   finishing turn is unaffordable (for example settings
+   agent_output_token_ceiling 600). The v8 history must record that
+   43/43 was the pre-H4 result.
    Keep the v8 results as history. Re-baseline results.json for v9
    only; this phase may change results.json. Update verify_packet.py
    so it still checks the Checkpoint C claims against their own

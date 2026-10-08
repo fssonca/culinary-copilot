@@ -356,8 +356,14 @@ def test_second_run_after_budget_stop(engine) -> None:
 
 
 def test_tool_budget_batch_excess(engine) -> None:
+    # H4 (2026-10-08): a batch larger than the remaining calls keeps the
+    # affordable prefix, then stops at once when the finishing turn is
+    # unaffordable (here the output-token remainder, checked with the
+    # same code that enforces it). The stop carries the deterministic
+    # results list. See tests/test_h4_budget_recovery.py for the
+    # affordable case where the finishing turn runs and completes.
     store = PostgresSessionStore(engine)
-    state = _session(store, tool_calls_remaining=3)
+    state = _session(store, steps_remaining=8, tool_calls_remaining=3)
     recorded: list[str] = []
     provider = ScriptedProvider(
         [
@@ -373,14 +379,21 @@ def test_tool_budget_batch_excess(engine) -> None:
             )
         ]
     )
+    settings = _settings(agent_output_token_ceiling=600)
     with pytest.raises(AgentLoopError) as excinfo:
-        _run(run_agent(state.id, deps=_deps(store, provider, recorded_calls=recorded)))
+        _run(
+            run_agent(
+                state.id, deps=_deps(store, provider, settings=settings, recorded_calls=recorded)
+            )
+        )
     assert excinfo.value.reason == "agent_tool_budget_exhausted"
     assert excinfo.value.http_status == 422
     assert "new session" in excinfo.value.message
+    assert "Useful results so far" in excinfo.value.message
     # Affordable prefix ran (thread order varies); none of the excess ran.
     assert sorted(recorded) == ["search:a", "search:b", "search:c"]
     assert store.get(state.id).tool_calls_remaining == 0
+    assert provider.seen_inputs is not None and len(provider.seen_inputs) == 1
 
 
 def test_wall_clock_stop(engine) -> None:

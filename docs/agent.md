@@ -15,8 +15,9 @@ One step at a time, until a stop reason:
    `unknown_session`). An `expected_revision` mismatch fails fast with
    409 `stale_revision`.
 2. Check server-set stops: `steps_remaining <= 0` → `max_steps`,
-   `tool_calls_remaining <= 0` → `tool_budget_exhausted`, wall clock
-   past `AGENT_WALL_CLOCK_S` → `wall_clock_exceeded`.
+   wall clock past `AGENT_WALL_CLOCK_S` → `wall_clock_exceeded`, a turn
+   that could cross a token ceiling → `token_budget_exhausted`. No tool
+   calls left is not a stop here: that turn is the tool-less final turn.
 3. Ask the model for the next action through native function calling
    over the filtered registry tools, plus the structured
    `AgentDirective` (`ask_user` / `finish`) as the text-format schema.
@@ -24,7 +25,8 @@ One step at a time, until a stop reason:
 4. Tool-call turn: parse each call (bad JSON or unknown/unoffered tool
    → inline typed `invalid_arguments` error, never an exception);
    budget the batch (affordable prefix runs, excess gets a typed
-   `agent_tool_budget_exhausted` error each and the run stops);
+   `agent_tool_budget_exhausted` error each, then one tool-less
+   finishing turn, see below);
    execute through `run_tool` with `asyncio.gather` — independent calls
    in parallel, results recorded in call order.
 5. Write the outcome with a CAS update (`store.mutate`) plus a concise
@@ -96,7 +98,31 @@ model reasoning.
 
 One step = one provider turn and its tool executions. A batch asking
 for more calls than remain runs the affordable prefix, records a typed
-error for each excess call, and stops with `tool_budget_exhausted`.
+error for each excess call, then gets one finishing turn without tools
+instead of stopping at once (hardening step H4, 2026-10-08;
+`agent/loop.py::tool_budget_stop_message`, `session_results_summary`).
+Tools are then 0, so that turn is the ordinary final turn (`offered=[]`,
+the same tool withholding the wrap-up uses, not a parallel path). It
+passes the same top-of-loop checks as every turn: steps, wall clock,
+input-token ceiling (`estimate_turn_input`) and output ceiling (at
+least 500 tokens left). The loop has no separate USD spend guard; the
+token ceilings and the wall clock are its spending limits. If one of
+those checks fails, the run stops before any model call with
+`agent_tool_budget_exhausted` (422, also when the wall clock ran out)
+and the results list below. Allowances are never reset or raised.
+
+The finishing turn happens at most once per run, and it ends the run
+whatever it returns. A valid finish or question completes normally. A
+rejected finish stops with the budget stop: final turns never had a
+validation retry, since no step or tool remains for one. Tool calls
+(none were offered, so none run) also stop with the budget stop.
+
+The tool-budget stop message lists the useful results already in the
+session, deterministically: fetched recipes (up to 5 titles with their
+`dataset:source` pair, sorted by pair), options offered (up to 4, in
+session order), the selected dish and the plan's step count, then
+"start a new session". It reads only the event log and the session row,
+never model text. Step and token stops carry the same list.
 
 Token accounting: provider-reported usage summed from `session_events`
 (step/question/finish payloads carry `input_tokens`/`output_tokens`;
@@ -128,7 +154,7 @@ provider faults (provider failures, DB outage, internal defects).
 | Stop reason | Terminal | Status | `next_action` |
 |---|---|---|---|
 | `agent_max_steps` | error (start a new session) | 422 | `change_request` |
-| `agent_tool_budget_exhausted` | error (start a new session) | 422 | `change_request` |
+| `agent_tool_budget_exhausted` (batch excess whose finishing turn is unaffordable, rejected or calls tools; a final turn rejected with no tools left) | error (start a new session; message lists the results held) | 422 | `change_request` |
 | `agent_token_budget_exhausted` | error (start a new session) | 422 | `change_request` |
 | `agent_wall_clock_exceeded` | error | 408 | `retry` |
 | `agent_sufficient_evidence` | final (normal completion) | — | — (terminal success, not in the error mapping) |

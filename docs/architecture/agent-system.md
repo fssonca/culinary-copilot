@@ -140,6 +140,19 @@ from the full output it points at. An identical repeated search is
 marked in its output as returning nothing new, and a full-text
 search with fewer than 3 results suggests broadening the query.
 
+When a batch asks for more tool calls than remain, the affordable
+prefix runs and the model gets one finishing turn without tools
+instead of stopping at once (H4, 2026-10-08). It is the ordinary final
+turn (`offered=[]`) and passes the same step, wall-clock and token
+checks as every turn; the token ceilings and the wall clock are the
+spending limits. It happens at most once per run and ends the run: a
+valid finish or question completes; a rejected finish (no retry on a
+final turn) or a tool call stops. When a check fails or the turn is
+rejected, the run stops with `agent_tool_budget_exhausted` (reason
+unchanged) and a deterministic message listing fetched recipes,
+options, the selected dish and the plan. Step and token stops list the
+same results. Allowances are never reset or raised.
+
 The UI renders one outcome card per reason.
 
 ## 5. Context management
@@ -227,7 +240,7 @@ session starts from the request.
 | Choosing a dish | `POST …/select` records the pick; the next finish must be a plan for exactly that dish. |
 | Dietary constraint | The page's Diet selector sets `dietary_constraints` (vegetarian or vegan) when the session is created. It is a hard constraint: every option is checked against its ingredient list and is never relaxed. |
 | Internet access | The operator switch `WEB_SEARCH_ENABLED` (off by default) connects a search provider at all. Then the per-session toggle, off by default. `search_web` is offered only when it is on, and re-checks permission inside an atomic slot claim (at most 3 per session). |
-| Budget exhaustion | The stop says what to do next (start a new session or retry). The UI shows a matching card. |
+| Budget exhaustion | The stop says what to do next (start a new session or retry) and lists the useful results already held (fetched recipes, options, selected dish, plan). The UI shows a matching card (reason unchanged; the message carries the list). |
 
 ## 8. Guardrails: what the validators enforce
 

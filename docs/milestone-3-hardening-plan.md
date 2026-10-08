@@ -1,7 +1,8 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
-Status: **H0 to H3 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
-2026-10-07; H2 and H3 on 2026-10-08). H4 onward not started. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
+Status: **H0 to H4 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
+2026-10-07; H2, H3 and H4 on 2026-10-08). H5 onward not started. Known
+failure until H7: harness case `p7-budget-tools` (see H4). Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
 `docs/phase7-owner-decisions.md`). Baseline: branch
@@ -254,6 +255,22 @@ explanation; the finishing turn is offered at most once per run.
 
 Evidence: tests; the updated stop-reason table.
 
+Done 2026-10-08: the excess batch is followed by the ordinary final turn
+(no tools), which passes the same step, wall-clock and token checks as
+every turn; a failed check stops with `agent_tool_budget_exhausted` and a
+deterministic list of fetched recipes, options, selected dish and plan.
+The finishing turn ends the run whatever it returns. The review replaced
+a duplicated affordability check (it left out the plan-requirement
+lines) with the real checks, stopped a second model call when the
+finishing turn calls tools anyway, and sorted the list.
+
+Known failure until H7: harness case `p7-budget-tools` (cases v8) scripts
+no finishing turn, so it now ends as `internal_error` and the harness
+test fails (42/43; no other case changes). Cutting a new case version
+during H4 was not permitted, so H7 makes the fix: script a finishing
+turn for that case and add a case that keeps the immediate stop when the
+finishing turn is unaffordable (for example an output ceiling of 600).
+
 ## H5. Malformed-record repair preview (offline)
 
 ```text
@@ -319,7 +336,8 @@ Implement step H7.
    is not a pairing claim; the wrap-up withholds only repeated tools; a
    repeated search is marked; the select phase withholds recipe search
    and pairings; a named allergy ("tree nuts") is checked; the
-   allergy line keeps constraints_honored empty; plus H2-H4 behaviour.
+   allergy line keeps constraints_honored empty; plus H2-H4 behaviour,
+   including the `p7-budget-tools` fix described under H4.
    Re-baseline results for the new version only and update
    verify_packet.py.
 2. Record observable decisions in session events: tools offered and

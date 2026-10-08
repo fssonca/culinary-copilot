@@ -2108,6 +2108,143 @@ def _budget_error(name: str, call_id: str, remaining: int) -> dict[str, Any]:
     }
 
 
+#: Bounds for the deterministic budget-exhaustion listing (H4,
+#: 2026-10-08): the stop message names what the session already holds
+#: so a new session can reuse it. Titles truncate, counts bound the
+#: message; fetched recipes sort by pair, options keep session order.
+_BUDGET_LIST_TITLES = 5
+_BUDGET_LIST_OPTIONS = 4
+_BUDGET_TITLE_CHARS = 80
+
+
+def _short_budget_title(value: Any) -> str:
+    """One-line title for the budget listing (bounded, single-quoted)."""
+    text = " ".join(str(value or "").split())
+    if len(text) > _BUDGET_TITLE_CHARS:
+        text = text[:_BUDGET_TITLE_CHARS].rsplit(" ", 1)[0] or text[:_BUDGET_TITLE_CHARS]
+        text += "…"
+    return text or "?"
+
+
+def _budget_item(title: Any, dataset_id: Any, source_id: Any) -> str:
+    """One listed result: quoted title and its dataset:source pair."""
+    return f'"{_short_budget_title(title)}" ({dataset_id}:{source_id})'
+
+
+def session_results_summary(store: Any, session_id: str, state: Any) -> str:
+    """Deterministic listing of useful results already in the session.
+
+    2026-10-08 (H4): when tool calls run out, the stop message names
+    fetched recipes (titles with dataset/source), options offered, the
+    selected dish and the plan if any, so the next session starts from
+    evidence instead of "start a new session" alone. Reads only the
+    session event log (get_recipe titles) and the session row
+    (suggestions, selected_dish, cooking_plan); never model prose.
+    Bounded and deterministic: fetched pairs sorted, options in session
+    order, truncated titles.
+    """
+    fetched: list[tuple[str, str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    try:
+        events = store.list_events(session_id)
+    except Exception:
+        events = []
+    for event in events:
+        if getattr(event, "event_type", "") != "tool_call":
+            continue
+        payload = getattr(event, "payload", None) or {}
+        if payload.get("outcome") != "ok" or payload.get("tool") != "get_recipe":
+            continue
+        identities = payload.get("returned_identities")
+        if not isinstance(identities, list):
+            continue
+        facts = payload.get("result_facts")
+        title = facts.get("title") if isinstance(facts, dict) else None
+        for ident in identities:
+            if not isinstance(ident, dict):
+                continue
+            if ident.get("via") != "full":
+                continue
+            dataset_id = ident.get("dataset_id")
+            source_id = ident.get("source_id")
+            if not (isinstance(dataset_id, str) and isinstance(source_id, str)):
+                continue
+            key = (dataset_id, source_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            fetched.append((dataset_id, source_id, title))
+    parts: list[str] = []
+    if fetched:
+        # Parallel calls record in completion order; sort so the message
+        # does not depend on thread timing.
+        fetched.sort(key=lambda item: (item[0], item[1]))
+        shown = fetched[:_BUDGET_LIST_TITLES]
+        names = ", ".join(_budget_item(title, ds, sid) for ds, sid, title in shown)
+        extra = f" (+{len(fetched) - len(shown)} more)" if len(fetched) > len(shown) else ""
+        parts.append(f"fetched {len(fetched)} recipe(s): {names}{extra}")
+    else:
+        parts.append("fetched 0 recipes")
+    suggestions = getattr(state, "suggestions", None) or []
+    if isinstance(suggestions, list) and suggestions:
+        shown_opts = suggestions[:_BUDGET_LIST_OPTIONS]
+        names = ", ".join(
+            _budget_item(o.get("title"), o.get("dataset_id"), o.get("source_id"))
+            if isinstance(o, dict)
+            else "?"
+            for o in shown_opts
+        )
+        extra = (
+            f" (+{len(suggestions) - len(shown_opts)} more)"
+            if len(suggestions) > len(shown_opts)
+            else ""
+        )
+        parts.append(f"options offered: {names}{extra}")
+    else:
+        parts.append("options offered: none")
+    selected = getattr(state, "selected_dish", None)
+    if isinstance(selected, dict) and (selected.get("dataset_id") or selected.get("source_id")):
+        parts.append(
+            "selected dish: "
+            + _budget_item(
+                selected.get("title"), selected.get("dataset_id"), selected.get("source_id")
+            )
+        )
+    else:
+        parts.append("selected dish: none")
+    plan = getattr(state, "cooking_plan", None)
+    if isinstance(plan, dict) and plan:
+        raw_source = plan.get("source")
+        source: dict[str, Any] = raw_source if isinstance(raw_source, dict) else {}
+        raw_steps = plan.get("steps")
+        steps: list[Any] = raw_steps if isinstance(raw_steps, list) else []
+        parts.append(
+            f"plan: {len(steps)} step(s) for "
+            f"{source.get('dataset_id', '?')}:{source.get('source_id', '?')}"
+        )
+    else:
+        parts.append("plan: none")
+    return "; ".join(parts)
+
+
+def tool_budget_stop_message(store: Any, session_id: str, state: Any, *, excess: int = 0) -> str:
+    """Full tool-budget stop message with the deterministic results list.
+
+    Keeps ``agent_tool_budget_exhausted`` as the stop reason (the UI
+    outcome table is unchanged; the message carries the evidence). The
+    "start a new session" remedy stays so existing message checks hold.
+    """
+    if excess > 0:
+        head = (
+            f"batch exceeded the tool-call budget ({excess} excess not run); "
+            "tool-call budget exhausted"
+        )
+    else:
+        head = "tool-call budget exhausted"
+    listing = session_results_summary(store, session_id, state)
+    return f"{head}. Useful results so far: {listing}; start a new session"
+
+
 #: Bound for each recorded trajectory text (tool output, directive, final).
 TRAJECTORY_CHARS = 8000
 
@@ -2278,6 +2415,28 @@ async def _run_agent(
     wrap_up_next = False
     wrap_up_used = False
     wrap_up_withheld: list[str] = []
+    # Budget recovery (H4, 2026-10-08): a batch larger than the remaining
+    # tool calls stops at once today, even with usable results in hand.
+    # Instead the run gets one tool-less finishing turn (the same
+    # offered=[] mechanism the final turn and the wrap-up use, not a
+    # parallel path), at most once per run, only when the remaining
+    # steps, input/output token ceilings and wall clock allow one more
+    # model call (checked by the same top-of-loop code as every turn).
+    # The loop has no separate USD spend guard; token ceilings and the
+    # wall clock are its spending limits. Holds the excess count once
+    # the finishing turn is offered.
+    budget_recovery_excess: int | None = None
+
+    async def budget_stop(reason: str, http_status: int, message: str) -> AgentRunResult:
+        # A limit that stops the H4 finishing turn reports the tool
+        # budget it recovers from, with the results list.
+        if budget_recovery_excess is not None:
+            reason, http_status = REASON_AGENT_TOOL_BUDGET, 422
+            message = tool_budget_stop_message(
+                store, session_id, state, excess=budget_recovery_excess
+            )
+        return await _stop(deps, store, session_id, state, revision, reason, http_status, message)
+
     ok_count = 0
     validation_retries = 0
     run_epicure_ok = False
@@ -2303,15 +2462,14 @@ async def _run_agent(
         # reset: exhaustion says to start a new session (change_request,
         # reported as 422). The wall clock is per run (retry, 408).
         if state.steps_remaining <= 0:
-            return await _stop(
-                deps,
-                store,
-                session_id,
-                state,
-                revision,
+            # H4 (2026-10-08): budget stops list the useful results so a
+            # new session starts from evidence, not from "start a new
+            # session" alone. Allowances are never reset.
+            return await budget_stop(
                 REASON_AGENT_MAX_STEPS,
                 422,
-                "step budget exhausted (max_steps); start a new session",
+                f"step budget exhausted (max_steps). Useful results so far: "
+                f"{session_results_summary(store, session_id, state)}; start a new session",
             )
         # Final turn: one step left, or no tool calls left — or the
         # token budgets cannot cover two more turns of the current
@@ -2326,12 +2484,7 @@ async def _run_agent(
         final_turn = state.steps_remaining <= 1 or state.tool_calls_remaining <= 0
         remaining_wall = deadline - time.monotonic()
         if remaining_wall <= 0:
-            return await _stop(
-                deps,
-                store,
-                session_id,
-                state,
-                revision,
+            return await budget_stop(
                 REASON_AGENT_WALL_CLOCK,
                 408,
                 "wall clock exceeded; start a new run to continue",
@@ -2411,32 +2564,24 @@ async def _run_agent(
         )
         est_in = estimate_turn_input(turn_input, tool_defs, response_schema=directive_schema)
         if used_in + est_in >= in_ceiling or used_out >= out_ceiling:
-            return await _stop(
-                deps,
-                store,
-                session_id,
-                state,
-                revision,
+            return await budget_stop(
                 REASON_AGENT_TOKEN_BUDGET,
                 422,
                 f"token budget exhausted ({used_in}/{in_ceiling} in, "
-                f"{used_out}/{out_ceiling} out); start a new session",
+                f"{used_out}/{out_ceiling} out). Useful results so far: "
+                f"{session_results_summary(store, session_id, state)}; start a new session",
             )
         # Hard output ceiling: this turn may emit at most what remains
         # (bounded by the configured per-turn maximum). Below a useful
         # minimum the turn cannot answer, so stop before sending it.
         remaining_out = out_ceiling - used_out
         if remaining_out < _MIN_USEFUL_OUTPUT_TOKENS:
-            return await _stop(
-                deps,
-                store,
-                session_id,
-                state,
-                revision,
+            return await budget_stop(
                 REASON_AGENT_TOKEN_BUDGET,
                 422,
                 f"token budget exhausted ({remaining_out} output tokens remain, "
-                f"minimum useful {_MIN_USEFUL_OUTPUT_TOKENS}); start a new session",
+                f"minimum useful {_MIN_USEFUL_OUTPUT_TOKENS}). Useful results so far: "
+                f"{session_results_summary(store, session_id, state)}; start a new session",
             )
         turn_cap = min(configured_max_output, remaining_out)
         # Token-growth final turn: this turn's estimate is built with
@@ -2833,7 +2978,9 @@ async def _run_agent(
                 f"{ok_now}/{len(results)} tool calls ok; "
                 f"steps left {state.steps_remaining}, tools left {state.tool_calls_remaining}"
             )
-            if budget_exhausted_stop:
+            if budget_recovery_excess is not None:
+                # Tool calls on the H4 finishing turn (none were offered,
+                # so none ran): stop now, never a further model call.
                 return await _stop(
                     deps,
                     store,
@@ -2842,9 +2989,33 @@ async def _run_agent(
                     revision,
                     REASON_AGENT_TOOL_BUDGET,
                     422,
-                    f"batch exceeded the tool-call budget ({len(excess)} excess not run); "
-                    "start a new session",
+                    tool_budget_stop_message(
+                        store, session_id, state, excess=budget_recovery_excess
+                    ),
                 )
+            if budget_exhausted_stop:
+                # H4 (2026-10-08): a batch larger than the remaining calls
+                # keeps the affordable prefix, then gets one finishing turn
+                # instead of stopping at once. Tools are now 0, so the next
+                # iteration is the final turn (offered=[], the same
+                # mechanism as the wrap-up's tool withholding) and passes
+                # the top-of-loop step, wall-clock and token checks like
+                # any turn; if one of them fails, it stops with the
+                # tool-budget reason and the results list (see
+                # budget_stop). At most once per run: the finishing turn
+                # ends the run whether it finishes, asks, is rejected
+                # (no retry, see _validation_feedback) or calls tools
+                # (above). Allowances are never reset or raised.
+                budget_recovery_excess = len(excess)
+                last_outcome = (
+                    f"{ok_now}/{len(results)} tool calls ok; batch exceeded "
+                    f"the tool-call budget ({len(excess)} excess not run); "
+                    f"steps left {state.steps_remaining}, "
+                    f"tools left {state.tool_calls_remaining}; finishing turn "
+                    "without tools: finish from the evidence listed or ask "
+                    "one question"
+                )
+                continue
             if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
                 return await _stop(
                     deps,
@@ -4444,14 +4615,23 @@ async def _validation_feedback(
         ) from exc
     new_revision = updated.revision
     if final_turn:
+        # H4 (2026-10-08): a rejected finishing turn (including the
+        # budget-recovery turn, which is always tool-less with no retry
+        # left) stops with the budget stop plus the deterministic
+        # results list, no second turn. The one-validation-retry rule is
+        # unchanged: final turns never had a retry, so none is available
+        # here because no tools or steps remain for a retry within
+        # budget.
         reason = (
             REASON_AGENT_TOOL_BUDGET if state.tool_calls_remaining <= 0 else REASON_AGENT_MAX_STEPS
         )
-        budget_note = (
-            "tool-call budget exhausted; start a new session"
-            if reason == REASON_AGENT_TOOL_BUDGET
-            else "step budget exhausted (max_steps); start a new session"
-        )
+        if reason == REASON_AGENT_TOOL_BUDGET:
+            budget_note = tool_budget_stop_message(store, session_id, updated, excess=0)
+        else:
+            budget_note = (
+                f"step budget exhausted (max_steps). Useful results so far: "
+                f"{session_results_summary(store, session_id, updated)}; start a new session"
+            )
         return await _stop(
             deps,
             store,
@@ -4505,6 +4685,8 @@ __all__ = [
     "record_user_message",
     "run_agent",
     "seed_excluded_from_events",
+    "session_results_summary",
     "session_token_usage",
+    "tool_budget_stop_message",
     "user_messages_from_events",
 ]
