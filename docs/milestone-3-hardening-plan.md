@@ -1,9 +1,9 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
-Status: **H0 to H6 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
-2026-10-07; H2 to H6 on 2026-10-08; the H5 re-ingestion is not run and
-the H6 ranking change is a proposal, both for Checkpoint D). H7 not
-started. Harness
+Status: **H0 to H7 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
+2026-10-07; H2 to H7 on 2026-10-08; the H5 re-ingestion is not run and
+the H6 ranking change is a proposal, both for Checkpoint D). Next:
+Checkpoint D (owner), then H8 only with owner authorization. Harness
 cases v9 since H4 (44/44). Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
@@ -382,6 +382,20 @@ Implement step H7.
 
 Evidence: new case version and hash; harness results; an exported
 offline session showing the new fields.
+
+Done 2026-10-08: harness cases v10 (55 cases, sha `198ef720…`, 55/55,
+v9 kept as `history_v9`) with the 11 cases listed in
+`docs/agent-scoreboard.md`; every case also checks the per-turn decision
+log. `session_events` now record one `agent_turn` per turn (tools
+offered, withheld with a reason code, remaining budgets); step,
+question, finish and rejection events carry repeats and budgets;
+`export_session.py` shows them. The review found and fixed: the
+reasoning diagnostic also copied a reasoning item's `content`, which can
+be raw reasoning (now summary only, stored once); the agent's
+`history_v9` had a wrong hash and wrong counts (rebuilt from the
+committed v9 results); the cases note did not describe v10. Checked on
+earlier commits: the H2 and H3 cases fail before their fix and pass
+after; all 11 fail before the 2026-10-07 hardening.
 
 ## Checkpoint D (owner)
 

@@ -1,6 +1,6 @@
 {
-  "version": "phase7-cases-v9-2026-10-08",
-  "note": "SYNTHETIC scripted model turns, not model output. v9 (H4 budget recovery): p7-budget-tools now scripts the tool-less finishing turn after the excess batch (a question), and p7-budget-tools-no-finish keeps the immediate stop when that turn is unaffordable (output ceiling 520: the first turn has the 500-token minimum, the batch leaves less). v8 requires direction coverage for \"source\" (p7-plan-partial-coverage omits the marinade and is model_adaptation; p7-plan-faithful-source cites all six). v7 web guard; v6 plan attribution; v5 duplicate visibility; v4 time/honored/refetch; v3 vector/resume; v2 scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored stop reasons alone; aggregates kept in results.json history. Later edits need a new version, never a silent change.",
+  "version": "phase7-cases-v10-2026-10-08",
+  "note": "SYNTHETIC scripted model turns, not model output. v10 (H7) adds 11 cases: the 2026-10-07 recovery paths (technique answer after a plan, dropped option named, negated pairing mention, wrap-up withholds only repeated tools, repeated search marked, select phase withholds search and pairings, tree-nut allergy checked, allergy line keeps constraints_honored empty) and H2/H3 (swapped quantities, clipped directions, fidelity claim); every case also checks the per-turn decision log. v9 (H4 budget recovery): p7-budget-tools now scripts the tool-less finishing turn after the excess batch (a question), and p7-budget-tools-no-finish keeps the immediate stop when that turn is unaffordable (output ceiling 520: the first turn has the 500-token minimum, the batch leaves less). v8 requires direction coverage for \"source\" (p7-plan-partial-coverage omits the marinade and is model_adaptation; p7-plan-faithful-source cites all six). v7 web guard; v6 plan attribution; v5 duplicate visibility; v4 time/honored/refetch; v3 vector/resume; v2 scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored stop reasons alone; aggregates kept in results.json history. Later edits need a new version, never a silent change.",
   "cases": [
     {
       "id": "p7-epicure-default",
@@ -5345,6 +5345,2101 @@
         "search_web"
       ],
       "forbidden_tools": []
+    },
+    {
+      "id": "p7-technique-after-plan",
+      "criteria": [
+        "technique-after-plan-keeps-phase",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "I want a chicken dinner for tonight.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "technique_rows": "safety",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ],
+            [
+              "c2",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c4",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "select": {
+        "dataset_id": "odunola/foodie",
+        "source_id": "curry-1"
+      },
+      "plan_turns": [
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c6",
+              "search_techniques",
+              {
+                "query": "safe internal temperatures"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1"
+                },
+                "mise_en_place": [
+                  "dice chicken",
+                  "measure yogurt"
+                ],
+                "steps": [
+                  "brown chicken",
+                  "stir in yogurt",
+                  "serve"
+                ],
+                "plating": "over rice in shallow bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "packet plan"
+          }
+        ]
+      ],
+      "followup_turns": [
+        [
+          "tools",
+          [
+            [
+              "c20",
+              "search_techniques",
+              {
+                "query": "crispy chicken skin"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": null,
+            "result": {
+              "technique_answer": {
+                "text": "Cook poultry to 165 F.",
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "epicure_skip_reason": "simple_technique_question",
+            "note": "crispy skin answer"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "technique_answer",
+        "expect_phase": "plan"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques",
+        "scale_recipe",
+        "convert_units"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-dropped-named",
+      "criteria": [
+        "dropped-option-named",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "Vegan dinner, something hearty.",
+      "session": {
+        "constraints": {
+          "dietary_constraints": [
+            "vegan"
+          ]
+        }
+      },
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "hearty vegan"
+              }
+            ],
+            [
+              "c2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ],
+            [
+              "c4",
+              "find_balanced_pairings",
+              {
+                "ingredient": "lentils"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [
+              "dietary_constraints"
+            ],
+            "epicure_lines": [
+              {
+                "ingredient": "coconut milk",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "30-minute chicken dinner"
+          }
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [
+              "dietary_constraints"
+            ],
+            "epicure_lines": [
+              {
+                "ingredient": "coconut milk",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1,
+        "forbidden_option_ids": [
+          "curry-1"
+        ],
+        "first_rejection_contains": "was dropped"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "find_substitutions"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-negated-pairing",
+      "criteria": [
+        "negated-mention-not-claim",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "Give me chicken dinner options.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "epicure_vocab": [
+        "pork",
+        "beef",
+        "chicken",
+        "lentil",
+        "saffron",
+        "onion",
+        "yogurt"
+      ],
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ],
+            [
+              "c2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ],
+            [
+              "c4",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "used",
+                "reason": "crisp contrast"
+              }
+            ],
+            "note": "Serve with saffron rice."
+          }
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "used",
+                "reason": "crisp contrast"
+              }
+            ],
+            "note": "Contains no saffron; simple chicken and lentils."
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "first_rejection_contains": "unsupported pairing"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-wrapup-withholds-only-repeated",
+      "criteria": [
+        "wrapup-withholds-only-repeated",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "Give me curry options.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ],
+            [
+              "c2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c3",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c4",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_wrapup": {
+          "withheld": [
+            "search_recipes"
+          ],
+          "offered_contains": [
+            "get_recipe"
+          ]
+        }
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-repeat-search-marked",
+      "criteria": [
+        "repeat-search-marked",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "Give me more curry options.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ],
+            [
+              "c2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ],
+            [
+              "c4",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_repeat_noted": true
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-select-withholds-search",
+      "criteria": [
+        "select-withholds-search-pairings",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "I want a chicken dinner for tonight.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ],
+            [
+              "c2",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c4",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "select": {
+        "dataset_id": "odunola/foodie",
+        "source_id": "curry-1"
+      },
+      "plan_turns": [
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "search_recipes",
+              {
+                "query": "more chicken"
+              }
+            ],
+            [
+              "c6",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ],
+            [
+              "c7",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c8",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c9",
+              "search_techniques",
+              {
+                "query": "safe internal temperatures"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1"
+                },
+                "mise_en_place": [
+                  "dice chicken",
+                  "measure yogurt"
+                ],
+                "steps": [
+                  "brown chicken",
+                  "stir in yogurt",
+                  "serve"
+                ],
+                "plating": "over rice in shallow bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "packet plan"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "expect_turn_withheld": [
+          {
+            "tool": "search_recipes",
+            "reason": "select_phase_plan_only"
+          },
+          {
+            "tool": "find_balanced_pairings",
+            "reason": "select_phase_plan_only"
+          }
+        ]
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques",
+        "scale_recipe",
+        "convert_units"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-allergy-tree-nuts",
+      "criteria": [
+        "ask-resume-allergy",
+        "phase3-closure-allergen-checked"
+      ],
+      "adversarial": false,
+      "request": "I am cooking dinner for a friend who has a food allergy. Suggest something with chicken.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "ask_user",
+            "question": {
+              "question_id": "q-allergy",
+              "question_text": "What is your friend allergic to? I need to avoid it in every suggestion.",
+              "options": [
+                "tree nuts",
+                "dairy",
+                "gluten",
+                "other"
+              ]
+            },
+            "note": "need named restriction"
+          }
+        ]
+      ],
+      "answer": {
+        "question_id": "q-allergy",
+        "answer": "tree nuts"
+      },
+      "resume_turns": [
+        [
+          "tools",
+          [
+            [
+              "c2",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c4",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ],
+            [
+              "c5",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "checked listed ingredients for tree nuts; term list is incomplete"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "allergen_checked": "tree nuts"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "find_substitutions"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-allergy-honored-empty",
+      "criteria": [
+        "allergy-honored-empty",
+        "phase3-closure-allergen-checked"
+      ],
+      "adversarial": false,
+      "request": "I am cooking dinner for a friend who has a food allergy. Suggest something with chicken.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "ask_user",
+            "question": {
+              "question_id": "q-allergy",
+              "question_text": "What is your friend allergic to? I need to avoid it in every suggestion.",
+              "options": [
+                "tree nuts",
+                "dairy",
+                "gluten",
+                "other"
+              ]
+            },
+            "note": "need named restriction"
+          }
+        ]
+      ],
+      "answer": {
+        "question_id": "q-allergy",
+        "answer": "tree nuts"
+      },
+      "resume_turns": [
+        [
+          "tools",
+          [
+            [
+              "c2",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c4",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ],
+            [
+              "c5",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [
+              "dietary_constraints"
+            ],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "checked listed ingredients for tree nuts"
+          }
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "checked listed ingredients for tree nuts; term list is incomplete"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "allergen_checked": "tree nuts",
+        "first_rejection_contains": "checked automatically"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "find_substitutions"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-h2-swapped-quantities",
+      "criteria": [
+        "h2-swapped-quantities",
+        "plan-quantities"
+      ],
+      "adversarial": false,
+      "request": "Give me the creamy cashew chicken curry recipe.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "cashew",
+      "technique_rows": "safety",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "cashew chicken"
+              }
+            ],
+            [
+              "c2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "cashew-8"
+              }
+            ],
+            [
+              "c3",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "cashew-8",
+                  "title": "Creamy Cashew Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "select": {
+        "dataset_id": "odunola/foodie",
+        "source_id": "cashew-8"
+      },
+      "plan_turns": [
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "cashew-8"
+              }
+            ],
+            [
+              "c6",
+              "search_techniques",
+              {
+                "query": "safe internal temperatures"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "cashew-8"
+                },
+                "mise_en_place": [
+                  "Have 100 g chicken pieces.",
+                  "Have 500 g cashews."
+                ],
+                "steps": [
+                  "Mix salt and spices.",
+                  "Cut chicken.",
+                  "Coat chicken with spices.",
+                  "Brown chicken.",
+                  "Cook onion and garlic.",
+                  "Blend cashews."
+                ],
+                "plating": "in bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  },
+                  {
+                    "ingredient": "cashews",
+                    "amount": "100",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "packet plan"
+          }
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "cashew-8"
+                },
+                "mise_en_place": [
+                  "Have 500 g chicken pieces.",
+                  "Have 100 g cashews."
+                ],
+                "steps": [
+                  "Mix salt and spices.",
+                  "Cut chicken.",
+                  "Coat chicken with spices.",
+                  "Brown chicken.",
+                  "Cook onion and garlic.",
+                  "Blend cashews."
+                ],
+                "plating": "in bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  },
+                  {
+                    "ingredient": "cashews",
+                    "amount": "100",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "packet plan"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "first_rejection_contains": "but the source states"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-h3-clipped-directions",
+      "criteria": [
+        "h3-clipped-directions",
+        "plan-omitted-directions"
+      ],
+      "adversarial": false,
+      "request": "Give me the long direction stew recipe.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "long",
+      "technique_rows": "safety",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "long stew"
+              }
+            ],
+            [
+              "c2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "long-10"
+              }
+            ],
+            [
+              "c3",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "long-10",
+                  "title": "Long Direction Stew",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "select": {
+        "dataset_id": "odunola/foodie",
+        "source_id": "long-10"
+      },
+      "plan_turns": [
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "long-10"
+              }
+            ],
+            [
+              "c6",
+              "search_techniques",
+              {
+                "query": "safe internal temperatures"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "long-10"
+                },
+                "mise_en_place": [
+                  "Have 500 g chicken."
+                ],
+                "steps": [
+                  "Chop onion.",
+                  "Fold dough gently.",
+                  "Serve hot."
+                ],
+                "plating": "in bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "packet plan"
+          }
+        ],
+        [
+          "tools",
+          [
+            [
+              "c7",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "long-10",
+                "directions_from": 1,
+                "directions_to": 2
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "long-10"
+                },
+                "mise_en_place": [
+                  "Have 500 g chicken."
+                ],
+                "steps": [
+                  "Chop onion.",
+                  "Fold dough gently.",
+                  "Serve hot."
+                ],
+                "plating": "in bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "packet plan"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "first_rejection_contains": "directions [1]"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-h3-fidelity-claim",
+      "criteria": [
+        "h3-fidelity-claim",
+        "plan-fidelity"
+      ],
+      "adversarial": false,
+      "request": "Give me the creamy cashew chicken curry recipe with a twist.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "cashew",
+      "technique_rows": "safety",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "cashew chicken"
+              }
+            ],
+            [
+              "c2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "cashew-8"
+              }
+            ],
+            [
+              "c3",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "cashew-8",
+                  "title": "Creamy Cashew Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "select": {
+        "dataset_id": "odunola/foodie",
+        "source_id": "cashew-8"
+      },
+      "plan_turns": [
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "cashew-8"
+              }
+            ],
+            [
+              "c6",
+              "search_techniques",
+              {
+                "query": "safe internal temperatures"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "cashew-8"
+                },
+                "mise_en_place": [
+                  "Have 500 g chicken pieces.",
+                  "Have 100 g cashews."
+                ],
+                "steps": [
+                  "Mix salt and spices.",
+                  "Cut chicken.",
+                  "Smoke chicken with applewood."
+                ],
+                "plating": "in bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  },
+                  {
+                    "ingredient": "cashews",
+                    "amount": "100",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [
+                  {
+                    "description": "Smoking step is not from the source, model-created twist.",
+                    "label": "adaptation"
+                  }
+                ],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "This follows the original recipe exactly."
+          }
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "cashew-8"
+                },
+                "mise_en_place": [
+                  "Have 500 g chicken pieces.",
+                  "Have 100 g cashews."
+                ],
+                "steps": [
+                  "Mix salt and spices.",
+                  "Cut chicken.",
+                  "Smoke chicken with applewood."
+                ],
+                "plating": "in bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  },
+                  {
+                    "ingredient": "cashews",
+                    "amount": "100",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [
+                  {
+                    "description": "Smoking step is not from the source, model-created twist.",
+                    "label": "adaptation"
+                  }
+                ],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "A modern twist, does not follow the source."
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "first_rejection_contains": "claims fidelity"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
     }
   ]
 }

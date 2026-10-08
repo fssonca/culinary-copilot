@@ -343,7 +343,19 @@ The validators run on every finish, with no model call:
 
 - **Event log:** every tool call records outcome, error type, reason,
   latency, cost class, mode and returned identities. Every step
-  records remaining budgets and token usage.
+  records remaining budgets and token usage. Every turn records one
+  `agent_turn` decision event (H7): the tools offered and withheld
+  with the reason each (`search_permission_off`, `epicure_disabled`,
+  `tool_not_configured`, `no_servings`, `select_phase_plan_only`,
+  `repeat_wrap_up`, `final_turn_no_tools`, `mode_not_configured`),
+  the repeated results it saw (`repeated_tools`, `repeat_noted` on
+  the step event), validation failures with the budgets they leave
+  behind, and the remaining step/tool/token budgets. A provider
+  reasoning summary, when returned, is stored once on that turn's
+  outcome event as a bounded diagnostic labelled
+  `provider_reasoning_summary` (500 chars) and never used for a
+  decision; raw or encrypted reasoning content is never recorded. All
+  payloads stay bounded.
 - **Full trajectories (opt-in):** with `AGENT_RECORD_TRAJECTORY=true`
   (on in `make demo`), the log also records:
   - tool arguments;
@@ -370,8 +382,8 @@ The validators run on every finish, with no model call:
 
 | Layer | What it proves | Size |
 |---|---|---|
-| Unit and integration tests | Contracts, validators, tools, CAS, UI headers (`make check`, disposable databases) | 1,209 passed, 8 skipped |
-| Offline scenario harness (`evals/phase7_agent/run.py`) | The real loop, tools and validators against scripted model turns, including adversarial ones (skipped Epicure, invented URL, bad arguments, illegal transition) | 43/43 cases, 4/4 adversarial caught |
+| Unit and integration tests | Contracts, validators, tools, CAS, UI headers (`make check`, disposable databases) | 1,271 passed, 8 skipped |
+| Offline scenario harness (`evals/phase7_agent/run.py`) | The real loop, tools and validators against scripted model turns, including adversarial ones (skipped Epicure, invented URL, bad arguments, illegal transition) | 55/55 cases (v10), 4/4 adversarial caught |
 | Scorer mutation tests | Each scoring check actually fails when the behaviour breaks | `tests/test_phase7_scorer.py` |
 | Bounded live runs | What the real model does: 7 scenarios, then 4 re-runs after fixes, all trajectories saved | First run 3/7 expected stops; re-runs 2/4 |
 | Human checkpoint | The owner reads live trajectories beside their sources | Checkpoint C |

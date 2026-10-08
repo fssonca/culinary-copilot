@@ -1,6 +1,6 @@
 # Agent scoreboard (Milestone 3, Phase 7)
 
-Status: offline harness v9, updated 2026-10-08. The harness makes no
+Status: offline harness v10, updated 2026-10-08. The harness makes no
 model calls, embedding calls, web requests or downloads. Writes go to
 the disposable `culinary_check_phase7` database only (dropped
 afterward). The live evaluation (11 sessions, part 2) is summarized
@@ -25,10 +25,14 @@ Model quality is measured only by the live run.
   `uv run python evals/phase7_agent/run.py`. Writes `results.json` and
   `epicure_compare.json` into that directory.
 - `evals/phase7_agent/cases.json`: version
-  `phase7-cases-v9-2026-10-08`, 44 cases, sha256
-  `808cc23c7ad04025854e25c8f2893bbdd088b31a5a806fd169cb8ee494f987ee`
-  (recorded in `results.json` as `cases_sha256`; v1 and v8 sha and
-  aggregate kept as `history_v1` and `history_v8`). v9 follows the H4
+  `phase7-cases-v10-2026-10-08`, 55 cases, sha256
+  `198ef720520d7ead03fff420bea5360ad6fbaea47be2b117c2759df1335820d8`
+  (recorded in `results.json` as `cases_sha256`; v1, v8 and v9 sha and
+  aggregate kept as `history_v1`, `history_v8` and `history_v9`). v10
+  (H7) adds 11 cases (listed below) and checks the per-turn decision
+  log in every case: one `agent_turn` event per turn with offered and
+  withheld tools and remaining budgets, bounded payloads, no raw
+  reasoning. v9 follows the H4
   budget recovery: `p7-budget-tools` scripts the finishing turn after
   the excess batch, and `p7-budget-tools-no-finish` keeps the immediate
   stop when that turn is unaffordable. A later edit means a new
@@ -43,29 +47,29 @@ Model quality is measured only by the live run.
   permission-off backend gate is additionally probed directly with
   `run_tool`.
 
-## Aggregates (44 cases, v9)
+## Aggregates (55 cases, v10)
 
-- Task completion (scored): 44/44 (rate 1.0). Expected-fail: none.
+- Task completion (scored): 55/55 (rate 1.0). Expected-fail: none.
 - Adversarial catch rate: 4/4 (1.0), each with its pinned rejection
   text. Adversarial cases: `p7-epicure-skip-unjustified` ("needs
   Epicure consulted"), `p7-search-invented-url` ("was not returned in
   this session"), `p7-tool-invalid-args`, `p7-invalid-transition-caught`.
-- Stop reasons: `agent_sufficient_evidence` 32,
+- Stop reasons: `agent_sufficient_evidence` 43,
   `agent_validation_failed` 4, `agent_needs_user_input` 4,
   `agent_max_steps` 1, `agent_tool_budget_exhausted` 1,
   `agent_token_budget_exhausted` 1, `agent_wall_clock_exceeded` 1.
 - Invalid transitions: 1 total (in `p7-invalid-transition-caught`,
   recovered then finished).
-- Tool-argument validity (mean): 0.991. Below 1.0:
+- Tool-argument validity (mean): 0.993. Below 1.0:
   `p7-tool-invalid-args` (0.8) and `p7-vector-unconfigured` (0.8:
   the refused vector call, recovered with fulltext).
 - Unnecessary-call rate (mean): 0.0. No forbidden calls.
-- Epicure compliance: 43/44 (0.977). The single non-compliant case is
+- Epicure compliance: 54/55 (0.982). The single non-compliant case is
   the adversarial unjustified skip, correctly caught.
-- Source-reference correctness: 44/44 (1.0).
-- Unsupported-claim cases: 3 (the time-claim regression cases,
-  whose first finishes are rejected on purpose; all recover or fail
-  as designed).
+- Source-reference correctness: 55/55 (1.0).
+- Unsupported-claim cases: 5 (the three time-claim regression cases
+  plus `p7-dropped-named` and `p7-negated-pairing`, whose first
+  finishes are rejected on purpose; all recover or fail as designed).
 - Latency, tokens, cost: not measured offline (scripted provider).
 
 ## Case list (criteria in `cases.json`)
@@ -153,6 +157,33 @@ Model quality is measured only by the live run.
   answer): rejected once, then a description passes. Imperatives
   count after first/next/now/finally/simply/just/you/we/after-that
   as well as sentence starts.
+
+v10 (H7, 2026-10-08), all pass. Checked against earlier commits with
+the decision-log check switched off: all 11 fail before the 2026-10-07
+hardening (`a46f466`); the H2 and H3 cases fail on the commit before
+their fix and pass from it on. The wrap-up, repeated-search and
+select-phase cases read the new `agent_turn`/`agent_step` fields, so
+they cannot separate older behaviour from the missing log.
+
+- `p7-technique-after-plan`: a technique question after the plan keeps
+  the plan phase.
+- `p7-dropped-named`: the feedback names the dropped option.
+- `p7-negated-pairing`: a negated pairing mention is not a claim.
+- `p7-wrapup-withholds-only-repeated`: the wrap-up turn withholds the
+  repeated search (`repeat_wrap_up`) and still offers `get_recipe`.
+- `p7-repeat-search-marked`: an identical search is marked as nothing
+  new (`repeat_noted`).
+- `p7-select-withholds-search`: after a selection, recipe search and
+  pairings are withheld (`select_phase_plan_only`).
+- `p7-allergy-tree-nuts`: a named "tree nuts" allergy is checked.
+- `p7-allergy-honored-empty`: the allergy line keeps
+  `constraints_honored` empty.
+- `p7-h2-swapped-quantities`: amounts swapped between two ingredients
+  are rejected.
+- `p7-h3-clipped-directions`: a plan needs the clipped direction read
+  with a ranged `get_recipe` first.
+- `p7-h3-fidelity-claim`: an adaptation that claims to follow the
+  source is rejected; a negated statement passes.
 
 Code pointers: loop `src/culinary_copilot/agent/loop.py`, validators
 `src/culinary_copilot/agent/validate.py`, tools

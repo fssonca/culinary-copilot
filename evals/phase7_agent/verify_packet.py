@@ -7,6 +7,10 @@ stops, tool counts, guards fired, final shapes, cited ids and
 constraint statuses, and checks them against the packet's tables.
 Exits non-zero on any mismatch.
 
+The packet's claims are checked against the live raw files they were
+recorded from (the 11 Checkpoint C live sessions), never against the
+offline harness, so harness versions (v10 since H7) do not affect it.
+
 Usage (repo root, offline, no model calls)::
 
     uv run python evals/phase7_agent/verify_packet.py

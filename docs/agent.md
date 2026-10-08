@@ -47,7 +47,15 @@ a 16,000-character retention heuristic, which is not a token or
 spending guarantee; tool results as `function_call_output` data
 items; details in `docs/architecture/agent-system.md`). `session_events` keeps the full
 record; only concise decisions and outcomes are stored — never private
-model reasoning.
+model reasoning. Decision log (H7): every turn appends one `agent_turn`
+event with the tools offered, the tools withheld with a reason code, and
+the remaining step, tool-call and token budgets. Step events add the
+repeated calls and the searches marked as returning nothing new;
+question, finish and validation-rejection events add the budgets they
+leave. A provider reasoning summary, when the provider returns one, is
+stored on that turn's event as a bounded diagnostic (500 characters,
+labelled `provider_reasoning_summary`) and never drives a decision. Raw
+or encrypted reasoning content is never recorded.
 
 ## Tool-list filtering (backend, every step)
 

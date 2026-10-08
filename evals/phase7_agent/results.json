@@ -1,7 +1,7 @@
 {
   "cases_file": "cases.json",
-  "cases_version": "phase7-cases-v9-2026-10-08",
-  "cases_sha256": "808cc23c7ad04025854e25c8f2893bbdd088b31a5a806fd169cb8ee494f987ee",
+  "cases_version": "phase7-cases-v10-2026-10-08",
+  "cases_sha256": "198ef720520d7ead03fff420bea5360ad6fbaea47be2b117c2759df1335820d8",
   "history_v1": {
     "cases_version": "phase7-cases-v1-2026-10-04",
     "cases_sha256": "5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b",
@@ -66,16 +66,48 @@
     },
     "note": "pre-H4: p7-budget-tools stopped at the excess batch (agent_tool_budget_exhausted) with no finishing turn"
   },
+  "history_v9": {
+    "cases_version": "phase7-cases-v9-2026-10-08",
+    "cases_sha256": "808cc23c7ad04025854e25c8f2893bbdd088b31a5a806fd169cb8ee494f987ee",
+    "aggregate": {
+      "total": 44,
+      "scored": 44,
+      "completed": 44,
+      "task_completion_rate": 1.0,
+      "expected_fail_total": 0,
+      "expected_fail_completed": 0,
+      "stop_reason_distribution": {
+        "agent_sufficient_evidence": 32,
+        "agent_validation_failed": 4,
+        "agent_needs_user_input": 4,
+        "agent_max_steps": 1,
+        "agent_tool_budget_exhausted": 1,
+        "agent_token_budget_exhausted": 1,
+        "agent_wall_clock_exceeded": 1
+      },
+      "invalid_transitions_total": 1,
+      "tool_argument_validity_mean": 0.990909090909091,
+      "unnecessary_call_rate_mean": 0.0,
+      "epicure_compliance_rate": 0.9772727272727273,
+      "source_reference_correctness_rate": 1.0,
+      "unsupported_claim_cases": 3,
+      "adversarial_total": 4,
+      "adversarial_caught": 4,
+      "adversarial_catch_rate": 1.0,
+      "latency_tokens_cost": "not measured offline (scripted provider)"
+    },
+    "note": "pre-H7: 44 cases, no per-turn decision log, no H7 recovery-path cases"
+  },
   "note": "offline system results (loop control, tools, validators), not model judgement; latency/tokens/cost not measured offline",
   "aggregate": {
-    "total": 44,
-    "scored": 44,
-    "completed": 44,
+    "total": 55,
+    "scored": 55,
+    "completed": 55,
     "task_completion_rate": 1.0,
     "expected_fail_total": 0,
     "expected_fail_completed": 0,
     "stop_reason_distribution": {
-      "agent_sufficient_evidence": 32,
+      "agent_sufficient_evidence": 43,
       "agent_validation_failed": 4,
       "agent_needs_user_input": 4,
       "agent_max_steps": 1,
@@ -84,11 +116,11 @@
       "agent_wall_clock_exceeded": 1
     },
     "invalid_transitions_total": 1,
-    "tool_argument_validity_mean": 0.990909090909091,
+    "tool_argument_validity_mean": 0.9927272727272728,
     "unnecessary_call_rate_mean": 0.0,
-    "epicure_compliance_rate": 0.9772727272727273,
+    "epicure_compliance_rate": 0.9818181818181818,
     "source_reference_correctness_rate": 1.0,
-    "unsupported_claim_cases": 3,
+    "unsupported_claim_cases": 5,
     "adversarial_total": 4,
     "adversarial_caught": 4,
     "adversarial_catch_rate": 1.0,
@@ -1326,6 +1358,318 @@
       "task_completion": true,
       "steps": 2,
       "tool_calls": 2,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-technique-after-plan",
+      "criteria": [
+        "technique-after-plan-keeps-phase",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "technique_answer",
+        "expect_phase": "plan"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "technique_answer",
+      "task_completion": true,
+      "steps": 6,
+      "tool_calls": 7,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-dropped-named",
+      "criteria": [
+        "dropped-option-named",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1,
+        "forbidden_option_ids": [
+          "curry-1"
+        ],
+        "first_rejection_contains": "was dropped"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 1
+    },
+    {
+      "id": "p7-negated-pairing",
+      "criteria": [
+        "negated-mention-not-claim",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "first_rejection_contains": "unsupported pairing"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 1
+    },
+    {
+      "id": "p7-wrapup-withholds-only-repeated",
+      "criteria": [
+        "wrapup-withholds-only-repeated",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_wrapup": {
+          "withheld": [
+            "search_recipes"
+          ],
+          "offered_contains": [
+            "get_recipe"
+          ]
+        }
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-repeat-search-marked",
+      "criteria": [
+        "repeat-search-marked",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_repeat_noted": true
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 3,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-select-withholds-search",
+      "criteria": [
+        "select-withholds-search-pairings",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "expect_turn_withheld": [
+          {
+            "tool": "search_recipes",
+            "reason": "select_phase_plan_only"
+          },
+          {
+            "tool": "find_balanced_pairings",
+            "reason": "select_phase_plan_only"
+          }
+        ]
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 5,
+      "tool_calls": 7,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-allergy-tree-nuts",
+      "criteria": [
+        "ask-resume-allergy",
+        "phase3-closure-allergen-checked"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "allergen_checked": "tree nuts"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-allergy-honored-empty",
+      "criteria": [
+        "allergy-honored-empty",
+        "phase3-closure-allergen-checked"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "allergen_checked": "tree nuts",
+        "first_rejection_contains": "checked automatically"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-h2-swapped-quantities",
+      "criteria": [
+        "h2-swapped-quantities",
+        "plan-quantities"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "first_rejection_contains": "but the source states"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-h3-clipped-directions",
+      "criteria": [
+        "h3-clipped-directions",
+        "plan-omitted-directions"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "first_rejection_contains": "directions [1]"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 5,
+      "tool_calls": 6,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-h3-fidelity-claim",
+      "criteria": [
+        "h3-fidelity-claim",
+        "plan-fidelity"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "first_rejection_contains": "claims fidelity"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
       "invalid_transitions": 0,
       "tool_argument_validity": 1.0,
       "unnecessary_call_rate": 0.0,

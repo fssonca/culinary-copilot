@@ -1984,6 +1984,150 @@ _SEARCH_TOOLS = frozenset({"search_recipes", "search_techniques"})
 #: Tools not offered while a selected dish awaits its plan.
 _PLAN_PHASE_WITHHELD = frozenset({"search_recipes"}) | _PAIRING_TOOLS
 
+#: Observable decision log (H7, 2026-10-08): every turn records the
+#: tools offered and withheld (with the reason), the repeated results
+#: it saw, validation failures and the remaining budgets in
+#: ``session_events``. Never raw model reasoning: provider reasoning
+#: summaries, when the provider returns them, are stored only as an
+#: optional bounded diagnostic labelled as such, never used for a
+#: decision. All payloads stay bounded (tool lists, 80-char reasons,
+#: 500-char diagnostic).
+TURN_EVENT_TYPE = "agent_turn"
+_TURN_REASON_CHARS = 80
+_REASONING_DIAGNOSTIC_CHARS = 500
+
+
+def _turn_withheld(
+    *,
+    state: Any,
+    excluded: set[str],
+    epicure_enabled: bool,
+    selected_doc: dict[str, Any] | None,
+    selected_doc_resolved: bool,
+    final_turn: bool,
+    wrap_up: bool,
+    wrap_up_withheld: list[str],
+    offered_names: set[str],
+    timeout_s: float = 10.0,
+    settings: Any = None,
+) -> list[dict[str, str]]:
+    """Withheld tools for this turn with a deterministic reason each.
+
+    Compares the full registry against ``offered_names`` (the filtered
+    list the model actually sees) and names why each missing tool is
+    absent. Reasons are short codes for the timeline, never model
+    text. Order is deterministic (sorted by tool).
+    """
+    try:
+        all_names = [d.name for d in all_tool_definitions(timeout_s=timeout_s)]
+    except Exception:
+        all_names = sorted(set(offered_names) | set(excluded) | set(wrap_up_withheld))
+    # Search/technique mode filtering can drop a tool name entirely;
+    # mirror offered_tools so mode-filtered tools are not mislabelled.
+    try:
+        from culinary_copilot.tools import search_tools, technique_tools
+
+        configured = search_tools.with_configured_search_modes(
+            [d for d in all_tool_definitions(timeout_s=timeout_s)], settings
+        )
+        configured = technique_tools.with_configured_technique_modes(configured, settings)
+        configured_names = {d.name for d in configured}
+    except Exception:
+        configured_names = set(all_names)
+    withheld: list[dict[str, str]] = []
+    select_withheld = state.current_phase == "select" and not state.cooking_plan
+    no_servings = False
+    if selected_doc_resolved and selected_doc is not None:
+        try:
+            no_servings = servings_of(selected_doc) is None
+        except Exception:
+            no_servings = False
+    for name in sorted(set(all_names) - set(offered_names)):
+        if name not in configured_names:
+            reason = "mode_not_configured"
+        elif name in excluded:
+            reason = "tool_not_configured"
+        elif name == "search_web" and not bool(getattr(state, "internet_search_allowed", False)):
+            reason = "search_permission_off"
+        elif name in _PAIRING_TOOLS and not epicure_enabled:
+            reason = "epicure_disabled"
+        elif name == "scale_recipe" and no_servings:
+            reason = "no_servings"
+        elif name in _PLAN_PHASE_WITHHELD and select_withheld:
+            reason = "select_phase_plan_only"
+        elif wrap_up and name in set(wrap_up_withheld):
+            reason = "repeat_wrap_up"
+        elif final_turn:
+            reason = "final_turn_no_tools"
+        else:
+            reason = "not_offered"
+        withheld.append({"tool": name, "reason": reason[:_TURN_REASON_CHARS]})
+    # Wrap-up withholds are already in offered_names' complement, but a
+    # final turn also withholds everything: keep the wrap-up reason when
+    # both apply so the timeline shows the repeat cause.
+    if final_turn and wrap_up:
+        for entry in withheld:
+            if entry["tool"] in set(wrap_up_withheld):
+                entry["reason"] = "repeat_wrap_up"
+    return withheld
+
+
+def _provider_reasoning_diagnostic(turn: Any) -> dict[str, Any] | None:
+    """Bounded diagnostic from provider reasoning summaries, if any.
+
+    Reads only the ``summary`` of ``chain_items`` reasoning items (and an
+    explicit ``reasoning_summary`` attr when a provider sets one). A
+    reasoning item's ``content`` can hold raw reasoning, so it is never
+    read. Returns None when absent. The text is cut to 500 chars,
+    labelled as a diagnostic, and never used for a decision: the loop
+    never branches on it.
+    """
+    texts: list[str] = []
+    try:
+        chain = list(getattr(turn, "chain_items", None) or [])
+    except Exception:
+        chain = []
+    for item in chain:
+        if not isinstance(item, dict) or item.get("type") != "reasoning":
+            continue
+        summary = item.get("summary")
+        if isinstance(summary, list):
+            for part in summary:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    texts.append(str(part["text"]))
+                elif isinstance(part, str):
+                    texts.append(part)
+        elif isinstance(summary, str) and summary.strip():
+            texts.append(summary)
+    explicit = getattr(turn, "reasoning_summary", None)
+    if isinstance(explicit, str) and explicit.strip():
+        texts.append(explicit)
+    elif isinstance(explicit, list):
+        for part in explicit:
+            if isinstance(part, str) and part.strip():
+                texts.append(part)
+    if not texts:
+        return None
+    joined = " ".join(" ".join(texts).split())
+    return {
+        "kind": "provider_reasoning_summary",
+        "diagnostic": True,
+        "text": joined[:_REASONING_DIAGNOSTIC_CHARS],
+        "truncated": len(joined) > _REASONING_DIAGNOSTIC_CHARS,
+    }
+
+
+def _record_turn_decision(store: Any, session_id: str, payload: dict[str, Any]) -> None:
+    """Best-effort append of one ``agent_turn`` decision event.
+
+    Never fails a run: store errors are swallowed so observability
+    cannot break the bounded loop.
+    """
+    try:
+        store.append_event(session_id, TURN_EVENT_TYPE, payload)
+    except Exception:
+        return
+
 
 def _mark_repeat_search(summary: dict[str, Any], repeated: bool) -> dict[str, Any]:
     """Tell the model an identical search returned nothing new.
@@ -2455,6 +2599,8 @@ async def _run_agent(
     last_turn_in: int | None = None
     last_turn_out: int | None = None
     step = 0
+    # H7 decision log: per-turn sequence for the agent_turn events.
+    turn_seq = 0
 
     while True:
         # --- server-set stop checks (checked every step, before any call) ---
@@ -2615,6 +2761,45 @@ async def _run_agent(
                 plan_requirement=plan_requirement,
             )
             est_in = estimate_turn_input(turn_input, tool_defs, response_schema=directive_schema)
+        # H7 decision log: offered/withheld with reasons plus the
+        # remaining budgets, recorded before the provider call so even
+        # a failed turn stays observable. Never model reasoning (the
+        # optional summary diagnostic goes on the turn's outcome event).
+        turn_seq += 1
+        try:
+            withheld = _turn_withheld(
+                state=state,
+                excluded=set(excluded),
+                epicure_enabled=bool(getattr(settings, "epicure_enabled", False)),
+                selected_doc=selected_doc,
+                selected_doc_resolved=selected_doc_resolved,
+                final_turn=bool(final_turn),
+                wrap_up=bool(wrap_up),
+                wrap_up_withheld=list(wrap_up_withheld),
+                offered_names=set(offered_by_name),
+                timeout_s=timeout_s,
+                settings=settings,
+            )
+        except Exception:
+            withheld = []
+        _record_turn_decision(
+            store,
+            session_id,
+            {
+                "turn": turn_seq,
+                "phase": state.current_phase,
+                "offered": sorted(offered_by_name),
+                "withheld": withheld,
+                "final_turn": bool(final_turn),
+                "wrap_up": bool(wrap_up),
+                "steps_remaining": state.steps_remaining,
+                "tool_calls_remaining": state.tool_calls_remaining,
+                "input_token_ceiling": in_ceiling,
+                "output_token_ceiling": out_ceiling,
+                "input_tokens_used": used_in,
+                "output_tokens_used": used_out,
+            },
+        )
         # Local invariant, checked pre-send and unbilled: an unpaired
         # call/output (e.g. from a bad trim) is a provider 400, so fail
         # here instead of sending it.
@@ -2744,6 +2929,14 @@ async def _run_agent(
         used_out += turn_usage["output_tokens"]
         last_turn_in = turn_usage["input_tokens"]
         last_turn_out = turn_usage["output_tokens"]
+        # H7: optional provider reasoning summary as a labelled
+        # diagnostic only. Never used for a decision: no branch below
+        # reads it; it is only recorded in session_events (bounded).
+        try:
+            turn_diagnostic = _provider_reasoning_diagnostic(turn)
+        except Exception:
+            turn_diagnostic = None
+        # Stored once, on this turn's step/question/finish/rejection event.
 
         # --- tool-call turn ---
         if getattr(turn, "tool_calls", None):
@@ -2895,6 +3088,13 @@ async def _run_agent(
                 wrap_up_withheld = sorted(repeated_names)
 
             executed = len(ran_results)
+            # H7: which searches the model was told returned nothing new.
+            repeat_noted_ids = [
+                str(c.get("call_id") or "")
+                for c in runnable
+                if str(c.get("call_id") or "") in repeated_call_ids
+                and str(c.get("name") or "") in _SEARCH_TOOLS
+            ]
             state = _apply_step_commit(
                 deps,
                 store,
@@ -2905,6 +3105,10 @@ async def _run_agent(
                 tools_delta=executed,
                 note=f"step {step}: {len(results)} call(s), {ok_now} ok",
                 usage=turn_usage,
+                repeated_tools=sorted(repeated_names),
+                repeated_call_ids=sorted(repeated_call_ids),
+                repeat_noted=repeat_noted_ids,
+                reasoning_diagnostic=turn_diagnostic,
             )
             revision = state.revision
             if stalled_tool is not None:
@@ -3035,7 +3239,14 @@ async def _run_agent(
             consecutive_errors += 1
             last_outcome = "empty model turn (no calls, no directive)"
             state = _decrement_step(
-                deps, store, session_id, state, revision, note=last_outcome, usage=turn_usage
+                deps,
+                store,
+                session_id,
+                state,
+                revision,
+                note=last_outcome,
+                usage=turn_usage,
+                reasoning_diagnostic=turn_diagnostic,
             )
             revision = state.revision
             if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
@@ -3074,6 +3285,7 @@ async def _run_agent(
                 last_outcome,
                 turn_usage,
                 final_turn=final_turn,
+                reasoning_diagnostic=turn_diagnostic,
             )
             state, revision, validation_retries, last_outcome, history_note = feedback
             history.append({"role": "user", "content": history_note})
@@ -3094,6 +3306,7 @@ async def _run_agent(
                 history=history,
                 last_outcome=last_outcome,
                 final_turn=final_turn,
+                reasoning_diagnostic=turn_diagnostic,
             )
             if isinstance(ask_outcome, tuple):
                 # (state, revision, validation_retries, last_outcome, history_note)
@@ -3128,6 +3341,7 @@ async def _run_agent(
             turn_usage=turn_usage,
             returned_technique_chunks=returned_technique_chunks,
             final_turn=final_turn,
+            reasoning_diagnostic=turn_diagnostic,
         )
         if isinstance(finish_outcome, tuple):
             # (state, revision, validation_retries, last_outcome, history_note)
@@ -3178,18 +3392,29 @@ def _decrement_step(
     *,
     note: str,
     usage: dict[str, Any] | None = None,
+    reasoning_diagnostic: dict[str, Any] | None = None,
 ) -> Any:
     def _apply(snapshot: Any) -> Any:
         snapshot.steps_remaining = max(0, snapshot.steps_remaining - 1)
         return snapshot
 
+    # H7: empty turns also carry the remaining budgets plus the
+    # optional labelled reasoning diagnostic (never raw reasoning).
+    payload: dict[str, Any] = {
+        "note": _truncate_note(note),
+        "steps_remaining": max(0, state.steps_remaining - 1),
+        "tool_calls_remaining": state.tool_calls_remaining,
+        **(usage or {}),
+    }
+    if reasoning_diagnostic is not None:
+        payload["reasoning_diagnostic"] = reasoning_diagnostic
     try:
         return store.mutate(
             session_id,
             expected_revision=revision,
             fn=_apply,
             event_type="agent_step",
-            event_payload={"note": _truncate_note(note), **(usage or {})},
+            event_payload=payload,
         )
     except SessionStaleError as exc:
         raise AgentConcurrentError(str(exc) or "session changed under this run") from exc
@@ -3212,24 +3437,41 @@ def _apply_step_commit(
     tools_delta: int,
     note: str,
     usage: dict[str, Any] | None = None,
+    repeated_tools: list[str] | None = None,
+    repeated_call_ids: list[str] | None = None,
+    repeat_noted: list[str] | None = None,
+    reasoning_diagnostic: dict[str, Any] | None = None,
 ) -> Any:
     def _apply(snapshot: Any) -> Any:
         snapshot.steps_remaining = max(0, snapshot.steps_remaining - steps_delta)
         snapshot.tool_calls_remaining = max(0, snapshot.tool_calls_remaining - tools_delta)
         return snapshot
 
+    # H7: the step event carries the observable repeat decision
+    # (which calls repeated which results, which searches were marked
+    # "nothing new" for the model) plus the remaining budgets it
+    # already carried. Bounded lists; never model reasoning.
+    payload: dict[str, Any] = {
+        "note": _truncate_note(note),
+        "steps_remaining": max(0, state.steps_remaining - steps_delta),
+        "tool_calls_remaining": max(0, state.tool_calls_remaining - tools_delta),
+        **(usage or {}),
+    }
+    if repeated_tools:
+        payload["repeated_tools"] = sorted(set(repeated_tools))[:12]
+    if repeated_call_ids:
+        payload["repeated_call_ids"] = sorted(set(repeated_call_ids))[:24]
+    if repeat_noted:
+        payload["repeat_noted"] = sorted(set(repeat_noted))[:24]
+    if reasoning_diagnostic is not None:
+        payload["reasoning_diagnostic"] = reasoning_diagnostic
     try:
         return store.mutate(
             session_id,
             expected_revision=revision,
             fn=_apply,
             event_type="agent_step",
-            event_payload={
-                "note": _truncate_note(note),
-                "steps_remaining": max(0, state.steps_remaining - steps_delta),
-                "tool_calls_remaining": max(0, state.tool_calls_remaining - tools_delta),
-                **(usage or {}),
-            },
+            event_payload=payload,
         )
     except SessionStaleError as exc:
         raise AgentConcurrentError(str(exc) or "session changed under this run") from exc
@@ -3368,12 +3610,16 @@ async def _handle_ask(
     history: list[dict[str, Any]] | None = None,
     last_outcome: str | None = None,
     final_turn: bool = False,
+    reasoning_diagnostic: dict[str, Any] | None = None,
 ) -> Any:
     """Ask turn: commit the question, or feedback tuple for one retry.
 
     An invalid phase move from the model directive is recoverable
     validation feedback (the model gets another turn within budget);
     transitions requested through the API stay terminal.
+
+    H7: the question event carries the remaining budgets plus the
+    optional labelled reasoning diagnostic (never raw reasoning).
     """
     question = directive.question
     if question is None:
@@ -3398,6 +3644,7 @@ async def _handle_ask(
             last_outcome,
             turn_usage,
             final_turn=final_turn,
+            reasoning_diagnostic=reasoning_diagnostic,
         )
 
     def _apply(snapshot: Any) -> Any:
@@ -3412,19 +3659,25 @@ async def _handle_ask(
         snapshot.steps_remaining = max(0, snapshot.steps_remaining - 1)
         return snapshot
 
+    # H7: question events carry the budgets they leave behind.
+    question_payload: dict[str, Any] = {
+        "question_id": question.question_id,
+        "question_text": question.question_text,
+        "question_options": list(question.options or [])[:10],
+        "note": _truncate_note(directive.note),
+        "steps_remaining": max(0, state.steps_remaining - 1),
+        "tool_calls_remaining": state.tool_calls_remaining,
+        **(turn_usage or {}),
+    }
+    if reasoning_diagnostic is not None:
+        question_payload["reasoning_diagnostic"] = reasoning_diagnostic
     try:
         updated = store.mutate(
             session_id,
             expected_revision=revision,
             fn=_apply,
             event_type="agent_question",
-            event_payload={
-                "question_id": question.question_id,
-                "question_text": question.question_text,
-                "question_options": list(question.options or [])[:10],
-                "note": _truncate_note(directive.note),
-                **(turn_usage or {}),
-            },
+            event_payload=question_payload,
         )
     except SessionStaleError as exc:
         raise AgentConcurrentError(str(exc) or "session changed under this run") from exc
@@ -3504,6 +3757,7 @@ async def _handle_finish(
     turn_usage: dict[str, Any] | None = None,
     returned_technique_chunks: set[tuple[str, int]] | None = None,
     final_turn: bool = False,
+    reasoning_diagnostic: dict[str, Any] | None = None,
 ) -> Any:
     """Finish turn: validate + commit, or feedback tuple for one retry.
 
@@ -3511,6 +3765,9 @@ async def _handle_finish(
     validation feedback (the model gets another turn within budget);
     transitions requested through the API stay terminal. On a final
     turn there is no retry: feedback ends with the budget stop.
+
+    H7: finish events carry the remaining budgets plus the optional
+    labelled reasoning diagnostic (never raw reasoning).
     """
     result = directive.result
     if result is None:
@@ -3526,6 +3783,7 @@ async def _handle_finish(
             None,
             turn_usage,
             final_turn=final_turn,
+            reasoning_diagnostic=reasoning_diagnostic,
         )
     wants_plan = result.plan is not None
     wants_options = result.options is not None
@@ -3544,6 +3802,7 @@ async def _handle_finish(
             None,
             turn_usage,
             final_turn=final_turn,
+            reasoning_diagnostic=reasoning_diagnostic,
         )
     selected = state.selected_dish or {}
     if selected and wants_options:
@@ -3562,6 +3821,7 @@ async def _handle_finish(
             None,
             turn_usage,
             final_turn=final_turn,
+            reasoning_diagnostic=reasoning_diagnostic,
         )
     if directive.move_to:
         target = directive.move_to
@@ -3589,6 +3849,7 @@ async def _handle_finish(
             None,
             turn_usage,
             final_turn=final_turn,
+            reasoning_diagnostic=reasoning_diagnostic,
         )
 
     settings = deps.settings
@@ -4243,6 +4504,7 @@ async def _handle_finish(
             None,
             turn_usage,
             final_turn=final_turn,
+            reasoning_diagnostic=reasoning_diagnostic,
         )
 
     note = _truncate_note(directive.note)
@@ -4297,8 +4559,12 @@ async def _handle_finish(
             "epicure_degraded": epicure_degraded,
             "single_option_reason": single_option_reason,
             "dropped_options": dropped_options,
+            "steps_remaining": max(0, state.steps_remaining - 1),
+            "tool_calls_remaining": state.tool_calls_remaining,
             **(turn_usage or {}),
         }
+        if reasoning_diagnostic is not None:
+            event_payload["reasoning_diagnostic"] = reasoning_diagnostic
     elif wants_answer:
         # A technique-only answer: prose plus citations actually
         # returned, with attribution per chunk (CC BY-SA condition).
@@ -4342,8 +4608,12 @@ async def _handle_finish(
             "note": note,
             "technique_refs": len(attribution),
             "epicure_skip_reason": state_epicure_skip,
+            "steps_remaining": max(0, state.steps_remaining - 1),
+            "tool_calls_remaining": state.tool_calls_remaining,
             **(turn_usage or {}),
         }
+        if reasoning_diagnostic is not None:
+            event_payload["reasoning_diagnostic"] = reasoning_diagnostic
     elif wants_web:
         web_answer = result.web_answer
         assert web_answer is not None
@@ -4364,8 +4634,12 @@ async def _handle_finish(
         event_payload = {
             "note": note,
             "web_refs": len(web_answer.web_refs),
+            "steps_remaining": max(0, state.steps_remaining - 1),
+            "tool_calls_remaining": state.tool_calls_remaining,
             **(turn_usage or {}),
         }
+        if reasoning_diagnostic is not None:
+            event_payload["reasoning_diagnostic"] = reasoning_diagnostic
     else:
         assert result.plan is not None
         plan_dump = result.plan.model_dump()
@@ -4397,8 +4671,12 @@ async def _handle_finish(
             "note": note,
             "plan_source": plan_dump.get("source"),
             "steps_source": steps_source,
+            "steps_remaining": max(0, state.steps_remaining - 1),
+            "tool_calls_remaining": state.tool_calls_remaining,
             **(turn_usage or {}),
         }
+        if reasoning_diagnostic is not None:
+            event_payload["reasoning_diagnostic"] = reasoning_diagnostic
 
     try:
         updated = store.mutate(
@@ -4583,12 +4861,16 @@ async def _validation_feedback(
     turn_usage: dict[str, Any] | None = None,
     *,
     final_turn: bool = False,
+    reasoning_diagnostic: dict[str, Any] | None = None,
 ) -> Any:
     """Feed validation errors back once; second failure stops the run.
 
     On a final turn there is no retry left: the rejection is recorded
     and the run ends with the budget stop that fired the turn
     (tool budget when no calls remain, else max steps).
+
+    H7: the rejection event also carries the remaining budgets plus
+    the optional labelled reasoning diagnostic (never raw reasoning).
     """
     message = "validation rejected: " + "; ".join(errors[:5])
 
@@ -4597,13 +4879,23 @@ async def _validation_feedback(
         snapshot.steps_remaining = max(0, snapshot.steps_remaining - 1)
         return snapshot
 
+    # H7 decision log: validation failures stay observable with the
+    # budgets they leave behind.
+    reject_payload: dict[str, Any] = {
+        "errors": errors[:5],
+        "steps_remaining": max(0, state.steps_remaining - 1),
+        "tool_calls_remaining": state.tool_calls_remaining,
+        **(turn_usage or {}),
+    }
+    if reasoning_diagnostic is not None:
+        reject_payload["reasoning_diagnostic"] = reasoning_diagnostic
     try:
         updated = store.mutate(
             session_id,
             expected_revision=revision,
             fn=_apply,
             event_type="agent_validation_reject",
-            event_payload={"errors": errors[:5], **(turn_usage or {})},
+            event_payload=reject_payload,
         )
     except SessionStaleError as exc:
         raise AgentConcurrentError(str(exc) or "session changed under this run") from exc
@@ -4669,6 +4961,7 @@ __all__ = [
     "QuantityClaim",
     "TechniqueAnswer",
     "TechniqueRef",
+    "TURN_EVENT_TYPE",
     "build_turn_input",
     "direction_coverage_for_pair",
     "effective_request_text",

@@ -59,6 +59,22 @@ def test_rejection_wrong_text_fails() -> None:
     assert grade_case(case, result)["task_completion"] is False
 
 
+def _turn_event() -> dict[str, Any]:
+    # H7 decision log: synthetic passing results carry one minimal
+    # agent_turn so the invariant (offered/withheld + budgets) holds.
+    return {
+        "type": "agent_turn",
+        "payload": {
+            "turn": 1,
+            "phase": "discover",
+            "offered": ["search_recipes"],
+            "withheld": [{"tool": "search_web", "reason": "search_permission_off"}],
+            "steps_remaining": 7,
+            "tool_calls_remaining": 11,
+        },
+    }
+
+
 def test_rejection_right_text_passes() -> None:
     case: dict[str, Any] = {
         "id": "synth-skip",
@@ -74,7 +90,10 @@ def test_rejection_right_text_passes() -> None:
     result = _result(
         stop="agent_validation_failed",
         final={},
-        events=[_reject_event(["single option needs Epicure consulted in this session"])],
+        events=[
+            _turn_event(),
+            _reject_event(["single option needs Epicure consulted in this session"]),
+        ],
         error=True,
     )
     assert grade_case(case, result)["task_completion"] is True
@@ -188,3 +207,72 @@ def test_wrong_error_reason_fails() -> None:
     final = {"options": [{"source_id": "curry-1"}]}
     result = _result(stop="agent_sufficient_evidence", final=final, events=events)
     assert grade_case(case, result)["task_completion"] is False
+
+
+def _skip_case(**expected: Any) -> dict[str, Any]:
+    return {
+        "id": "synth-h7",
+        "expected": {
+            "stop_reason": "agent_validation_failed",
+            "shape": "error",
+            "expected_rejection": "needs Epicure consulted",
+            **expected,
+        },
+        "required_tools": [],
+        "allowed_tools": [],
+        "forbidden_tools": [],
+    }
+
+
+def _skip_result(events: list[dict[str, Any]]) -> dict[str, Any]:
+    return _result(
+        stop="agent_validation_failed",
+        final={},
+        events=[*events, _reject_event(["single option needs Epicure consulted in this session"])],
+        error=True,
+    )
+
+
+def test_missing_turn_event_fails() -> None:
+    # H7 decision-log invariant: a run with outcome events but no
+    # agent_turn decision event fails.
+    assert grade_case(_skip_case(), _skip_result([]))["task_completion"] is False
+
+
+def test_turn_without_budgets_fails() -> None:
+    event = _turn_event()
+    del event["payload"]["tool_calls_remaining"]
+    assert grade_case(_skip_case(), _skip_result([event]))["task_completion"] is False
+
+
+def test_wrapup_wrong_reason_fails() -> None:
+    case = _skip_case(
+        expect_wrapup={"withheld": ["search_recipes"], "offered_contains": ["get_recipe"]}
+    )
+    event = _turn_event()
+    event["payload"].update(
+        wrap_up=True,
+        offered=["get_recipe"],
+        withheld=[{"tool": "search_recipes", "reason": "final_turn_no_tools"}],
+    )
+    assert grade_case(case, _skip_result([event]))["task_completion"] is False
+    event["payload"]["withheld"] = [{"tool": "search_recipes", "reason": "repeat_wrap_up"}]
+    assert grade_case(case, _skip_result([event]))["task_completion"] is True
+
+
+def test_turn_withheld_missing_tool_fails() -> None:
+    case = _skip_case(
+        expect_turn_withheld=[
+            {"tool": "search_recipes", "reason": "select_phase_plan_only"},
+            {"tool": "find_balanced_pairings", "reason": "select_phase_plan_only"},
+        ]
+    )
+    event = _turn_event()
+    event["payload"]["withheld"] = [{"tool": "search_recipes", "reason": "select_phase_plan_only"}]
+    assert grade_case(case, _skip_result([event]))["task_completion"] is False
+
+
+def test_repeat_not_noted_fails() -> None:
+    case = _skip_case(expect_repeat_noted=True)
+    step = {"type": "agent_step", "payload": {"note": "step 2", "repeated_tools": ["x"]}}
+    assert grade_case(case, _skip_result([_turn_event(), step]))["task_completion"] is False

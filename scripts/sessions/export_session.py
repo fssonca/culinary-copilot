@@ -111,6 +111,25 @@ def _short(value: Any, limit: int = 600) -> str:
     return text if len(text) <= limit else text[:limit] + " …"
 
 
+def _diagnostic_line(payload: dict[str, Any]) -> str:
+    # H7: provider reasoning summaries travel only as a labelled,
+    # bounded diagnostic. Show the label, never raw reasoning.
+    diag = payload.get("reasoning_diagnostic")
+    if not isinstance(diag, dict):
+        return ""
+    text = str(diag.get("text") or "")[:200]
+    return f" diagnostic(provider_reasoning_summary): {_short(text, 200)}"
+
+
+def _budgets_line(payload: dict[str, Any]) -> str:
+    parts: list[str] = []
+    if payload.get("steps_remaining") is not None:
+        parts.append(f"steps left {payload.get('steps_remaining')}")
+    if payload.get("tool_calls_remaining") is not None:
+        parts.append(f"tools left {payload.get('tool_calls_remaining')}")
+    return "; ".join(parts)
+
+
 def _event_line(event: dict[str, Any]) -> str:
     kind = str(event.get("event_type") or "")
     payload = event.get("payload") or {}
@@ -119,9 +138,38 @@ def _event_line(event: dict[str, Any]) -> str:
     if kind == "agent_answer":
         answer = payload.get("answer", "(not recorded)")
         return f"**User answered** `{payload.get('question_id')}`: {answer}"
+    if kind == "agent_turn":
+        # H7 decision log: tools offered and withheld per turn with the
+        # reason, plus the remaining budgets. JSON carries the full
+        # payload; the timeline shows the concise decision.
+        offered = payload.get("offered") or []
+        withheld = payload.get("withheld") or []
+        withheld_txt = ", ".join(
+            f"{w.get('tool')} ({w.get('reason')})" for w in withheld if isinstance(w, dict)
+        )
+        line = (
+            f"**Turn {payload.get('turn')}** ({payload.get('phase')}): "
+            f"offered [{', '.join(str(t) for t in offered)}]"
+        )
+        if withheld_txt:
+            line += f"; withheld [{withheld_txt}]"
+        if payload.get("final_turn"):
+            line += " final"
+        if payload.get("wrap_up"):
+            line += " wrap-up"
+        budgets = _budgets_line(payload)
+        if budgets:
+            line += f" ({budgets})"
+        line += _diagnostic_line(payload)
+        return line
     if kind == "agent_question":
         options = ", ".join(str(o) for o in payload.get("question_options") or [])
-        return f"**Agent asked:** {payload.get('question_text', '')} (options: {options})"
+        line = f"**Agent asked:** {payload.get('question_text', '')} (options: {options})"
+        budgets = _budgets_line(payload)
+        if budgets:
+            line += f" ({budgets})"
+        line += _diagnostic_line(payload)
+        return line
     if kind == "tool_call":
         args = payload.get("args", f"digest {payload.get('args_digest')}")
         facts = payload.get("result_facts")
@@ -145,9 +193,14 @@ def _event_line(event: dict[str, Any]) -> str:
         directive = (payload.get("directive") or {}).get("text", "")
         return f"**Model directive:** {_short(directive, 1500)}"
     if kind == "agent_validation_reject":
-        return "**Rejected by validators:** " + "; ".join(
+        line = "**Rejected by validators:** " + "; ".join(
             str(e) for e in payload.get("errors") or []
         )
+        budgets = _budgets_line(payload)
+        if budgets:
+            line += f" ({budgets})"
+        line += _diagnostic_line(payload)
+        return line
     if kind == "trajectory_run_result":
         final = (payload.get("final") or {}).get("text", "") if payload.get("final") else ""
         head = payload.get("stop_reason") or payload.get("reason")
@@ -155,10 +208,30 @@ def _event_line(event: dict[str, Any]) -> str:
             f"\n\n  final: {_short(final, 1500)}" if final else ""
         )
     if kind == "agent_step":
-        return (
+        line = (
             f"step: {payload.get('note')} (in {payload.get('input_tokens')} / "
             f"out {payload.get('output_tokens')} tokens; steps left "
             f"{payload.get('steps_remaining')}, tools left {payload.get('tool_calls_remaining')})"
+        )
+        if payload.get("repeated_tools"):
+            line += f" repeated [{', '.join(str(t) for t in payload.get('repeated_tools') or [])}]"
+        if payload.get("repeat_noted"):
+            line += (
+                f" repeat-noted [{', '.join(str(t) for t in payload.get('repeat_noted') or [])}]"
+            )
+        line += _diagnostic_line(payload)
+        return line
+    if kind == "agent_finished":
+        line = f"**Finished:** {_short(payload.get('note', ''), 300)}"
+        budgets = _budgets_line(payload)
+        if budgets:
+            line += f" ({budgets})"
+        line += _diagnostic_line(payload)
+        return line
+    if kind == "agent_run_started":
+        return (
+            f"**Run started** ({payload.get('phase')}; steps "
+            f"{payload.get('steps_remaining')}, tools {payload.get('tool_calls_remaining')})"
         )
     return f"`{kind}`: {_short(payload, 400)}"
 

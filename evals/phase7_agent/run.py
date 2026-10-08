@@ -143,6 +143,67 @@ DOCS = {
             "Blend the cashews with cold water until smooth and stir in.",
         ],
     },
+    # H7 v10: one clipped direction (>600 chars, real words so
+    # attribution word-overlap can pass) for the clipped-directions case.
+    ("odunola/foodie", "long-10"): {
+        "dataset_id": "odunola/foodie",
+        "source_id": "long-10",
+        "title": "Long Direction Stew",
+        "servings": 2.0,
+        "ingredients": [
+            {
+                "canonical": "chicken",
+                "amount": "500",
+                "unit": "g",
+                "quantity_text": "500 g",
+            },
+        ],
+        "instructions": [
+            "Chop the onion.",
+            ("Fold the dough gently and rest. " * 25).strip(),
+            "Serve hot.",
+        ],
+    },
+    # H7 v10: 14 directions for the omitted-index path (same shape as
+    # the H3 unit fixture; the harness case uses long-10, this doc pins
+    # the >12 branch in search_rows_for).
+    ("odunola/foodie", "many-11"): {
+        "dataset_id": "odunola/foodie",
+        "source_id": "many-11",
+        "title": "Fourteen Step Rice",
+        "servings": 2.0,
+        "ingredients": [
+            {
+                "canonical": "rice",
+                "amount": "1",
+                "unit": "cup",
+                "quantity_text": "1 cup",
+            },
+        ],
+        "instructions": [f"Do step {i} with rice." for i in range(14)],
+    },
+    # H7 v10: tree-nut fixture (walnuts violate tree nuts).
+    ("odunola/foodie", "walnut-9"): {
+        "dataset_id": "odunola/foodie",
+        "source_id": "walnut-9",
+        "title": "Walnut Cake",
+        "servings": 4.0,
+        "ingredients": [
+            {
+                "canonical": "walnuts",
+                "amount": "100",
+                "unit": "g",
+                "quantity_text": "100 g walnuts",
+            },
+            {
+                "canonical": "flour",
+                "amount": "200",
+                "unit": "g",
+                "quantity_text": "200 g flour",
+            },
+        ],
+        "instructions": ["Mix the walnuts with flour.", "Bake the cake."],
+    },
 }
 
 ROWS_DEFAULT = [
@@ -187,6 +248,27 @@ def search_rows_for(spec: str | list[Any] | None) -> list[dict[str, Any]]:
                 "source_id": "cashew-8",
                 "title": "Creamy Cashew Chicken Curry",
             },
+        ]
+    if spec == "long":
+        return [
+            {
+                "dataset_id": "odunola/foodie",
+                "source_id": "long-10",
+                "title": "Long Direction Stew",
+            },
+        ]
+    if spec == "many":
+        return [
+            {
+                "dataset_id": "odunola/foodie",
+                "source_id": "many-11",
+                "title": "Fourteen Step Rice",
+            },
+        ]
+    if spec == "walnut":
+        return [
+            {"dataset_id": "odunola/foodie", "source_id": "walnut-9", "title": "Walnut Cake"},
+            {"dataset_id": "odunola/foodie", "source_id": "lentil-2", "title": "Red Lentil Soup"},
         ]
     if spec == "curry-raw":
         return list(ROWS_DEFAULT)
@@ -306,8 +388,15 @@ class ScriptedProvider:
 
 
 class FakeEpicureCore:
-    def __init__(self, enabled: bool = True) -> None:
+    # H7 v10: optional ``vocab`` names drive the pairing-claim guard
+    # via the ``vocabulary()`` hook the tool path reads; None keeps
+    # the old skip behaviour for the pre-v10 cases.
+    def __init__(self, enabled: bool = True, vocab: Any = None) -> None:
         self._enabled = enabled
+        self._vocab = set(vocab) if vocab else None
+
+    def vocabulary(self) -> Any:
+        return set(self._vocab) if self._vocab is not None else None
 
     def find_balanced_pairings(self, ingredient: str, k: int = 5):  # type: ignore[no-untyped-def]
         from culinary_copilot.tools.epicure import EpicureDisabledError, Pairing
@@ -447,7 +536,9 @@ def make_context(store: Any, settings: Any, case: dict[str, Any]) -> Any:
             "results": list(tech_rows),
         }
 
-    core = FakeEpicureCore(enabled=bool(case.get("epicure_enabled", True)))
+    core = FakeEpicureCore(
+        enabled=bool(case.get("epicure_enabled", True)), vocab=case.get("epicure_vocab")
+    )
     # Web: real search_web impl with a fake sub-request provider when the
     # case enables search; permission-off and limit cases use the real impl
     # so backend enforcement is exercised. No impl_overrides for search_web.
@@ -588,6 +679,10 @@ def run_case(engine: Any, case: dict[str, Any]) -> dict[str, Any]:
             source_id=case["select"]["source_id"],
         )
         runs.append(_do_run(ScriptedProvider([list(t) for t in case.get("plan_turns", [])])))
+    # H7 v10: follow-up turns in the same session after the plan (a
+    # technique question asked after the plan keeps the phase).
+    if case.get("followup_turns"):
+        runs.append(_do_run(ScriptedProvider([list(t) for t in case.get("followup_turns", [])])))
 
     final_state = store.get(sid)
     assert final_state is not None
@@ -822,6 +917,98 @@ def grade_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
             if "safe" in text or "food handling" in text:
                 safety = True
         ok = ok and safety
+    # H7 v10: follow-up phase (technique answer after a plan keeps it).
+    if expected.get("expect_phase") is not None:
+        ok = ok and result.get("final_phase") == expected["expect_phase"]
+    # H7 v10: wrap-up decision (withholds only the repeated tools).
+    if expected.get("expect_wrapup") is not None:
+        want = expected["expect_wrapup"] or {}
+        want_withheld = set(want.get("withheld") or [])
+        want_offered = set(want.get("offered_contains") or [])
+        found = False
+        for e in events:
+            if e["type"] != "agent_turn" or not (e["payload"] or {}).get("wrap_up"):
+                continue
+            offered = set((e["payload"] or {}).get("offered") or [])
+            withheld = {
+                str(w.get("tool"))
+                for w in ((e["payload"] or {}).get("withheld") or [])
+                if isinstance(w, dict)
+            }
+            reasons = {
+                str(w.get("tool")): str(w.get("reason"))
+                for w in ((e["payload"] or {}).get("withheld") or [])
+                if isinstance(w, dict)
+            }
+            if want_withheld <= withheld and want_offered <= offered:
+                if all(reasons.get(t) == "repeat_wrap_up" for t in want_withheld):
+                    found = True
+        ok = ok and found
+    # H7 v10: a repeated search was marked nothing-new for the model.
+    if expected.get("expect_repeat_noted"):
+        ok = ok and any(
+            e["type"] == "agent_step" and bool((e["payload"] or {}).get("repeat_noted"))
+            for e in events
+        )
+    # H7 v10: one turn withheld a tool for the named reason (or a
+    # list of them, e.g. select withholds search and pairings).
+    if expected.get("expect_turn_withheld") is not None:
+        want_raw = expected["expect_turn_withheld"]
+        wants = want_raw if isinstance(want_raw, list) else [want_raw]
+        for want in wants:
+            if not isinstance(want, dict):
+                continue
+            found = False
+            for e in events:
+                if e["type"] != "agent_turn":
+                    continue
+                for w in (e["payload"] or {}).get("withheld") or []:
+                    if not isinstance(w, dict):
+                        continue
+                    if str(w.get("tool")) == str(want.get("tool")) and str(w.get("reason")) == str(
+                        want.get("reason")
+                    ):
+                        found = True
+            ok = ok and found
+    # H7 decision log invariant: every turn records one agent_turn
+    # with offered/withheld plus remaining budgets, bounded payloads,
+    # and no raw reasoning (only the labelled diagnostic). A run that
+    # stops before its first turn (e.g. the token-budget probe) has no
+    # turn to record and is vacuously ok.
+    turn_events = [e for e in events if e["type"] == "agent_turn"]
+    turn_evidence = [
+        e
+        for e in events
+        if e["type"]
+        in (
+            "tool_call",
+            "agent_step",
+            "agent_question",
+            "agent_finished",
+            "agent_validation_reject",
+        )
+    ]
+    decision_ok = bool(turn_events) or not turn_evidence
+    for e in turn_events:
+        payload = e["payload"] or {}
+        if not isinstance(payload.get("offered"), list):
+            decision_ok = False
+        if not isinstance(payload.get("withheld"), list):
+            decision_ok = False
+        if payload.get("steps_remaining") is None or payload.get("tool_calls_remaining") is None:
+            decision_ok = False
+        for w in payload.get("withheld") or []:
+            if not isinstance(w, dict) or len(str(w.get("reason") or "")) > 80:
+                decision_ok = False
+        diag = payload.get("reasoning_diagnostic")
+        if diag is not None and (
+            not isinstance(diag, dict) or len(str(diag.get("text") or "")) > 500
+        ):
+            decision_ok = False
+    blob = json.dumps(events)
+    if "reasoning_content" in blob or "chain_of_thought" in blob:
+        decision_ok = False
+    ok = ok and decision_ok
     # Oat case: scored on the run's own final. The oat option's
     # constraint_check must be unverified for wheat/gluten. The direct
     # validator call stays only as extra detail.
@@ -1216,12 +1403,49 @@ def main() -> int:
             "(agent_tool_budget_exhausted) with no finishing turn"
         ),
     }
+    # v9 history: the last result before H7 (2026-10-08). v9 scripts the
+    # H4 finishing turn for p7-budget-tools and adds
+    # p7-budget-tools-no-finish. v10 adds the H7 recovery-path and
+    # H2/H3 cases plus the per-turn decision log.
+    history_v9 = {
+        "cases_version": "phase7-cases-v9-2026-10-08",
+        "cases_sha256": "808cc23c7ad04025854e25c8f2893bbdd088b31a5a806fd169cb8ee494f987ee",
+        "aggregate": {
+            "total": 44,
+            "scored": 44,
+            "completed": 44,
+            "task_completion_rate": 1.0,
+            "expected_fail_total": 0,
+            "expected_fail_completed": 0,
+            "stop_reason_distribution": {
+                "agent_sufficient_evidence": 32,
+                "agent_validation_failed": 4,
+                "agent_needs_user_input": 4,
+                "agent_max_steps": 1,
+                "agent_tool_budget_exhausted": 1,
+                "agent_token_budget_exhausted": 1,
+                "agent_wall_clock_exceeded": 1,
+            },
+            "invalid_transitions_total": 1,
+            "tool_argument_validity_mean": 0.990909090909091,
+            "unnecessary_call_rate_mean": 0.0,
+            "epicure_compliance_rate": 0.9772727272727273,
+            "source_reference_correctness_rate": 1.0,
+            "unsupported_claim_cases": 3,
+            "adversarial_total": 4,
+            "adversarial_caught": 4,
+            "adversarial_catch_rate": 1.0,
+            "latency_tokens_cost": "not measured offline (scripted provider)",
+        },
+        "note": "pre-H7: 44 cases, no per-turn decision log, no H7 recovery-path cases",
+    }
     out = {
         "cases_file": "cases.json",
         "cases_version": payload.get("version"),
         "cases_sha256": cases_sha256,
         "history_v1": history_v1,
         "history_v8": history_v8,
+        "history_v9": history_v9,
         "note": (
             "offline system results (loop control, tools, validators), "
             "not model judgement; latency/tokens/cost not measured offline"
