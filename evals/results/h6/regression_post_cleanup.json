@@ -1,0 +1,3108 @@
+{
+  "harness": "h6-ranking-compare-v1",
+  "measured_at": "2026-10-08T21:19:20.662017+00:00",
+  "status": "AI-prepared experiment output; scoring against recorded labels only unless --extra-judgments is given. Not production guidance; proposal inputs only.",
+  "title_boost_weight": 2.0,
+  "fetch_n": 10,
+  "case_files": [
+    "evals/cases/h6_dish_vs_ingredient_v1.json"
+  ],
+  "case_files_sha256": {
+    "evals/cases/h6_dish_vs_ingredient_v1.json": "9479bf3d7dbe5fd5979e3af6464aff82ff37dce914ff0944a144ae8a8e27cca0"
+  },
+  "labels_file": "evals/results/phase1/checkpoint1_corrections.json",
+  "labels_file_sha256": "589e228b1f986ef16fa3b928f53aa57caed76d60d350c2169acebbcf421df4ae",
+  "extra_judgments": null,
+  "extra_judgments_sha256": null,
+  "summary": {
+    "paired_vs_recorded": {
+      "current": {
+        "hit_at_5_g1": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "hit1": 0.0
+        },
+        "mrr_at_5_g1": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "rr1": 0.0
+        },
+        "hit_at_5_g2": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "hit2": 0.0
+        },
+        "mrr_at_5_g2": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "rr2": 0.0
+        }
+      },
+      "title_first": {
+        "hit_at_5_g1": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "hit1": 0.0
+        },
+        "mrr_at_5_g1": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "rr1": 0.0
+        },
+        "hit_at_5_g2": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "hit2": 0.0
+        },
+        "mrr_at_5_g2": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "rr2": 0.0
+        }
+      },
+      "title_boost": {
+        "hit_at_5_g1": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "hit1": 0.0
+        },
+        "mrr_at_5_g1": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "rr1": 0.0
+        },
+        "hit_at_5_g2": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "hit2": 0.0
+        },
+        "mrr_at_5_g2": {
+          "n_cases": 0,
+          "top5_without_judged_hit": 0,
+          "rr2": 0.0
+        }
+      }
+    },
+    "metrics_vs_recorded": {
+      "current": {
+        "hit_at_5_g1": {
+          "n_scored": 0,
+          "n_total": 6,
+          "hit1": 0.0
+        },
+        "mrr_at_5_g1": {
+          "n_scored": 0,
+          "n_total": 6,
+          "rr1": 0.0
+        },
+        "hit_at_5_g2": {
+          "n_scored": 0,
+          "n_total": 6,
+          "hit2": 0.0
+        },
+        "mrr_at_5_g2": {
+          "n_scored": 0,
+          "n_total": 6,
+          "rr2": 0.0
+        },
+        "hit_at_5_g1_quarantined": {
+          "n_scored": 0,
+          "n_total": 6,
+          "hit1": 0.0
+        },
+        "mrr_at_5_g1_quarantined": {
+          "n_scored": 0,
+          "n_total": 6,
+          "rr1": 0.0
+        }
+      },
+      "title_first": {
+        "hit_at_5_g1": {
+          "n_scored": 0,
+          "n_total": 6,
+          "hit1": 0.0
+        },
+        "mrr_at_5_g1": {
+          "n_scored": 0,
+          "n_total": 6,
+          "rr1": 0.0
+        },
+        "hit_at_5_g2": {
+          "n_scored": 0,
+          "n_total": 6,
+          "hit2": 0.0
+        },
+        "mrr_at_5_g2": {
+          "n_scored": 0,
+          "n_total": 6,
+          "rr2": 0.0
+        },
+        "hit_at_5_g1_quarantined": {
+          "n_scored": 0,
+          "n_total": 6,
+          "hit1": 0.0
+        },
+        "mrr_at_5_g1_quarantined": {
+          "n_scored": 0,
+          "n_total": 6,
+          "rr1": 0.0
+        }
+      },
+      "title_boost": {
+        "hit_at_5_g1": {
+          "n_scored": 0,
+          "n_total": 6,
+          "hit1": 0.0
+        },
+        "mrr_at_5_g1": {
+          "n_scored": 0,
+          "n_total": 6,
+          "rr1": 0.0
+        },
+        "hit_at_5_g2": {
+          "n_scored": 0,
+          "n_total": 6,
+          "hit2": 0.0
+        },
+        "mrr_at_5_g2": {
+          "n_scored": 0,
+          "n_total": 6,
+          "rr2": 0.0
+        },
+        "hit_at_5_g1_quarantined": {
+          "n_scored": 0,
+          "n_total": 6,
+          "hit1": 0.0
+        },
+        "mrr_at_5_g1_quarantined": {
+          "n_scored": 0,
+          "n_total": 6,
+          "rr1": 0.0
+        }
+      }
+    },
+    "malformed_in_top5": {
+      "current": 0,
+      "title_first": 0,
+      "title_boost": 0
+    },
+    "cases_top5_changed_title_first": [
+      "H6R-01",
+      "H6R-03",
+      "H6R-05"
+    ],
+    "cases_top5_changed_title_boost": [
+      "H6R-01",
+      "H6R-03",
+      "H6R-05"
+    ],
+    "pool_coverage_recorded": {
+      "changed_cases": {
+        "cases": 3,
+        "pairs": 21,
+        "unjudged": 21
+      },
+      "all_cases": {
+        "cases": 6,
+        "pairs": 33,
+        "unjudged": 33
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "H6R-01",
+      "split": "development",
+      "kind": "retrieval_only",
+      "query_text": "adobo",
+      "match_mode": "retrieval_only_text",
+      "rankings": {
+        "current": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004383",
+              "title": "Instant Pot\u00ae Turkey Chili"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007664",
+              "title": "Air Fryer Spicy Onion Rings"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-008657",
+              "title": "Instant Pot\u00ae Crispy Chicken Carnitas"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014647",
+              "title": "Easy Sheet Pan Fish Tacos"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-002283",
+              "title": "Breakfast Burrito Bowl"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004383",
+              "title": "Instant Pot\u00ae Turkey Chili"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007664",
+              "title": "Air Fryer Spicy Onion Rings"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-008657",
+              "title": "Instant Pot\u00ae Crispy Chicken Carnitas"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014647",
+              "title": "Easy Sheet Pan Fish Tacos"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-002283",
+              "title": "Breakfast Burrito Bowl"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004383",
+                "title": "Instant Pot\u00ae Turkey Chili",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007664",
+                "title": "Air Fryer Spicy Onion Rings",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-008657",
+                "title": "Instant Pot\u00ae Crispy Chicken Carnitas",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014647",
+                "title": "Easy Sheet Pan Fish Tacos",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-002283",
+                "title": "Breakfast Burrito Bowl",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004383",
+                "title": "Instant Pot\u00ae Turkey Chili",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007664",
+                "title": "Air Fryer Spicy Onion Rings",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-008657",
+                "title": "Instant Pot\u00ae Crispy Chicken Carnitas",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014647",
+                "title": "Easy Sheet Pan Fish Tacos",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-002283",
+                "title": "Breakfast Burrito Bowl",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_first": {
+          "top5": [
+            {
+              "dataset_id": "AkashPS11/recipes_data_food.com",
+              "source_id": "002235",
+              "title": "Pork and Chicken Adobo"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007008",
+              "title": "Adobo Chicken with Ginger"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007009",
+              "title": "Authentic Chicken Adobo"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007010",
+              "title": "Slow Cooker Filipino Chicken Adobo"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007012",
+              "title": "Leyley's Spicy Chicken Adobo Wings"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "AkashPS11/recipes_data_food.com",
+              "source_id": "002235",
+              "title": "Pork and Chicken Adobo"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007008",
+              "title": "Adobo Chicken with Ginger"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007009",
+              "title": "Authentic Chicken Adobo"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007010",
+              "title": "Slow Cooker Filipino Chicken Adobo"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007012",
+              "title": "Leyley's Spicy Chicken Adobo Wings"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "AkashPS11/recipes_data_food.com",
+                "source_id": "002235",
+                "title": "Pork and Chicken Adobo",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007008",
+                "title": "Adobo Chicken with Ginger",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007009",
+                "title": "Authentic Chicken Adobo",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007010",
+                "title": "Slow Cooker Filipino Chicken Adobo",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007012",
+                "title": "Leyley's Spicy Chicken Adobo Wings",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "AkashPS11/recipes_data_food.com",
+                "source_id": "002235",
+                "title": "Pork and Chicken Adobo",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007008",
+                "title": "Adobo Chicken with Ginger",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007009",
+                "title": "Authentic Chicken Adobo",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007010",
+                "title": "Slow Cooker Filipino Chicken Adobo",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007012",
+                "title": "Leyley's Spicy Chicken Adobo Wings",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_boost": {
+          "top5": [
+            {
+              "dataset_id": "AkashPS11/recipes_data_food.com",
+              "source_id": "002235",
+              "title": "Pork and Chicken Adobo"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004383",
+              "title": "Instant Pot\u00ae Turkey Chili"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007008",
+              "title": "Adobo Chicken with Ginger"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007009",
+              "title": "Authentic Chicken Adobo"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007010",
+              "title": "Slow Cooker Filipino Chicken Adobo"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "AkashPS11/recipes_data_food.com",
+              "source_id": "002235",
+              "title": "Pork and Chicken Adobo"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004383",
+              "title": "Instant Pot\u00ae Turkey Chili"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007008",
+              "title": "Adobo Chicken with Ginger"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007009",
+              "title": "Authentic Chicken Adobo"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-007010",
+              "title": "Slow Cooker Filipino Chicken Adobo"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "AkashPS11/recipes_data_food.com",
+                "source_id": "002235",
+                "title": "Pork and Chicken Adobo",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004383",
+                "title": "Instant Pot\u00ae Turkey Chili",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007008",
+                "title": "Adobo Chicken with Ginger",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007009",
+                "title": "Authentic Chicken Adobo",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007010",
+                "title": "Slow Cooker Filipino Chicken Adobo",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "AkashPS11/recipes_data_food.com",
+                "source_id": "002235",
+                "title": "Pork and Chicken Adobo",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004383",
+                "title": "Instant Pot\u00ae Turkey Chili",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007008",
+                "title": "Adobo Chicken with Ginger",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007009",
+                "title": "Authentic Chicken Adobo",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007010",
+                "title": "Slow Cooker Filipino Chicken Adobo",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        }
+      },
+      "top5_changed_title_first": true,
+      "top5_changed_title_boost": true,
+      "newly_surfaced_title_first": [
+        {
+          "dataset_id": "AkashPS11/recipes_data_food.com",
+          "source_id": "002235"
+        },
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-007008"
+        },
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-007009"
+        },
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-007010"
+        },
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-007012"
+        }
+      ],
+      "newly_surfaced_title_boost": [
+        {
+          "dataset_id": "AkashPS11/recipes_data_food.com",
+          "source_id": "002235"
+        },
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-007008"
+        },
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-007009"
+        },
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-007010"
+        }
+      ]
+    },
+    {
+      "case_id": "H6R-02",
+      "split": "development",
+      "kind": "retrieval_only",
+      "query_text": "chipotle peppers in adobo sauce",
+      "match_mode": "retrieval_only_text",
+      "rankings": {
+        "current": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004383",
+              "title": "Instant Pot\u00ae Turkey Chili"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004644",
+              "title": "Fried Crab Cakes"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-011055",
+              "title": "Moroccan-Inspired Meatloaf"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-008657",
+              "title": "Instant Pot\u00ae Crispy Chicken Carnitas"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014489",
+              "title": "Turkey and Bacon Panini with Chipotle Mayonnaise"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004383",
+              "title": "Instant Pot\u00ae Turkey Chili"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004644",
+              "title": "Fried Crab Cakes"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-011055",
+              "title": "Moroccan-Inspired Meatloaf"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-008657",
+              "title": "Instant Pot\u00ae Crispy Chicken Carnitas"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014489",
+              "title": "Turkey and Bacon Panini with Chipotle Mayonnaise"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004383",
+                "title": "Instant Pot\u00ae Turkey Chili",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004644",
+                "title": "Fried Crab Cakes",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-011055",
+                "title": "Moroccan-Inspired Meatloaf",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-008657",
+                "title": "Instant Pot\u00ae Crispy Chicken Carnitas",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014489",
+                "title": "Turkey and Bacon Panini with Chipotle Mayonnaise",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004383",
+                "title": "Instant Pot\u00ae Turkey Chili",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004644",
+                "title": "Fried Crab Cakes",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-011055",
+                "title": "Moroccan-Inspired Meatloaf",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-008657",
+                "title": "Instant Pot\u00ae Crispy Chicken Carnitas",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014489",
+                "title": "Turkey and Bacon Panini with Chipotle Mayonnaise",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_first": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004383",
+              "title": "Instant Pot\u00ae Turkey Chili"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004644",
+              "title": "Fried Crab Cakes"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-011055",
+              "title": "Moroccan-Inspired Meatloaf"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-008657",
+              "title": "Instant Pot\u00ae Crispy Chicken Carnitas"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014489",
+              "title": "Turkey and Bacon Panini with Chipotle Mayonnaise"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004383",
+              "title": "Instant Pot\u00ae Turkey Chili"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004644",
+              "title": "Fried Crab Cakes"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-011055",
+              "title": "Moroccan-Inspired Meatloaf"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-008657",
+              "title": "Instant Pot\u00ae Crispy Chicken Carnitas"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014489",
+              "title": "Turkey and Bacon Panini with Chipotle Mayonnaise"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004383",
+                "title": "Instant Pot\u00ae Turkey Chili",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004644",
+                "title": "Fried Crab Cakes",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-011055",
+                "title": "Moroccan-Inspired Meatloaf",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-008657",
+                "title": "Instant Pot\u00ae Crispy Chicken Carnitas",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014489",
+                "title": "Turkey and Bacon Panini with Chipotle Mayonnaise",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004383",
+                "title": "Instant Pot\u00ae Turkey Chili",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004644",
+                "title": "Fried Crab Cakes",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-011055",
+                "title": "Moroccan-Inspired Meatloaf",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-008657",
+                "title": "Instant Pot\u00ae Crispy Chicken Carnitas",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014489",
+                "title": "Turkey and Bacon Panini with Chipotle Mayonnaise",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_boost": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004383",
+              "title": "Instant Pot\u00ae Turkey Chili"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004644",
+              "title": "Fried Crab Cakes"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-011055",
+              "title": "Moroccan-Inspired Meatloaf"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-008657",
+              "title": "Instant Pot\u00ae Crispy Chicken Carnitas"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014489",
+              "title": "Turkey and Bacon Panini with Chipotle Mayonnaise"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004383",
+              "title": "Instant Pot\u00ae Turkey Chili"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-004644",
+              "title": "Fried Crab Cakes"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-011055",
+              "title": "Moroccan-Inspired Meatloaf"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-008657",
+              "title": "Instant Pot\u00ae Crispy Chicken Carnitas"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014489",
+              "title": "Turkey and Bacon Panini with Chipotle Mayonnaise"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004383",
+                "title": "Instant Pot\u00ae Turkey Chili",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004644",
+                "title": "Fried Crab Cakes",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-011055",
+                "title": "Moroccan-Inspired Meatloaf",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-008657",
+                "title": "Instant Pot\u00ae Crispy Chicken Carnitas",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014489",
+                "title": "Turkey and Bacon Panini with Chipotle Mayonnaise",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004383",
+                "title": "Instant Pot\u00ae Turkey Chili",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-004644",
+                "title": "Fried Crab Cakes",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-011055",
+                "title": "Moroccan-Inspired Meatloaf",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-008657",
+                "title": "Instant Pot\u00ae Crispy Chicken Carnitas",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014489",
+                "title": "Turkey and Bacon Panini with Chipotle Mayonnaise",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        }
+      },
+      "top5_changed_title_first": false,
+      "top5_changed_title_boost": false,
+      "newly_surfaced_title_first": [],
+      "newly_surfaced_title_boost": []
+    },
+    {
+      "case_id": "H6R-03",
+      "split": "development",
+      "kind": "retrieval_only",
+      "query_text": "tzatziki",
+      "match_mode": "retrieval_only_text",
+      "rankings": {
+        "current": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010404",
+              "title": "Mediterranean Grilled Salmon Kabobs"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-003796",
+              "title": "Spicy Baked Falafel with Tzatziki"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001984",
+              "title": "Beef Gyro"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001995",
+              "title": "Easy Oven-Roasted Chicken Gyros"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010404",
+              "title": "Mediterranean Grilled Salmon Kabobs"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-003796",
+              "title": "Spicy Baked Falafel with Tzatziki"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001984",
+              "title": "Beef Gyro"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001995",
+              "title": "Easy Oven-Roasted Chicken Gyros"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010404",
+                "title": "Mediterranean Grilled Salmon Kabobs",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-003796",
+                "title": "Spicy Baked Falafel with Tzatziki",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001984",
+                "title": "Beef Gyro",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001995",
+                "title": "Easy Oven-Roasted Chicken Gyros",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010404",
+                "title": "Mediterranean Grilled Salmon Kabobs",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-003796",
+                "title": "Spicy Baked Falafel with Tzatziki",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001984",
+                "title": "Beef Gyro",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001995",
+                "title": "Easy Oven-Roasted Chicken Gyros",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_first": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-003796",
+              "title": "Spicy Baked Falafel with Tzatziki"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-003004",
+              "title": "Tzatziki Guacamole"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010411",
+              "title": "Greek Tzatziki"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010404",
+              "title": "Mediterranean Grilled Salmon Kabobs"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-003796",
+              "title": "Spicy Baked Falafel with Tzatziki"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-003004",
+              "title": "Tzatziki Guacamole"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010411",
+              "title": "Greek Tzatziki"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010404",
+              "title": "Mediterranean Grilled Salmon Kabobs"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-003796",
+                "title": "Spicy Baked Falafel with Tzatziki",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-003004",
+                "title": "Tzatziki Guacamole",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010411",
+                "title": "Greek Tzatziki",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010404",
+                "title": "Mediterranean Grilled Salmon Kabobs",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-003796",
+                "title": "Spicy Baked Falafel with Tzatziki",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-003004",
+                "title": "Tzatziki Guacamole",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010411",
+                "title": "Greek Tzatziki",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010404",
+                "title": "Mediterranean Grilled Salmon Kabobs",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_boost": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-003796",
+              "title": "Spicy Baked Falafel with Tzatziki"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010404",
+              "title": "Mediterranean Grilled Salmon Kabobs"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-003004",
+              "title": "Tzatziki Guacamole"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010411",
+              "title": "Greek Tzatziki"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-003796",
+              "title": "Spicy Baked Falafel with Tzatziki"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010404",
+              "title": "Mediterranean Grilled Salmon Kabobs"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-003004",
+              "title": "Tzatziki Guacamole"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010411",
+              "title": "Greek Tzatziki"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-003796",
+                "title": "Spicy Baked Falafel with Tzatziki",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010404",
+                "title": "Mediterranean Grilled Salmon Kabobs",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-003004",
+                "title": "Tzatziki Guacamole",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010411",
+                "title": "Greek Tzatziki",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-003796",
+                "title": "Spicy Baked Falafel with Tzatziki",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010404",
+                "title": "Mediterranean Grilled Salmon Kabobs",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-003004",
+                "title": "Tzatziki Guacamole",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010411",
+                "title": "Greek Tzatziki",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        }
+      },
+      "top5_changed_title_first": true,
+      "top5_changed_title_boost": true,
+      "newly_surfaced_title_first": [
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-003004"
+        },
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-010411"
+        }
+      ],
+      "newly_surfaced_title_boost": [
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-003004"
+        },
+        {
+          "dataset_id": "odunola/foodie",
+          "source_id": "foodie-010411"
+        }
+      ]
+    },
+    {
+      "case_id": "H6R-04",
+      "split": "development",
+      "kind": "retrieval_only",
+      "query_text": "chicken gyro with tzatziki",
+      "match_mode": "retrieval_only_text",
+      "rankings": {
+        "current": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001995",
+              "title": "Easy Oven-Roasted Chicken Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001982",
+              "title": "American Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001992",
+              "title": "Instant Pot Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001993",
+              "title": "Chicken Gyros"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001995",
+              "title": "Easy Oven-Roasted Chicken Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001982",
+              "title": "American Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001992",
+              "title": "Instant Pot Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001993",
+              "title": "Chicken Gyros"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001995",
+                "title": "Easy Oven-Roasted Chicken Gyros",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001982",
+                "title": "American Gyros",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001992",
+                "title": "Instant Pot Gyros",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001993",
+                "title": "Chicken Gyros",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001995",
+                "title": "Easy Oven-Roasted Chicken Gyros",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001982",
+                "title": "American Gyros",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001992",
+                "title": "Instant Pot Gyros",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001993",
+                "title": "Chicken Gyros",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_first": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001995",
+              "title": "Easy Oven-Roasted Chicken Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001982",
+              "title": "American Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001992",
+              "title": "Instant Pot Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001993",
+              "title": "Chicken Gyros"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001995",
+              "title": "Easy Oven-Roasted Chicken Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001982",
+              "title": "American Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001992",
+              "title": "Instant Pot Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001993",
+              "title": "Chicken Gyros"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001995",
+                "title": "Easy Oven-Roasted Chicken Gyros",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001982",
+                "title": "American Gyros",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001992",
+                "title": "Instant Pot Gyros",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001993",
+                "title": "Chicken Gyros",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001995",
+                "title": "Easy Oven-Roasted Chicken Gyros",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001982",
+                "title": "American Gyros",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001992",
+                "title": "Instant Pot Gyros",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001993",
+                "title": "Chicken Gyros",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_boost": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001995",
+              "title": "Easy Oven-Roasted Chicken Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001982",
+              "title": "American Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001992",
+              "title": "Instant Pot Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001993",
+              "title": "Chicken Gyros"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001980",
+              "title": "Easy Chicken Gyro"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001995",
+              "title": "Easy Oven-Roasted Chicken Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001982",
+              "title": "American Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001992",
+              "title": "Instant Pot Gyros"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001993",
+              "title": "Chicken Gyros"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001995",
+                "title": "Easy Oven-Roasted Chicken Gyros",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001982",
+                "title": "American Gyros",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001992",
+                "title": "Instant Pot Gyros",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001993",
+                "title": "Chicken Gyros",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 5,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001980",
+                "title": "Easy Chicken Gyro",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001995",
+                "title": "Easy Oven-Roasted Chicken Gyros",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001982",
+                "title": "American Gyros",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001992",
+                "title": "Instant Pot Gyros",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001993",
+                "title": "Chicken Gyros",
+                "rank": 5,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        }
+      },
+      "top5_changed_title_first": false,
+      "top5_changed_title_boost": false,
+      "newly_surfaced_title_first": [],
+      "newly_surfaced_title_boost": []
+    },
+    {
+      "case_id": "H6R-05",
+      "split": "development",
+      "kind": "retrieval_only",
+      "query_text": "hollandaise",
+      "match_mode": "retrieval_only_text",
+      "rankings": {
+        "current": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001211",
+              "title": "New Colorado Omelet"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-002305",
+              "title": "Blender Hollandaise Sauce"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001211",
+              "title": "New Colorado Omelet"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-002305",
+              "title": "Blender Hollandaise Sauce"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 4,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001211",
+                "title": "New Colorado Omelet",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-002305",
+                "title": "Blender Hollandaise Sauce",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 4,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001211",
+                "title": "New Colorado Omelet",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-002305",
+                "title": "Blender Hollandaise Sauce",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_first": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-002305",
+              "title": "Blender Hollandaise Sauce"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001211",
+              "title": "New Colorado Omelet"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-002305",
+              "title": "Blender Hollandaise Sauce"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001211",
+              "title": "New Colorado Omelet"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 4,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-002305",
+                "title": "Blender Hollandaise Sauce",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001211",
+                "title": "New Colorado Omelet",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 4,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-002305",
+                "title": "Blender Hollandaise Sauce",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001211",
+                "title": "New Colorado Omelet",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_boost": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-002305",
+              "title": "Blender Hollandaise Sauce"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001211",
+              "title": "New Colorado Omelet"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-002305",
+              "title": "Blender Hollandaise Sauce"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-001211",
+              "title": "New Colorado Omelet"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 4,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-002305",
+                "title": "Blender Hollandaise Sauce",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001211",
+                "title": "New Colorado Omelet",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 4,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-002305",
+                "title": "Blender Hollandaise Sauce",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-001211",
+                "title": "New Colorado Omelet",
+                "rank": 3,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 4,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        }
+      },
+      "top5_changed_title_first": true,
+      "top5_changed_title_boost": true,
+      "newly_surfaced_title_first": [],
+      "newly_surfaced_title_boost": []
+    },
+    {
+      "case_id": "H6R-06",
+      "split": "development",
+      "kind": "retrieval_only",
+      "query_text": "eggs benedict with hollandaise",
+      "match_mode": "retrieval_only_text",
+      "rankings": {
+        "current": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 2,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 2,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_first": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 2,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 2,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        },
+        "title_boost": {
+          "top5": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            }
+          ],
+          "top5_quarantined": [
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-014832",
+              "title": "Smoked Salmon Dill Eggs Benedict"
+            },
+            {
+              "dataset_id": "odunola/foodie",
+              "source_id": "foodie-010295",
+              "title": "Eggs Benedict"
+            }
+          ],
+          "vs_recorded": {
+            "judged": 0,
+            "unjudged": 2,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          },
+          "vs_recorded_quarantined": {
+            "judged": 0,
+            "unjudged": 2,
+            "malformed": 0,
+            "hit1": null,
+            "rr1": null,
+            "hit2": null,
+            "rr2": null,
+            "grade2_hits": 0,
+            "grade1_hits": 0,
+            "hits": [
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-014832",
+                "title": "Smoked Salmon Dill Eggs Benedict",
+                "rank": 1,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              },
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-010295",
+                "title": "Eggs Benedict",
+                "rank": 2,
+                "recorded_grade": null,
+                "joint": "unjudged",
+                "malformed_h5": false
+              }
+            ]
+          }
+        }
+      },
+      "top5_changed_title_first": false,
+      "top5_changed_title_boost": false,
+      "newly_surfaced_title_first": [],
+      "newly_surfaced_title_boost": []
+    }
+  ]
+}

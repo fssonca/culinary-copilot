@@ -1,8 +1,9 @@
 # H8 frozen-build live check: plan
 
 Prepared 2026-10-08 under the Checkpoint D decisions
-(`docs/phase7-owner-decisions.md`). **Not run. Running it needs the
-owner's go-ahead**, given as the acknowledgement value below.
+(`docs/phase7-owner-decisions.md`). The owner gave the go-ahead on
+2026-10-08; the run uses the acknowledgement value below under the freeze
+recorded here.
 
 ## What it checks
 
@@ -81,17 +82,20 @@ the ordinary limits, or Milestone 3 acceptance.
 3. Freeze: fill in the record below and commit it. Any later code change
    means a new freeze and a separately labelled attempt.
 
-## Freeze record (fill in at freeze time)
+## Freeze record (2026-10-08)
+
+Recorded by an AI assistant at the owner's go-ahead; not a signature.
 
 | Item | Value |
 |---|---|
-| Commit | |
-| Corpus | recipes, quarantine rows, foodie embedding rows, last import id |
-| Model, reasoning effort, service tier | `LLM_REC_MODEL`, `LLM_REC_REASONING_EFFORT`, tier from the model registry |
-| Limits | as in the scenarios file |
-| Retrieval, Epicure, embeddings | `RETRIEVAL_MODE`, `EPICURE_ENABLED`, `EMBEDDINGS_ENABLED` |
-| Scenarios sha256 | `cb6ed064…` |
-| Remaining Milestone 3 budget after reconciliation | |
+| Commit | Code as of `05f20ca`. The freeze commit that records this table changes only docs and H6 result files; `git diff 05f20ca -- src scripts evals/phase3_agent evals/h8_live/scenarios.json` is empty. |
+| Corpus | After the H5 cleanup: 15,875 recipes, 644 quarantine rows, 3 imports (last `foodie-repair-v5-20261008`), 14,659 foodie embedding rows, 0 `summary` titles |
+| Model, reasoning effort, service tier | `gpt-6-luna`, `LLM_REC_REASONING_EFFORT=none`, standard tier (registry prices verified 2026-09-24) |
+| Limits | As in the scenarios file: 40 steps, 40 tool calls, 300k input and 60k output tokens per session |
+| Retrieval, Epicure, embeddings | `RETRIEVAL_MODE=fulltext`, technique retrieval fulltext, `EPICURE_ENABLED=true`, `EMBEDDINGS_ENABLED=true` (`text-embedding-3-small`), `WEB_SEARCH_ENABLED=false` |
+| Scenarios freeze sha256 | `cb6ed064476dd8cf7b6b31c8e8b651bae548455143dde9215b068d02670ad1c5` (over the file without its `freeze_sha256` field; checked on load) |
+| H8 spend before the run | $0.00 (no `data/h8-live/spend-history.json`) |
+| Budget | The owner authorized $1 for this session's live calls; the H8 pool is capped at $0.15 within it. The 2026-10-06/07 usage is not reconciled against provider billing (owner action, still open). |
 
 ## Command (after the go-ahead)
 

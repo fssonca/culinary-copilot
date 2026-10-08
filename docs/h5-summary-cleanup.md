@@ -2,9 +2,10 @@
 
 Approved in principle at Checkpoint D (2026-10-08, see
 `docs/phase7-owner-decisions.md`), subject to a corrected, rehearsed
-procedure. This document is that procedure. **The application run has
-not happened; it needs the owner's go-ahead.** It supersedes the local
-draft `data/h5-repair-preview/REINGESTION-PROCEDURE.md`.
+procedure. This document is that procedure. **Applied to the application
+database on 2026-10-08 after the owner's go-ahead** (see "Application run
+record" below). It supersedes the local draft
+`data/h5-repair-preview/REINGESTION-PROCEDURE.md`.
 
 ## What it does
 
@@ -117,6 +118,26 @@ only read.
 4. Run `verify` against the application database, then re-run the H6
    comparison (its results include the malformed records) and record the
    new counts with the H8 freeze.
+
+## Application run record (2026-10-08)
+
+Run after the owner's go-ahead, following the steps above:
+
+1. Backup `data/h5-cleanup/backup/application-before.dump` (mode 0600,
+   not committed), sha256
+   `18f783189a71f20699b3e344036eb2e3d2174ef59e190d380b1e2ca2f0998efe`.
+2. Restored into `culinary_rehearsal_h5_verify`: first `apply` 360
+   writes with every check passing, rerun 0 writes, `verify` passed. The
+   frozen manifest matched, so it was not rebuilt. The database was
+   dropped.
+3. `apply --target application`: state `first_run`, 360 writes (158
+   recipes deleted, 201 quarantine rows, import
+   `foodie-repair-v5-20261008`), every end-state check passed. Report:
+   `data/h5-cleanup/application-report.json`.
+4. `verify` passed. Application database now: 15,875 recipes, 644
+   quarantine rows, 3 imports, 0 `summary` titles, 14,659 foodie
+   embedding rows, 0 orphan embeddings. The H6 comparison was re-run
+   (`evals/results/h6/README.md`).
 
 ## Recovery
 

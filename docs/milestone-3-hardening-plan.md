@@ -2,9 +2,9 @@
 
 Status: **H0 to H7 done; Checkpoint D decided** (2026-10-08, recorded in
 `docs/phase7-owner-decisions.md`). Ranking unchanged. H5 cleanup
-corrected and rehearsed twice (`docs/h5-summary-cleanup.md`); its
-application run awaits the owner's go-ahead. H8 prepared with a $0.15
-enforced pool (`evals/h8_live/PLAN.md`); running it awaits the go-ahead. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
+corrected, rehearsed and applied to the application database on
+2026-10-08 (`docs/h5-summary-cleanup.md`). H8 frozen with a $0.15 enforced
+pool (`evals/h8_live/PLAN.md`); the live run follows the freeze. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
 `docs/phase7-owner-decisions.md`). Baseline: branch

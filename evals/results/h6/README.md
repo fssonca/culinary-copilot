@@ -14,18 +14,20 @@ untouched. All database reads ran with `default_transaction_read_only=on`.
 | `additional_judgments_v2.json` | Owner-accepted at Checkpoint D: the 18 v1 grades unchanged (row 3 grade 1, the rest 2) with corrected explanations and DEV-25 equipment evidence, plus 5 recipes only the title boost surfaces (all grade 2; Pasta e Fagioli is not suitable for the vegan request). sha256 `3bfb09ff…`. |
 | `compare.json` | First run (judgments v1). Kept as history; its metric keys say `recall`, see "Metric names". |
 | `compare_v2.json` | Current run: recorded labels, recorded plus judgments v2, Hit@5 naming, pool coverage. |
-| `regression.json` | The 6 dish-versus-ingredient cases in `evals/cases/h6_dish_vs_ingredient_v1.json` (no labels; also uses the old `recall` keys). |
+| `regression.json` | The 6 dish-versus-ingredient cases in `evals/cases/h6_dish_vs_ingredient_v1.json`, before the H5 cleanup (no labels; also uses the old `recall` keys). Kept as history. |
+| `compare_v2_post_cleanup.json` | `compare_v2.json` re-run after the H5 cleanup was applied to the application database (2026-10-08). Summary identical to `compare_v2.json`. |
+| `regression_post_cleanup.json` | `regression.json` re-run after the H5 cleanup, Hit@5 naming. |
 
 The original labels in `evals/results/phase1/checkpoint1_corrections.json`
 are never edited.
 
-Reproduce from the repo root (the application database must be in the
-same state; the H5 cleanup changes results that contain the malformed
-records):
+Reproduce from the repo root against the cleaned application database
+(the `*_post_cleanup` files; the earlier files need the pre-cleanup
+state):
 
 ```
-uv run python scripts/retrieval_eval/h6_ranking_compare.py --extra-judgments evals/results/h6/additional_judgments_v2.json --out evals/results/h6/compare_v2.json
-uv run python scripts/retrieval_eval/h6_ranking_compare.py --cases evals/cases/h6_dish_vs_ingredient_v1.json --out evals/results/h6/regression.json
+uv run python scripts/retrieval_eval/h6_ranking_compare.py --extra-judgments evals/results/h6/additional_judgments_v2.json --out evals/results/h6/compare_v2_post_cleanup.json
+uv run python scripts/retrieval_eval/h6_ranking_compare.py --cases evals/cases/h6_dish_vs_ingredient_v1.json --out evals/results/h6/regression_post_cleanup.json
 ```
 
 ## Metric names
@@ -96,7 +98,9 @@ metrics `run_baseline.py` would report, where each ranking is scored only
 on its own judged cases (23, 20 and 20); those should not be used to
 compare rankings.
 
-No malformed `summary` record (H5) appears in any frozen top 5.
+No malformed `summary` record (H5) appears in any frozen top 5. After
+the H5 cleanup the run is unchanged: `compare_v2_post_cleanup.json` has
+the same summary as `compare_v2.json`.
 
 ## Dish versus ingredient regression cases
 
@@ -110,8 +114,12 @@ nothing automatically.
 | tzatziki | 1 (rank 2) | 3 | 3 |
 | hollandaise: rank of the sauce | 4 | 1 | 2 |
 
-The three phrase controls keep the same top 5 under all rankings. A
-malformed `summary` record sits in the hollandaise and benedict top 5s.
+The three phrase controls keep the same top 5 under all rankings. Before
+the H5 cleanup, a malformed `summary` record sat in the hollandaise and
+benedict top 5s under all three rankings. After the cleanup it is gone
+from both, and nothing else changed: the remaining results move up one
+place, and the sauce's rank under the current ranking goes from 4 to 3
+(1 under title-first, 2 under the boost, as before).
 The boost weight (2.0) was chosen on adobo, so the adobo result is a
 regression check, not independent evidence.
 

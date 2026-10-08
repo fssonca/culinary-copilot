@@ -458,3 +458,20 @@ recommendations in `docs/checkpoint-d-recommendations.md`.
    establish general reliability or Milestone 3 acceptance.
 5. **Push.** Push the reviewed branch when authorized; decide on
    merging into `main` after reviewing H8.
+
+### Go-ahead for the H5 application run and H8 (2026-10-08)
+
+Recorded by an AI assistant; not a signature. The owner told the
+assistant to proceed with the actions awaiting go-ahead, with a budget of
+$1 for live calls and no push.
+
+- **H5:** applied to the application database after a fresh backup and a
+  rehearsal on that backup (`docs/h5-summary-cleanup.md`, "Application
+  run record").
+- **Billing:** the 2026-10-06/07 usage was not reconciled against
+  provider billing; the assistant has no access to billing. The owner's
+  $1 for this session is recorded as the budget the $0.15 H8 pool must
+  fit, which it does. The reconciliation remains open for the owner.
+- **H8:** run with acknowledgement `h8-checkpoint-d-2026-10-08` under the
+  freeze recorded in `evals/h8_live/PLAN.md`.
+- **Push:** not authorized; the branch stays local.
