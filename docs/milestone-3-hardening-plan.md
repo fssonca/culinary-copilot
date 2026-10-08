@@ -1,10 +1,10 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
-Status: **H0 to H7 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
-2026-10-07; H2 to H7 on 2026-10-08; the H5 re-ingestion is not run and
-the H6 ranking change is a proposal, both for Checkpoint D). Next:
-Checkpoint D (owner), then H8 only with owner authorization. Harness
-cases v9 since H4 (44/44). Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
+Status: **H0 to H7 done; Checkpoint D decided** (2026-10-08, recorded in
+`docs/phase7-owner-decisions.md`). Ranking unchanged. H5 cleanup
+corrected and rehearsed twice (`docs/h5-summary-cleanup.md`); its
+application run awaits the owner's go-ahead. H8 prepared with a $0.15
+enforced pool (`evals/h8_live/PLAN.md`); running it awaits the go-ahead. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
 `docs/phase7-owner-decisions.md`). Baseline: branch

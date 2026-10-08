@@ -1,0 +1,110 @@
+{
+  "version": "h8-live-scenarios-v1-2026-10-08",
+  "note": "H8 frozen-build live check (Checkpoint D, 2026-10-08). Synthetic requests modelled on the two workflows that failed on 2026-10-07. Demo limits per session (40 steps, 40 tool calls, 300k/60k tokens, 240 s per run); web search off. Scripted answers are given in order to whatever the model asks, each at most once. Run with --budget-pool h8 --max-attempts 1. Success is predeclared in evals/h8_live/PLAN.md. Prepared only: running needs the owner's go-ahead.",
+  "scenarios": [
+    {
+      "key": "h8-party-baking",
+      "title": "Vague party-baking request: questions, options, select, plan, technique question",
+      "request": "I'm baking something for a party this weekend. What should I make?",
+      "session": {
+        "steps_remaining": 40,
+        "tool_calls_remaining": 40,
+        "internet_search_allowed": false
+      },
+      "settings": {
+        "agent_input_token_ceiling": 300000,
+        "agent_output_token_ceiling": 60000,
+        "agent_wall_clock_s": 240,
+        "agent_record_trajectory": true,
+        "web_search_enabled": false,
+        "epicure_enabled": true,
+        "session_max_steps": 40,
+        "session_max_tool_calls": 40
+      },
+      "scripted_answers": [
+        {
+          "question_id": "q-1",
+          "answer": "About 12 people. I have a regular oven and a few hours."
+        },
+        {
+          "question_id": "q-2",
+          "answer": "No dietary restrictions. Something sweet, like a cake or cookies."
+        },
+        {
+          "question_id": "q-3",
+          "answer": "Either is fine; pick what works best for a crowd."
+        }
+      ],
+      "followup_message": "How can I tell when it is done baking?",
+      "flow": [
+        "recommend-ask",
+        "resume",
+        "select-first",
+        "plan",
+        "followup"
+      ],
+      "fake_flow": "h8-full",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "kind": "technique_answer",
+        "workflow": [
+          "options",
+          "plan",
+          "technique_answer"
+        ],
+        "epicure": "skip:simple_technique_question"
+      }
+    },
+    {
+      "key": "h8-allergy-dessert",
+      "title": "Unnamed allergy: question, named answer, checked options, select, plan, technique question",
+      "request": "I'm making dessert for a friend who has a food allergy. What could I make?",
+      "session": {
+        "steps_remaining": 40,
+        "tool_calls_remaining": 40,
+        "internet_search_allowed": false
+      },
+      "settings": {
+        "agent_input_token_ceiling": 300000,
+        "agent_output_token_ceiling": 60000,
+        "agent_wall_clock_s": 240,
+        "agent_record_trajectory": true,
+        "web_search_enabled": false,
+        "epicure_enabled": true,
+        "session_max_steps": 40,
+        "session_max_tool_calls": 40
+      },
+      "scripted_answers": [
+        {
+          "question_id": "q-1",
+          "answer": "Tree nuts."
+        },
+        {
+          "question_id": "q-2",
+          "answer": "Anything without tree nuts is fine; I have an oven."
+        }
+      ],
+      "followup_message": "How do I keep tree nuts from getting into the dessert by accident in my kitchen?",
+      "flow": [
+        "recommend-ask",
+        "resume",
+        "select-first",
+        "plan",
+        "followup"
+      ],
+      "fake_flow": "h8-full",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "kind": "technique_answer",
+        "workflow": [
+          "options",
+          "plan",
+          "technique_answer"
+        ],
+        "epicure": "skip:simple_technique_question",
+        "allergy_check": true
+      }
+    }
+  ],
+  "freeze_sha256": "cb6ed064476dd8cf7b6b31c8e8b651bae548455143dde9215b068d02670ad1c5"
+}

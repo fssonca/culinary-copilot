@@ -1,0 +1,117 @@
+# H8 frozen-build live check: plan
+
+Prepared 2026-10-08 under the Checkpoint D decisions
+(`docs/phase7-owner-decisions.md`). **Not run. Running it needs the
+owner's go-ahead**, given as the acknowledgement value below.
+
+## What it checks
+
+Two fresh sessions on one frozen build, with no code changes between
+them, through the existing live runner (`evals/phase3_agent/live_run.py`):
+
+| Scenario | Flow |
+|---|---|
+| `h8-party-baking` | vague baking request → questions answered in turn → options → select the first → plan → "how can I tell when it is done baking?" |
+| `h8-allergy-dessert` | dessert for a friend with an unnamed allergy → question → "tree nuts" → checked options → select → plan → a cross-contact question |
+
+Scenarios: `evals/h8_live/scenarios.json` (freeze sha256
+`cb6ed064476dd8cf7b6b31c8e8b651bae548455143dde9215b068d02670ad1c5`).
+Requests and answers are synthetic. Scripted answers go, in order, to
+whatever the model asks, each at most once.
+
+## Limits and settings
+
+Per session, the `make demo` limits: 40 steps, 40 tool calls, 300k input
+and 60k output tokens, 240 s per run. Web search off at the session
+toggle and at the operator switch (`WEB_SEARCH_ENABLED=false`); the
+runner's preflight refuses otherwise. Epicure on, embeddings on,
+full-text retrieval by default, trajectory recording on. One attempt per
+scenario (`--max-attempts 1`): first attempts only.
+
+## Spending guard
+
+The `h8` pool caps all H8 spend at **$0.15**, shared by both sessions and
+every paid call (model turns, query embeddings, any authorized retry).
+The runner reserves each call's worst case before sending it (input
+bounded by the request's byte length plus overhead, output by the
+maximum permitted), reconciles reported usage afterwards, keeps the
+reservation when the outcome is ambiguous, refuses a call that does not
+fit the remainder, and stops everything on a reservation breach. Spend
+recorded in `data/h8-live/spend-history.json` by earlier H8 runs counts
+against the same $0.15. `make demo` itself enforces no dollar ceiling;
+only this runner does.
+
+## Success, declared before the run
+
+A scenario counts as complete only when all of these hold, judged from
+its first attempt and its transcript:
+
+1. **Clarification where needed.** The allergy scenario asks which
+   allergen before offering options. The baking scenario may ask; its
+   questions are judged for relevance.
+2. **Answers recorded and used.** Each answer is stored and the next run
+   uses it.
+3. **Suitable options from retrieved recipes.** At least one option, all
+   fetched in the session. Allergy: every option checked for tree nuts
+   and none containing them.
+4. **A plan for exactly the selected dish.** Quantities attached to the
+   right ingredients; the source/adaptation label matches what the plan
+   did.
+5. **A grounded technique answer** citing technique chunks returned in
+   the session, or an honest statement that the corpus does not cover
+   the question.
+6. **No budget stop.** A graceful budget-stop message is recovery, not
+   completion.
+
+The runner grades the mechanical parts (`task_completion`,
+`workflow_complete`: options, plan and technique answer all reached;
+`allergy_check`). Points 1, 3 (suitability), 4 and 5 also need
+transcript review by the owner.
+
+Two complete sessions show these workflows working under demo limits on
+this build. They do not establish general reliability, behaviour under
+the ordinary limits, or Milestone 3 acceptance.
+
+## Before the run
+
+1. Owner go-ahead for the H5 cleanup, then its application run
+   (`docs/h5-summary-cleanup.md`), so H8 sees the cleaned corpus.
+2. Reconcile the unrecorded 2026-10-06/07 usage against provider billing
+   and record the remaining Milestone 3 budget; the $0.15 must fit in it.
+3. Freeze: fill in the record below and commit it. Any later code change
+   means a new freeze and a separately labelled attempt.
+
+## Freeze record (fill in at freeze time)
+
+| Item | Value |
+|---|---|
+| Commit | |
+| Corpus | recipes, quarantine rows, foodie embedding rows, last import id |
+| Model, reasoning effort, service tier | `LLM_REC_MODEL`, `LLM_REC_REASONING_EFFORT`, tier from the model registry |
+| Limits | as in the scenarios file |
+| Retrieval, Epicure, embeddings | `RETRIEVAL_MODE`, `EPICURE_ENABLED`, `EMBEDDINGS_ENABLED` |
+| Scenarios sha256 | `cb6ed064…` |
+| Remaining Milestone 3 budget after reconciliation | |
+
+## Command (after the go-ahead)
+
+```
+HF_HUB_OFFLINE=1 LLM_RECOMMENDATION_ENABLED=true EPICURE_ENABLED=true \
+EMBEDDINGS_ENABLED=true WEB_SEARCH_ENABLED=false \
+uv run python evals/phase3_agent/live_run.py --live --yes \
+  --budget-pool h8 --ceiling-usd 0.15 \
+  --acknowledge-live-run h8-checkpoint-d-2026-10-08 \
+  --scenarios-file evals/h8_live/scenarios.json --max-attempts 1 \
+  --expect-db-name culinary_copilot --expect-db-host localhost \
+  --raw-dir data/h8-live/raw --summary-out data/h8-live/summary.json
+```
+
+Raw responses, trajectories and the summary stay under `data/h8-live/`
+(not committed). The committed report paraphrases model output and never
+quotes it.
+
+## Dry run (done 2026-10-08)
+
+The same command with `--fake` (scripted model, disposable database
+`culinary_test_h8_fake`): both scenarios completed, workflow complete,
+isolation ok, $0.00. Tests: `tests/test_h8_live_pool.py`.

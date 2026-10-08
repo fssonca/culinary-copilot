@@ -211,6 +211,10 @@ BUDGET_POOLS: dict[str, dict[str, Any]] = {
         "history": REPO_ROOT / "data" / "phase7-live" / "spend-history.json",
         "cap_usd": 0.50,
     },
+    "h8": {
+        "history": REPO_ROOT / "data" / "h8-live" / "spend-history.json",
+        "cap_usd": 0.15,
+    },
 }
 #: Live-check search slots per session (owner item 3): at most 2, inside
 #: the code limit of 3.
@@ -225,6 +229,15 @@ PHASE7_CAMPAIGN_SEARCH_CAP = 5
 #: Exact owner-acknowledgment value for the Phase 7 live run
 #: (checkpoint C). Preflight checks this exact string.
 PHASE7_ACK_VALUE = "phase7-checkpoint-c-2026-10-04"
+#: H8 frozen-build live check (Checkpoint D, 2026-10-08): $0.15 shared
+#: by both sessions and every paid call (model turns, embeddings,
+#: retries) through this ledger, prior H8 spend included. Web search is
+#: off for H8: preflight refuses any scenario or setting that enables it.
+H8_CAP_USD = 0.15
+H8_HISTORY = REPO_ROOT / "data" / "h8-live" / "spend-history.json"
+#: Exact owner-acknowledgment value for a live H8 run. Preflight checks
+#: this exact string; the owner gives it with the go-ahead.
+H8_ACK_VALUE = "h8-checkpoint-d-2026-10-08"
 
 
 # --- input bound ---------------------------------------------------------------
@@ -1210,7 +1223,7 @@ def preflight(
                 problems.append(f"Epicure cache probe failed for {name}: {error}")
     pool = str(getattr(args, "budget_pool", "phase3") or "phase3")
     if pool not in BUDGET_POOLS:
-        problems.append(f"unknown --budget-pool {pool!r} (phase3 | phase5 | phase7)")
+        problems.append(f"unknown --budget-pool {pool!r} (phase3 | phase5 | phase7 | h8)")
         pool = "phase3"
     pool_cap = float(BUDGET_POOLS[pool]["cap_usd"])
     record["budget_pool"] = pool
@@ -1303,6 +1316,22 @@ def preflight(
             "phase7 live run refused without explicit owner acknowledgement: "
             f"--acknowledge-live-run {PHASE7_ACK_VALUE} (checkpoint C)"
         )
+    if pool == "h8":
+        # H8 (Checkpoint D): owner go-ahead and web search off, both at
+        # the session toggle and at the operator switch.
+        if live_mode and live_ack != H8_ACK_VALUE:
+            problems.append(
+                "h8 live run refused without explicit owner acknowledgement: "
+                f"--acknowledge-live-run {H8_ACK_VALUE} (checkpoint D)"
+            )
+        web_on = bool(getattr(settings, "web_search_enabled", False)) or any(
+            bool((s.get("settings", {}) or {}).get("web_search_enabled")) for s in selected
+        )
+        if search_selected or web_on:
+            problems.append(
+                "h8 runs keep web search off: no scenario may allow internet search "
+                "and WEB_SEARCH_ENABLED must be false"
+            )
     if live_mode and search_selected:
         # Breach check reads the selected pool's history (Phase 7 known
         # gap, fixed): a Phase 7 breach must block Phase 7 runs. Module
@@ -1986,6 +2015,92 @@ class FakeRunProvider:
                     "note": "fake plan",
                 }
             )
+        if flow == "h8-full":
+            # H8 flow (tests only): two questions answered in turn,
+            # options, select, plan, then a technique question after
+            # the plan answered from a technique search.
+            if self.calls == 1:
+                return self._tools(("c1", "search_recipes", query))
+            if self.calls in (2, 3):
+                return self._parsed(
+                    {
+                        "decision": "ask_user",
+                        "question": {
+                            "question_id": f"q-h8-{self.calls}",
+                            "question_text": f"Fake question {self.calls - 1}?",
+                            "options": ["yes", "no"],
+                        },
+                        "note": "fake h8 ask",
+                    }
+                )
+            if self.calls == 4:
+                return self._tools(
+                    ("c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c5", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                    ("c6", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    ("c7", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            if self.calls == 5:
+                return self._options_finish(
+                    [
+                        self._opt(
+                            "curry-1",
+                            "Creamy Chicken Curry",
+                            [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                        ),
+                        self._opt(
+                            "lentil-2",
+                            "Red Lentil Soup",
+                            [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+                        ),
+                    ],
+                    epicure_lines=self._lines(),
+                )
+            if self.calls == 6:
+                return self._tools(
+                    ("c8", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            if self.calls == 7:
+                return self._parsed(
+                    {
+                        "decision": "finish",
+                        "move_to": "plan",
+                        "result": {
+                            "plan": {
+                                "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                                "mise_en_place": ["dice chicken"],
+                                "steps": ["brown chicken", "serve"],
+                                "plating": "in bowls",
+                                "quantities": [
+                                    {"ingredient": "chicken", "amount": "500", "unit": "g"}
+                                ],
+                                "adaptations": [],
+                                "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                            }
+                        },
+                        "constraints_honored": [],
+                        "note": "fake plan",
+                    }
+                )
+            if self.calls == 8:
+                return self._tools(
+                    ("c9", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            return self._parsed(
+                {
+                    "decision": "finish",
+                    "move_to": None,
+                    "result": {
+                        "technique_answer": {
+                            "text": "Cook poultry to 165 F.",
+                            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                        }
+                    },
+                    "constraints_honored": [],
+                    "epicure_skip_reason": "simple_technique_question",
+                    "note": "fake technique answer",
+                }
+            )
         if flow == "ask":
             if self.calls == 1:
                 return self._tools(("c1", "search_recipes", query))
@@ -2472,7 +2587,9 @@ _CONFIG_ERROR_STOPS = frozenset({"generation_disabled"})
 #: Flow steps the runner implements. Anything else (e.g. a
 #: not-implemented "recommend-toggle-off") is refused instead of
 #: silently running as a plain recommend.
-KNOWN_FLOW_STEPS = frozenset({"recommend", "recommend-ask", "resume", "select-first", "plan"})
+KNOWN_FLOW_STEPS = frozenset(
+    {"recommend", "recommend-ask", "resume", "select-first", "plan", "followup"}
+)
 
 
 def _final_answered(final: dict[str, Any] | None) -> bool:
@@ -2487,6 +2604,22 @@ def _final_answered(final: dict[str, Any] | None) -> bool:
     if final.get("web_answer"):
         return True
     return False
+
+
+def workflow_reached(runs: list[dict[str, Any]]) -> dict[str, bool]:
+    """Which workflow stages one attempt's runs reached (H8 grading).
+
+    ``asked``: a run stopped on a question; ``options``, ``plan`` and
+    ``technique_answer``: a run finished with one. Stages are read from
+    the recorded run finals only.
+    """
+    finals = [r.get("final") or {} for r in runs if isinstance(r, dict)]
+    return {
+        "asked": any(bool(f.get("question")) for f in finals),
+        "options": any(bool(f.get("options")) for f in finals),
+        "plan": any(bool(f.get("plan")) for f in finals),
+        "technique_answer": any(bool(f.get("technique_answer")) for f in finals),
+    }
 
 
 def run_scenario_live(
@@ -2636,8 +2769,15 @@ def run_scenario_live(
             )
             last_final, last_stop = result.final, result.stop_reason
             if result.stop_reason == "agent_needs_user_input" and "resume" in flow:
+                # Answer each pending question in turn with the next
+                # scripted answer (H8: a vague request can take several
+                # questions). Each answer is used at most once, so a
+                # one-answer scenario behaves exactly as before.
                 answers = list(scenario.get("scripted_answers", []))
-                if answers:
+                answered: list[dict[str, Any]] = []
+                answer_failed = False
+                while answers and last_stop == "agent_needs_user_input":
+                    scripted_answer = answers.pop(0)["answer"]
                     # Answer the actual pending question from the last
                     # final (the model invents its own IDs); the asked
                     # text is recorded for manual review, never graded.
@@ -2649,19 +2789,25 @@ def run_scenario_live(
                             sid,
                             expected_revision=current.revision,
                             question_id=asked.get("question_id"),
-                            answer=answers[0]["answer"],
+                            answer=scripted_answer,
                         )
                     except Exception as exc:
                         last_final, last_stop = None, "runner-error"
                         run_stop = _runner_error(attempt_record, exc, "answer")
                         attempts.append(attempt_record)
+                        answer_failed = True
                         break
-                    attempt_record["answered_question"] = {
-                        "question_id": asked.get("question_id"),
-                        "question_text": asked.get("question_text"),
-                        "question_options": asked.get("options"),
-                        "scripted_answer": answers[0]["answer"],
-                    }
+                    answered.append(
+                        {
+                            "question_id": asked.get("question_id"),
+                            "question_text": asked.get("question_text"),
+                            "question_options": asked.get("options"),
+                            "scripted_answer": scripted_answer,
+                        }
+                    )
+                    attempt_record["answered_question"] = answered[0]
+                    if len(answered) > 1:
+                        attempt_record["answered_questions"] = list(answered)
                     result2 = _run_once(sid, deps, tool_context)
                     attempt_record["runs"].append(
                         {
@@ -2671,6 +2817,8 @@ def run_scenario_live(
                         }
                     )
                     last_final, last_stop = result2.final, result2.stop_reason
+                if answer_failed:
+                    break
             if "select-first" in flow and (last_final or {}).get("options"):
                 first = last_final["options"][0]
                 try:
@@ -2697,6 +2845,21 @@ def run_scenario_live(
                         }
                     )
                     last_final, last_stop = result3.final, result3.stop_reason
+                    followup = str(scenario.get("followup_message") or "")
+                    if "followup" in flow and followup and (last_final or {}).get("plan"):
+                        # H8: a technique question after the plan, in the
+                        # same session (the plan's steps reach it).
+                        record_user_message(store, sid, text=followup)
+                        result4 = _run_once(sid, deps, tool_context)
+                        attempt_record["runs"].append(
+                            {
+                                "stop_reason": result4.stop_reason,
+                                "phase": result4.phase,
+                                "final": result4.final,
+                                "followup": True,
+                            }
+                        )
+                        last_final, last_stop = result4.final, result4.stop_reason
         except AgentLoopError as exc:
             if _caused_by_reservation_breach(exc):
                 # Reservation breach: the bound failed, not the model.
@@ -2817,6 +2980,16 @@ def run_scenario_live(
         grades = grade_attempt(
             scenario, last_final, last_stop, store, created[-1], manual_review=manual_review
         )
+        required = list((scenario.get("expected", {}) or {}).get("workflow") or [])
+        if required and attempts:
+            # H8: the session must pass through every required stage
+            # (options, plan, technique answer), not only end well.
+            reached = workflow_reached(attempts[-1].get("runs") or [])
+            grades["workflow"] = reached
+            grades["workflow_complete"] = all(reached.get(step) for step in required)
+            grades["task_completion"] = bool(
+                grades.get("task_completion") and grades["workflow_complete"]
+            )
         # "completed" alone hid runs that ended without an answer:
         # answered means options, a plan, or an accepted final.
         status = (
@@ -2868,19 +3041,20 @@ def _args(argv: list[str] | None = None) -> Any:
     )
     parser.add_argument(
         "--budget-pool",
-        choices=("phase3", "phase5", "phase7"),
+        choices=("phase3", "phase5", "phase7", "h8"),
         default="phase3",
         help=(
             "which cap/history the run charges "
             "(phase3: $0.15 cap; phase5: $0.13 campaign; "
-            "phase7: $0.50 prepared, not authorized)"
+            "phase7: $0.50 prepared, not authorized; h8: $0.15, web off)"
         ),
     )
     parser.add_argument(
         "--acknowledge-live-run",
         default="",
         help=(
-            "phase7 checkpoint C: must equal phase7-checkpoint-c-2026-10-04 for live phase7 runs"
+            "phase7 checkpoint C: must equal phase7-checkpoint-c-2026-10-04 for live "
+            "phase7 runs; h8: must equal h8-checkpoint-d-2026-10-08 for live h8 runs"
         ),
     )
     parser.add_argument(
