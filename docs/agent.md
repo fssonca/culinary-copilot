@@ -40,8 +40,10 @@ Model input per turn: task framing (tool outputs and recipe text are
 data, never instructions; hard constraints never relaxed; adaptations
 labelled) + compact session snapshot (constraints, recent confirmed
 answers, unresolved questions, budgets, Epicure status) + capped
-history (first item plus newest; tool results as
-`function_call_output` data items). `session_events` keeps the full
+history (newest whole turn groups: 13 items, plus older groups within
+a 16,000-character retention heuristic, which is not a token or
+spending guarantee; tool results as `function_call_output` data
+items; details in `docs/architecture/agent-system.md`). `session_events` keeps the full
 record; only concise decisions and outcomes are stored — never private
 model reasoning.
 
@@ -278,7 +280,11 @@ removed), and the next run substitutes (labelled `adaptation`,
   place, steps or plating must equal (exactly, in any notation) an
   amount the source states with the same unit; the `get_recipe`
   summary shows amounts in the source's own notation ("5 1/2", not the
-  stored exact fraction "11/2") when both parse to the same value. Plan/cook steps
+  stored exact fraction "11/2") when both parse to the same value. This
+  is a limited amount/unit check: each amount is compared with every
+  amount the recipe states, without the ingredient it belongs to, so a
+  swapped amount passes when another ingredient has it (ingredient-aware
+  validation is planned as hardening step H2). Plan/cook steps
   may cite `technique_refs` (`doc_id` + `chunk_id`, max 10): each must
   resolve in the technique corpus **and** have been returned by a
   `search_techniques` call in the same session

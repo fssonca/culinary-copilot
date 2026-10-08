@@ -155,7 +155,9 @@ _DISH_PHASES = frozenset({"select", "plan", "cook", "plate"})
 # history fits this many characters, up to _HISTORY_MAX_ITEMS
 # (2026-10-07 live session: after a 3-recipe step pushed the small
 # first step out, the model re-ran a pairing query it could no longer
-# see). Large outputs still cap at the 13-item window as before.
+# see). Large outputs still cap at the 13-item window as before. A
+# retention heuristic, not a token or spending guarantee: the input
+# token ceiling and the run budgets limit spending.
 _HISTORY_CHAR_BUDGET = 16000
 _HISTORY_MAX_ITEMS = 31
 # User messages: event type plus the per-run window (oldest first) and
@@ -1124,10 +1126,12 @@ _TASK_FRAMING = (
     "Adaptations are labelled as adaptations, never presented as source "
     "facts. Call tools via function calls, or return a directive "
     "(ask_user/finish). Ask only when the answer would materially change "
-    "the recommendation (party size or servings never does: offer options "
-    "first; scaling waits for the plan). A party size the user gives is "
-    "not a filter: most recipes list no servings, so finish with options "
-    "and say servings are unknown rather than searching for a yield. "
+    "the recommendation. Do not hold back initial options only because "
+    "servings are unknown: offer options first; scaling waits for the "
+    "plan. Ask about party size when it materially affects feasibility "
+    "(equipment, batch preparation). A party size the user gives is not "
+    "a filter: most recipes list no servings, so finish with options and "
+    "say servings are unknown rather than searching for a yield. "
     "Never ask permission to search or fetch more: do it. "
     "Epicure pairings are queried by default before "
     "recommend; skipping needs an allowlisted reason: "

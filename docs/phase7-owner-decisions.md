@@ -256,6 +256,12 @@ yet.
   corpus recipes had a direction over 200 characters; 184 of 16,033
   now have one over 600. The largest summary measured over the corpus
   is 3,926 characters.
+  - *Correction (2026-10-07, owner review):* the heading above
+    overstates this. Directions are expanded (up to 12 directions of up
+    to 600 characters each) with explicit clipping, not sent in full:
+    184 recipes still have a clipped direction and 421 have more than
+    12 directions. Access to the clipped content is planned as step H3
+    of `docs/milestone-3-hardening-plan.md`.
 - **Food-safety requirement stated up front:** once a dish is
   selected and its source has raw meat, poultry, fish or eggs, the
   turn input says the plan needs a food-safety `technique_ref`, and
@@ -289,6 +295,11 @@ the session exposed the items below. None is live-confirmed yet.
   mise en place, steps or plating that the source never states with
   that unit. Checked against the corpus: a plan made of each recipe's
   own ingredient lines and directions passes for all 16,033 recipes.
+  - *Correction (2026-10-07, owner review):* this is a limited
+    amount/unit check. Each amount is compared with every amount the
+    recipe states, without the ingredient it belongs to, so a swapped
+    amount passes when another ingredient has it. Ingredient-aware
+    validation is planned as step H2.
 - **Unrequested scaling:** the model scaled a source without servings
   and retried the refusal. The framing now says to scale only when
   the user asks for a number of servings, and `scale_recipe` is not
@@ -296,6 +307,10 @@ the session exposed the items below. None is live-confirmed yet.
 - **History cap:** older whole turn groups now stay while the history
   is within 16,000 characters (at most 31 items), beyond the newest
   13 items.
+  - *Correction (2026-10-07, owner review):* the 16,000-character
+    limit is a retention heuristic for keeping small outputs in view,
+    not a token or spending guarantee; the input-token ceiling and the
+    budgets are the spending limits.
 - **Title-first recipe ranking: tried and reverted, owner decision
   open.** "adobo" ranked ten "chipotle peppers in adobo sauce" recipes
   above all 14 adobo dishes. Ranking full title matches first fixed

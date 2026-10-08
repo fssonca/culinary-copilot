@@ -159,8 +159,10 @@ in-memory transcript.
 - **Capped history:** the newest whole turn groups up to 13 items,
   plus older whole groups while the history stays within 16,000
   characters (at most 31 items), so small outputs such as pairings
-  are not pushed out by one large recipe step. A
-  function call is never separated from its output. Each tool output
+  are not pushed out by one large recipe step. The character limit is
+  a retention heuristic, not a token or spending guarantee: the
+  input-token ceiling and the run budgets limit spending. A function
+  call is never separated from its output. Each tool output
   is summarized to IDs and the facts needed, bounded at 4,000
   characters (6,500 for technique search, whose hits carry
   attribution and 600-character excerpts; 9,000 for `get_recipe`)
@@ -247,7 +249,11 @@ The validators run on every finish, with no model call:
   - mass and volume amounts in the plan text must equal an amount the
     source states with the same unit (amounts reach the model in the
     source's own notation, and the UI shows exact fractions such as
-    11/2 as mixed numbers);
+    11/2 as mixed numbers). This is a limited amount/unit check: it
+    compares each amount with every amount the recipe states, without
+    the ingredient it belongs to, so a swapped amount passes when
+    another ingredient has it. Ingredient-aware validation is planned
+    (step H2 of `docs/milestone-3-hardening-plan.md`);
   - steps are labelled `source` only when each step cites a stored
     direction that supports it and every direction is covered;
     otherwise `model_adaptation`. When the source has directions,

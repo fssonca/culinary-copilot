@@ -1117,6 +1117,11 @@ def plan_prose_quantity_errors(plan: dict[str, Any], doc: dict[str, Any]) -> lis
     equal (exactly, any notation) a quantity the source states with the
     same unit, in its ingredients or directions. Adaptations are not
     checked: they are labelled as not from the source.
+
+    Limited amount/unit check: amounts are pooled, without the
+    ingredient each belongs to, so "1 1/2 lb chicken" passes for a
+    5 1/2 lb source when another ingredient is 1 1/2 lb. Ingredient-aware
+    validation is hardening step H2.
     """
     stated = source_quantities(doc)
     texts = [

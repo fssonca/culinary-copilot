@@ -1,6 +1,7 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
-Status: **planned 2026-10-07; no step started.** This plan follows the
+Status: **H0 and H1 done 2026-10-07** (H0 baseline commit `eae6f00`,
+authorized by the owner; H1 wording uncommitted). H2 onward not started. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
 `docs/phase7-owner-decisions.md`). Baseline: branch
@@ -122,6 +123,17 @@ text named here).
 
 Evidence: the diff of the docs and the framing line; `make check`;
 harness unchanged.
+
+Done 2026-10-07: correction notes added under the three 2026-10-07
+bullets in `docs/phase7-owner-decisions.md` (originals kept); the
+quantity check described as limited in `docs/agent.md`,
+`docs/architecture/agent-system.md` and the validator docstring; the
+party-size framing reworded; the history limit described as a
+retention heuristic in both docs and the code comment (the
+`docs/agent.md` summary also said "first item plus newest", which no
+longer matched `_cap_history`). `make check` 1209 passed, 8 skipped;
+harness 43/43, 4/4 adversarial, results unchanged; `verify_packet.py`
+all claims match.
 
 ## H2. Ingredient-aware quantity validation
 
