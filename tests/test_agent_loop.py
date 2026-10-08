@@ -949,6 +949,9 @@ def test_pointer_refetches_reach_the_stall_stop(engine) -> None:
             # Turn 3 is the wrap-up (get_recipe withheld); its search runs.
             ("tools", [("c3", "search_recipes", {"query": "curry"})]),
             ("tools", [("c4", "get_recipe", curry)]),
+            # Turn 5 is the stall finishing turn (no tools); calling one
+            # anyway stops the run with the stall.
+            ("tools", [("c5", "get_recipe", curry)]),
         ]
     )
     deps = _deps(store, provider, overrides={"get_recipe": _mirror_get_factory(seen)})
@@ -956,6 +959,7 @@ def test_pointer_refetches_reach_the_stall_stop(engine) -> None:
         _run(run_agent(state.id, deps=deps))
     assert caught.value.reason == "agent_no_progress"
     assert [mode for _, mode in seen] == ["full", "short", "short"]
+    assert provider.seen_tools[4] == []
 
 
 def test_new_calls_do_not_trigger_wrap_up(engine) -> None:
@@ -1164,17 +1168,19 @@ def test_transient_failures_lead_to_no_progress(engine) -> None:
 
 def test_identical_successful_calls_stall(engine) -> None:
     # The first repeat-only step earns one wrap-up turn without the
-    # repeated tool; a model that keeps repeating still stalls out.
+    # repeated tool; a model that keeps repeating gets one tool-less
+    # finishing turn and, calling a tool there too, still stalls out.
     store = PostgresSessionStore(engine)
     state = _session(store)
     provider = ScriptedProvider(
-        [("tools", [(f"c{i}", "search_recipes", {"query": "same"})]) for i in range(4)]
+        [("tools", [(f"c{i}", "search_recipes", {"query": "same"})]) for i in range(5)]
     )
     with pytest.raises(AgentLoopError) as excinfo:
         _run(run_agent(state.id, deps=_deps(store, provider)))
     assert excinfo.value.reason == "agent_no_progress"
     assert "search_recipes" not in provider.seen_tools[2]
     assert "search_recipes" in provider.seen_tools[3]
+    assert provider.seen_tools[4] == []
     # 2026-10-07 live session: the repeat says it returned nothing new.
     outputs = [str(i) for i in provider.seen_inputs[2] if i.get("type") == "function_call_output"]
     assert sum("identical to an earlier search" in o for o in outputs) == 1
@@ -1186,13 +1192,15 @@ def test_stall_stop_charges_the_final_step(engine) -> None:
     store = PostgresSessionStore(engine)
     state = _session(store)
     provider = ScriptedProvider(
-        [("tools", [(f"c{i}", "search_recipes", {"query": "same"})]) for i in range(4)]
+        [("tools", [(f"c{i}", "search_recipes", {"query": "same"})]) for i in range(5)]
     )
     with pytest.raises(AgentLoopError) as excinfo:
         _run(run_agent(state.id, deps=_deps(store, provider)))
     assert excinfo.value.reason == "agent_no_progress"
     after = store.get(state.id)
-    assert after.steps_remaining == 8 - 4
+    # Four tool steps plus the stall finishing turn; its unoffered call
+    # never runs, so three calls are charged (the wrap-up's is withheld).
+    assert after.steps_remaining == 8 - 5
     assert after.tool_calls_remaining == 12 - 3
 
 

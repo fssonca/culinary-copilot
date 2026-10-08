@@ -1,6 +1,6 @@
 # Agent scoreboard (Milestone 3, Phase 7)
 
-Status: offline harness v10, updated 2026-10-08. The harness makes no
+Status: offline harness v11, updated 2026-10-08. The harness makes no
 model calls, embedding calls, web requests or downloads. Writes go to
 the disposable `culinary_check_phase7` database only (dropped
 afterward). The live evaluation (11 sessions, part 2) is summarized
@@ -25,10 +25,12 @@ Model quality is measured only by the live run.
   `uv run python evals/phase7_agent/run.py`. Writes `results.json` and
   `epicure_compare.json` into that directory.
 - `evals/phase7_agent/cases.json`: version
-  `phase7-cases-v10-2026-10-08`, 55 cases, sha256
-  `198ef720520d7ead03fff420bea5360ad6fbaea47be2b117c2759df1335820d8`
-  (recorded in `results.json` as `cases_sha256`; v1, v8 and v9 sha and
-  aggregate kept as `history_v1`, `history_v8` and `history_v9`). v10
+  `phase7-cases-v11-2026-10-08`, 58 cases, sha256
+  `a91c1d9e3c220e3835a695d037013de98a1bfc195985af5a3bc082a45edbd720`
+  (recorded in `results.json` as `cases_sha256`; v1, v8, v9 and v10 sha
+  and aggregate kept as `history_v1`, `history_v8`, `history_v9` and
+  `history_v10`). v11 adds the 3 stall-recovery cases (listed below)
+  after the first H8 attempt. v10
   (H7) adds 11 cases (listed below) and checks the per-turn decision
   log in every case: one `agent_turn` event per turn with offered and
   withheld tools and remaining budgets, bounded payloads, no raw
@@ -47,26 +49,27 @@ Model quality is measured only by the live run.
   permission-off backend gate is additionally probed directly with
   `run_tool`.
 
-## Aggregates (55 cases, v10)
+## Aggregates (58 cases, v11)
 
-- Task completion (scored): 55/55 (rate 1.0). Expected-fail: none.
+- Task completion (scored): 58/58 (rate 1.0). Expected-fail: none.
 - Adversarial catch rate: 4/4 (1.0), each with its pinned rejection
   text. Adversarial cases: `p7-epicure-skip-unjustified` ("needs
   Epicure consulted"), `p7-search-invented-url` ("was not returned in
   this session"), `p7-tool-invalid-args`, `p7-invalid-transition-caught`.
-- Stop reasons: `agent_sufficient_evidence` 43,
+- Stop reasons: `agent_sufficient_evidence` 45,
   `agent_validation_failed` 4, `agent_needs_user_input` 4,
   `agent_max_steps` 1, `agent_tool_budget_exhausted` 1,
-  `agent_token_budget_exhausted` 1, `agent_wall_clock_exceeded` 1.
+  `agent_token_budget_exhausted` 1, `agent_wall_clock_exceeded` 1,
+  `agent_no_progress` 1.
 - Invalid transitions: 1 total (in `p7-invalid-transition-caught`,
   recovered then finished).
 - Tool-argument validity (mean): 0.993. Below 1.0:
   `p7-tool-invalid-args` (0.8) and `p7-vector-unconfigured` (0.8:
   the refused vector call, recovered with fulltext).
 - Unnecessary-call rate (mean): 0.0. No forbidden calls.
-- Epicure compliance: 54/55 (0.982). The single non-compliant case is
+- Epicure compliance: 57/58 (0.983). The single non-compliant case is
   the adversarial unjustified skip, correctly caught.
-- Source-reference correctness: 55/55 (1.0).
+- Source-reference correctness: 58/58 (1.0).
 - Unsupported-claim cases: 5 (the three time-claim regression cases
   plus `p7-dropped-named` and `p7-negated-pairing`, whose first
   finishes are rejected on purpose; all recover or fail as designed).
@@ -157,6 +160,18 @@ Model quality is measured only by the live run.
   answer): rejected once, then a description passes. Imperatives
   count after first/next/now/finally/simply/just/you/we/after-that
   as well as sentence starts.
+
+v11 (stall recovery, 2026-10-08, after the first H8 attempt), all
+pass. Run against the loop before the change (`4acf03e`), all three
+fail and the other 55 pass.
+
+- `p7-stall-finish-options`: the same search three times, then the
+  tool-less finishing turn finishes with the options already fetched.
+- `p7-stall-finish-plan`: the H8 party-baking pattern in the plan
+  phase (the selected recipe fetched three times, a technique search on
+  the wrap-up turn), then the finishing turn returns the plan.
+- `p7-stall-finish-tool-call`: a tool call on the finishing turn still
+  stops with `agent_no_progress` and the stall message.
 
 v10 (H7, 2026-10-08), all pass. Checked against earlier commits with
 the decision-log check switched off: all 11 fail before the 2026-10-07

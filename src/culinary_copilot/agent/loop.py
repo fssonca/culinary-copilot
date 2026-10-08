@@ -28,7 +28,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import SQLAlchemyError
@@ -1450,9 +1450,10 @@ def build_turn_input(
     text = _TASK_FRAMING + "\nSession: " + json.dumps(snapshot, default=str)
     if final_turn:
         text += (
-            "\nFinal step: no tools remain. Finish now with options from "
-            "the evidence listed, or ask one question if nothing suitable "
-            "was found."
+            "\nFinal step: no tools remain. Finish now with what the phase "
+            "requires (options, the plan for the selected dish, or the "
+            "answer) from the evidence listed, or ask one question if "
+            "nothing suitable was found."
         )
     elif wrap_up:
         names = ", ".join(withheld_tools or []) or "those tools"
@@ -2389,6 +2390,18 @@ def tool_budget_stop_message(store: Any, session_id: str, state: Any, *, excess:
     return f"{head}. Useful results so far: {listing}; start a new session"
 
 
+def stall_stop_message(store: Any, session_id: str, state: Any, *, tool: str) -> str:
+    """Stall stop message (``agent_no_progress``) with the results list.
+
+    Starts with the pre-recovery wording, so existing message checks
+    hold, and lists the useful results like the budget stops (H4).
+    """
+    listing = session_results_summary(store, session_id, state)
+    return (
+        f"repeated identical {tool} calls without new information. Useful results so far: {listing}"
+    )
+
+
 #: Bound for each recorded trajectory text (tool output, directive, final).
 TRAJECTORY_CHARS = 8000
 
@@ -2570,10 +2583,23 @@ async def _run_agent(
     # wall clock are its spending limits. Holds the excess count once
     # the finishing turn is offered.
     budget_recovery_excess: int | None = None
+    # Stall recovery (2026-10-08, after the first H8 attempt): the third
+    # identical call used to stop the run at once, with options or a
+    # plan possible from the evidence already fetched (both H8 sessions
+    # stopped that way). Now the stall gets the same one tool-less
+    # finishing turn as H4: finish from the evidence or ask one
+    # question. Tool calls on it, a rejected answer, or a limit that
+    # prevents it all stop with the stall reason, as before. At most
+    # once per run. Holds the stalled tool once the turn is offered.
+    stall_recovery_tool: str | None = None
 
     async def budget_stop(reason: str, http_status: int, message: str) -> AgentRunResult:
         # A limit that stops the H4 finishing turn reports the tool
-        # budget it recovers from, with the results list.
+        # budget it recovers from, with the results list; one that stops
+        # the stall finishing turn reports the stall.
+        if stall_recovery_tool is not None and budget_recovery_excess is None:
+            reason, http_status = REASON_AGENT_NO_PROGRESS, 422
+            message = stall_stop_message(store, session_id, state, tool=stall_recovery_tool)
         if budget_recovery_excess is not None:
             reason, http_status = REASON_AGENT_TOOL_BUDGET, 422
             message = tool_budget_stop_message(
@@ -2627,7 +2653,11 @@ async def _run_agent(
         # (see _validation_feedback). The tool budget is intentionally
         # not a pre-turn stop: the last turn can still answer from
         # evidence.
-        final_turn = state.steps_remaining <= 1 or state.tool_calls_remaining <= 0
+        final_turn = (
+            state.steps_remaining <= 1
+            or state.tool_calls_remaining <= 0
+            or stall_recovery_tool is not None
+        )
         remaining_wall = deadline - time.monotonic()
         if remaining_wall <= 0:
             return await budget_stop(
@@ -3111,7 +3141,9 @@ async def _run_agent(
                 reasoning_diagnostic=turn_diagnostic,
             )
             revision = state.revision
-            if stalled_tool is not None:
+            if stalled_tool is not None and (
+                stall_recovery_tool is not None or budget_recovery_excess is not None
+            ):
                 return await _stop(
                     deps,
                     store,
@@ -3182,6 +3214,19 @@ async def _run_agent(
                 f"{ok_now}/{len(results)} tool calls ok; "
                 f"steps left {state.steps_remaining}, tools left {state.tool_calls_remaining}"
             )
+            if stall_recovery_tool is not None and budget_recovery_excess is None:
+                # Tool calls on the stall finishing turn (none offered,
+                # none ran): stop with the stall, never a further call.
+                return await _stop(
+                    deps,
+                    store,
+                    session_id,
+                    state,
+                    revision,
+                    REASON_AGENT_NO_PROGRESS,
+                    422,
+                    stall_stop_message(store, session_id, state, tool=stall_recovery_tool),
+                )
             if budget_recovery_excess is not None:
                 # Tool calls on the H4 finishing turn (none were offered,
                 # so none ran): stop now, never a further model call.
@@ -3218,6 +3263,18 @@ async def _run_agent(
                     f"tools left {state.tool_calls_remaining}; finishing turn "
                     "without tools: finish from the evidence listed or ask "
                     "one question"
+                )
+                continue
+            if stalled_tool is not None:
+                # Stall recovery: the next iteration is the tool-less
+                # finishing turn, through the same top-of-loop checks.
+                stall_recovery_tool = stalled_tool
+                last_outcome = (
+                    f"{ok_now}/{len(results)} tool calls ok; the same "
+                    f"{stalled_tool} call returned the same result three times; "
+                    "finishing turn without tools: finish now with what the "
+                    "phase requires from the evidence you already have, or "
+                    "ask one question"
                 )
                 continue
             if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
@@ -3285,8 +3342,12 @@ async def _run_agent(
                 last_outcome,
                 turn_usage,
                 final_turn=final_turn,
+                stall_tool=stall_recovery_tool,
                 reasoning_diagnostic=turn_diagnostic,
             )
+            if not isinstance(feedback, tuple):
+                # A rejected finishing turn ends the run (no retry left).
+                return cast(AgentRunResult, feedback)
             state, revision, validation_retries, last_outcome, history_note = feedback
             history.append({"role": "user", "content": history_note})
             history = _cap_history(history)
@@ -3306,6 +3367,7 @@ async def _run_agent(
                 history=history,
                 last_outcome=last_outcome,
                 final_turn=final_turn,
+                stall_tool=stall_recovery_tool,
                 reasoning_diagnostic=turn_diagnostic,
             )
             if isinstance(ask_outcome, tuple):
@@ -3341,6 +3403,7 @@ async def _run_agent(
             turn_usage=turn_usage,
             returned_technique_chunks=returned_technique_chunks,
             final_turn=final_turn,
+            stall_tool=stall_recovery_tool,
             reasoning_diagnostic=turn_diagnostic,
         )
         if isinstance(finish_outcome, tuple):
@@ -3610,6 +3673,7 @@ async def _handle_ask(
     history: list[dict[str, Any]] | None = None,
     last_outcome: str | None = None,
     final_turn: bool = False,
+    stall_tool: str | None = None,
     reasoning_diagnostic: dict[str, Any] | None = None,
 ) -> Any:
     """Ask turn: commit the question, or feedback tuple for one retry.
@@ -3644,6 +3708,7 @@ async def _handle_ask(
             last_outcome,
             turn_usage,
             final_turn=final_turn,
+            stall_tool=stall_tool,
             reasoning_diagnostic=reasoning_diagnostic,
         )
 
@@ -3757,6 +3822,7 @@ async def _handle_finish(
     turn_usage: dict[str, Any] | None = None,
     returned_technique_chunks: set[tuple[str, int]] | None = None,
     final_turn: bool = False,
+    stall_tool: str | None = None,
     reasoning_diagnostic: dict[str, Any] | None = None,
 ) -> Any:
     """Finish turn: validate + commit, or feedback tuple for one retry.
@@ -3783,6 +3849,7 @@ async def _handle_finish(
             None,
             turn_usage,
             final_turn=final_turn,
+            stall_tool=stall_tool,
             reasoning_diagnostic=reasoning_diagnostic,
         )
     wants_plan = result.plan is not None
@@ -3802,6 +3869,7 @@ async def _handle_finish(
             None,
             turn_usage,
             final_turn=final_turn,
+            stall_tool=stall_tool,
             reasoning_diagnostic=reasoning_diagnostic,
         )
     selected = state.selected_dish or {}
@@ -3821,6 +3889,7 @@ async def _handle_finish(
             None,
             turn_usage,
             final_turn=final_turn,
+            stall_tool=stall_tool,
             reasoning_diagnostic=reasoning_diagnostic,
         )
     if directive.move_to:
@@ -3849,6 +3918,7 @@ async def _handle_finish(
             None,
             turn_usage,
             final_turn=final_turn,
+            stall_tool=stall_tool,
             reasoning_diagnostic=reasoning_diagnostic,
         )
 
@@ -4504,6 +4574,7 @@ async def _handle_finish(
             None,
             turn_usage,
             final_turn=final_turn,
+            stall_tool=stall_tool,
             reasoning_diagnostic=reasoning_diagnostic,
         )
 
@@ -4861,6 +4932,7 @@ async def _validation_feedback(
     turn_usage: dict[str, Any] | None = None,
     *,
     final_turn: bool = False,
+    stall_tool: str | None = None,
     reasoning_diagnostic: dict[str, Any] | None = None,
 ) -> Any:
     """Feed validation errors back once; second failure stops the run.
@@ -4906,6 +4978,20 @@ async def _validation_feedback(
             message=f"session store unavailable: {type(exc).__name__}",
         ) from exc
     new_revision = updated.revision
+    if final_turn and stall_tool is not None:
+        # Stall recovery: a rejected finishing turn stops with the stall
+        # it recovers from, no retry.
+        return await _stop(
+            deps,
+            store,
+            session_id,
+            updated,
+            new_revision,
+            REASON_AGENT_NO_PROGRESS,
+            422,
+            f"finishing turn rejected ({message}); "
+            + stall_stop_message(store, session_id, updated, tool=stall_tool),
+        )
     if final_turn:
         # H4 (2026-10-08): a rejected finishing turn (including the
         # budget-recovery turn, which is always tool-less with no retry

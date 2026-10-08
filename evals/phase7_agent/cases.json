@@ -1,6 +1,6 @@
 {
-  "version": "phase7-cases-v10-2026-10-08",
-  "note": "SYNTHETIC scripted model turns, not model output. v10 (H7) adds 11 cases: the 2026-10-07 recovery paths (technique answer after a plan, dropped option named, negated pairing mention, wrap-up withholds only repeated tools, repeated search marked, select phase withholds search and pairings, tree-nut allergy checked, allergy line keeps constraints_honored empty) and H2/H3 (swapped quantities, clipped directions, fidelity claim); every case also checks the per-turn decision log. v9 (H4 budget recovery): p7-budget-tools now scripts the tool-less finishing turn after the excess batch (a question), and p7-budget-tools-no-finish keeps the immediate stop when that turn is unaffordable (output ceiling 520: the first turn has the 500-token minimum, the batch leaves less). v8 requires direction coverage for \"source\" (p7-plan-partial-coverage omits the marinade and is model_adaptation; p7-plan-faithful-source cites all six). v7 web guard; v6 plan attribution; v5 duplicate visibility; v4 time/honored/refetch; v3 vector/resume; v2 scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored stop reasons alone; aggregates kept in results.json history. Later edits need a new version, never a silent change.",
+  "version": "phase7-cases-v11-2026-10-08",
+  "note": "SYNTHETIC scripted model turns, not model output. v11 (stall recovery, after the first H8 attempt) adds 3 cases: a stall gets one tool-less finishing turn that finishes with options (discover) or with the plan (select, the H8 party-baking pattern), and a tool call on that turn still stops with agent_no_progress. SYNTHETIC scripted model turns, not model output. v10 (H7) adds 11 cases: the 2026-10-07 recovery paths (technique answer after a plan, dropped option named, negated pairing mention, wrap-up withholds only repeated tools, repeated search marked, select phase withholds search and pairings, tree-nut allergy checked, allergy line keeps constraints_honored empty) and H2/H3 (swapped quantities, clipped directions, fidelity claim); every case also checks the per-turn decision log. v9 (H4 budget recovery): p7-budget-tools now scripts the tool-less finishing turn after the excess batch (a question), and p7-budget-tools-no-finish keeps the immediate stop when that turn is unaffordable (output ceiling 520: the first turn has the 500-token minimum, the batch leaves less). v8 requires direction coverage for \"source\" (p7-plan-partial-coverage omits the marinade and is model_adaptation; p7-plan-faithful-source cites all six). v7 web guard; v6 plan attribution; v5 duplicate visibility; v4 time/honored/refetch; v3 vector/resume; v2 scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored stop reasons alone; aggregates kept in results.json history. Later edits need a new version, never a silent change.",
   "cases": [
     {
       "id": "p7-epicure-default",
@@ -7436,6 +7436,500 @@
         "get_recipe",
         "find_balanced_pairings",
         "search_techniques"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-stall-finish-options",
+      "criteria": [
+        "stall-finishing-turn",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "Give me curry options.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ],
+            [
+              "c2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ],
+            [
+              "c4",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c6",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c7",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_stall_recovery": true
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-stall-finish-plan",
+      "criteria": [
+        "stall-finishing-turn",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "I want a chicken dinner for tonight.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ],
+            [
+              "c2",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c4",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "select": {
+        "dataset_id": "odunola/foodie",
+        "source_id": "curry-1"
+      },
+      "plan_turns": [
+        [
+          "tools",
+          [
+            [
+              "p1",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "p2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "p3",
+              "search_techniques",
+              {
+                "query": "safe internal temperatures"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "p4",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1"
+                },
+                "mise_en_place": [
+                  "dice chicken",
+                  "measure yogurt"
+                ],
+                "steps": [
+                  "brown chicken",
+                  "stir in yogurt",
+                  "serve"
+                ],
+                "plating": "over rice in shallow bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "packet plan"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "expect_stall_recovery": true,
+        "expect_wrapup": {
+          "withheld": [
+            "get_recipe"
+          ],
+          "offered_contains": [
+            "search_techniques"
+          ]
+        }
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "search_techniques"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques",
+        "scale_recipe",
+        "convert_units"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-stall-finish-tool-call",
+      "criteria": [
+        "stall-finishing-turn",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "Give me curry options.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ],
+            [
+              "c2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ],
+            [
+              "c4",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c6",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c7",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ]
+          ]
+        ],
+        [
+          "tools",
+          [
+            [
+              "c8",
+              "search_recipes",
+              {
+                "query": "curry"
+              }
+            ]
+          ]
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_no_progress",
+        "shape": "error",
+        "expect_stall_recovery": true,
+        "stop_message_contains": "repeated identical search_recipes calls without new information"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings"
       ],
       "forbidden_tools": [
         "search_web"

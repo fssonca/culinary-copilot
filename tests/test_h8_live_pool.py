@@ -59,8 +59,9 @@ def _problems(args: SimpleNamespace, settings: Settings, scenarios: dict[str, An
     return problems
 
 
-def test_h8_pool_is_capped_at_015() -> None:
-    assert live_run.BUDGET_POOLS["h8"]["cap_usd"] == 0.15
+def test_h8_pool_is_capped_at_one_dollar() -> None:
+    assert live_run.BUDGET_POOLS["h8"]["cap_usd"] == 1.00
+    assert live_run.H8_CAP_USD == live_run.BUDGET_POOLS["h8"]["cap_usd"]
     assert str(live_run.BUDGET_POOLS["h8"]["history"]).endswith("h8-live/spend-history.json")
 
 
@@ -73,9 +74,13 @@ def test_h8_live_needs_ack_and_fits_cap(monkeypatch: pytest.MonkeyPatch) -> None
     assert not any("h8 live run refused" in p for p in acked)
     assert not any("web search off" in p for p in acked)
     over = _problems(
-        _args(acknowledge_live_run=live_run.H8_ACK_VALUE, ceiling_usd=0.16), _settings(), scenarios
+        _args(acknowledge_live_run=live_run.H8_ACK_VALUE, ceiling_usd=1.01), _settings(), scenarios
     )
-    assert any("exceeds $0.15 h8 pool cap" in p for p in over)
+    assert any("exceeds $1.00 h8 pool cap" in p for p in over)
+    old_ack = _problems(
+        _args(acknowledge_live_run="h8-checkpoint-d-2026-10-08"), _settings(), scenarios
+    )
+    assert any("h8 live run refused" in p for p in old_ack)
 
 
 def test_h8_refuses_web_search(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -245,3 +250,17 @@ def test_workflow_followup_grades_the_session_options() -> None:
     assert grades["allergy"]["no_allergen_options"] is True
     assert grades["request_relevance"]["option_titles"] == ["Lemon Bars"]
     assert grades["allergy_pass"] is True
+
+
+def test_v3_is_fresh_with_the_same_workflows() -> None:
+    v1 = live_run.load_scenarios(SCENARIOS)["scenarios"]
+    v3 = live_run.load_scenarios(SCENARIOS.with_name("scenarios_v3.json"))["scenarios"]
+    assert [s["key"] for s in v3] == ["h8b-bake-sale", "h8b-allergy-treat"]
+    for old, new in zip(v1, v3, strict=True):
+        assert new["request"] != old["request"]
+        assert new["followup_message"] != old["followup_message"]
+        assert new["flow"] == old["flow"]
+        assert new["session"] == old["session"]
+        assert new["settings"] == old["settings"]
+        assert new["expected"]["workflow"] == old["expected"]["workflow"]
+    assert v3[1]["expected"]["allergen_terms"][0] == "peanut"

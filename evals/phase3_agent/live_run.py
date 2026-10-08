@@ -213,7 +213,7 @@ BUDGET_POOLS: dict[str, dict[str, Any]] = {
     },
     "h8": {
         "history": REPO_ROOT / "data" / "h8-live" / "spend-history.json",
-        "cap_usd": 0.15,
+        "cap_usd": 1.00,  # = H8_CAP_USD below (owner, 2026-10-08)
     },
 }
 #: Live-check search slots per session (owner item 3): at most 2, inside
@@ -229,15 +229,20 @@ PHASE7_CAMPAIGN_SEARCH_CAP = 5
 #: Exact owner-acknowledgment value for the Phase 7 live run
 #: (checkpoint C). Preflight checks this exact string.
 PHASE7_ACK_VALUE = "phase7-checkpoint-c-2026-10-04"
-#: H8 frozen-build live check (Checkpoint D, 2026-10-08): $0.15 shared
-#: by both sessions and every paid call (model turns, embeddings,
+#: H8 frozen-build live check (Checkpoint D, 2026-10-08): one cap shared
+#: by every session and every paid call (model turns, embeddings,
 #: retries) through this ledger, prior H8 spend included. Web search is
 #: off for H8: preflight refuses any scenario or setting that enables it.
-H8_CAP_USD = 0.15
+#: $0.15 for the first attempt; the owner set $1.00 for the H8 pool on
+#: 2026-10-08 before the second attempt (the first attempt's $0.0143
+#: still counts against it).
+H8_CAP_USD = 1.00
 H8_HISTORY = REPO_ROOT / "data" / "h8-live" / "spend-history.json"
 #: Exact owner-acknowledgment value for a live H8 run. Preflight checks
-#: this exact string; the owner gives it with the go-ahead.
-H8_ACK_VALUE = "h8-checkpoint-d-2026-10-08"
+#: this exact string; the owner gives it with the go-ahead. The first
+#: attempt ran with "h8-checkpoint-d-2026-10-08"; each attempt gets its
+#: own value so a run cannot reuse an earlier go-ahead.
+H8_ACK_VALUE = "h8-attempt-2-2026-10-08"
 
 
 # --- input bound ---------------------------------------------------------------
@@ -3066,7 +3071,7 @@ def _args(argv: list[str] | None = None) -> Any:
         help=(
             "which cap/history the run charges "
             "(phase3: $0.15 cap; phase5: $0.13 campaign; "
-            "phase7: $0.50 prepared, not authorized; h8: $0.15, web off)"
+            "phase7: $0.50 prepared, not authorized; h8: $1.00, web off)"
         ),
     )
     parser.add_argument(

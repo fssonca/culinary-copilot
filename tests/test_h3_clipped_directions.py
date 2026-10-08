@@ -682,6 +682,8 @@ def test_h3_same_range_twice_counts_as_repeat(engine) -> None:
             ("tools", [("c2", "get_recipe", dict(pair_range))]),
             ("tools", [("c3", "search_recipes", {"query": "rice"})]),
             ("tools", [("c4", "get_recipe", dict(pair_range))]),
+            # Stall finishing turn (no tools offered): a call still stops.
+            ("tools", [("c5", "get_recipe", dict(pair_range))]),
         ]
     )
     context = ToolContext(

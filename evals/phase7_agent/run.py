@@ -970,6 +970,20 @@ def grade_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
                     ):
                         found = True
             ok = ok and found
+    # v11 stall recovery: after a step that repeated an earlier call,
+    # the run's last turn is a tool-less finishing turn (offered=[]).
+    if expected.get("expect_stall_recovery"):
+        turns = [e for e in events if e["type"] == "agent_turn"]
+        repeated = any(
+            e["type"] == "agent_step" and bool((e["payload"] or {}).get("repeated_tools"))
+            for e in events
+        )
+        last_turn = (turns[-1]["payload"] or {}) if turns else {}
+        ok = (
+            ok and repeated and bool(last_turn.get("final_turn")) and last_turn.get("offered") == []
+        )
+    if expected.get("stop_message_contains"):
+        ok = ok and str(expected["stop_message_contains"]) in str(last.get("message") or "")
     # H7 decision log invariant: every turn records one agent_turn
     # with offered/withheld plus remaining budgets, bounded payloads,
     # and no raw reasoning (only the labelled diagnostic). A run that
@@ -1439,6 +1453,40 @@ def main() -> int:
         },
         "note": "pre-H7: 44 cases, no per-turn decision log, no H7 recovery-path cases",
     }
+    # v10 history: the last result before stall recovery (2026-10-08,
+    # after the first H8 attempt). v11 adds the stall finishing-turn cases.
+    history_v10 = {
+        "cases_version": "phase7-cases-v10-2026-10-08",
+        "cases_sha256": "198ef720520d7ead03fff420bea5360ad6fbaea47be2b117c2759df1335820d8",
+        "aggregate": {
+            "total": 55,
+            "scored": 55,
+            "completed": 55,
+            "task_completion_rate": 1.0,
+            "expected_fail_total": 0,
+            "expected_fail_completed": 0,
+            "stop_reason_distribution": {
+                "agent_sufficient_evidence": 43,
+                "agent_validation_failed": 4,
+                "agent_needs_user_input": 4,
+                "agent_max_steps": 1,
+                "agent_tool_budget_exhausted": 1,
+                "agent_token_budget_exhausted": 1,
+                "agent_wall_clock_exceeded": 1,
+            },
+            "invalid_transitions_total": 1,
+            "tool_argument_validity_mean": 0.9927272727272728,
+            "unnecessary_call_rate_mean": 0.0,
+            "epicure_compliance_rate": 0.9818181818181818,
+            "source_reference_correctness_rate": 1.0,
+            "unsupported_claim_cases": 5,
+            "adversarial_total": 4,
+            "adversarial_caught": 4,
+            "adversarial_catch_rate": 1.0,
+            "latency_tokens_cost": "not measured offline (scripted provider)",
+        },
+        "note": "pre-stall-recovery: the third identical call stopped the run at once",
+    }
     out = {
         "cases_file": "cases.json",
         "cases_version": payload.get("version"),
@@ -1446,6 +1494,7 @@ def main() -> int:
         "history_v1": history_v1,
         "history_v8": history_v8,
         "history_v9": history_v9,
+        "history_v10": history_v10,
         "note": (
             "offline system results (loop control, tools, validators), "
             "not model judgement; latency/tokens/cost not measured offline"

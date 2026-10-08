@@ -1,7 +1,7 @@
 {
   "cases_file": "cases.json",
-  "cases_version": "phase7-cases-v10-2026-10-08",
-  "cases_sha256": "198ef720520d7ead03fff420bea5360ad6fbaea47be2b117c2759df1335820d8",
+  "cases_version": "phase7-cases-v11-2026-10-08",
+  "cases_sha256": "a91c1d9e3c220e3835a695d037013de98a1bfc195985af5a3bc082a45edbd720",
   "history_v1": {
     "cases_version": "phase7-cases-v1-2026-10-04",
     "cases_sha256": "5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b",
@@ -98,27 +98,60 @@
     },
     "note": "pre-H7: 44 cases, no per-turn decision log, no H7 recovery-path cases"
   },
+  "history_v10": {
+    "cases_version": "phase7-cases-v10-2026-10-08",
+    "cases_sha256": "198ef720520d7ead03fff420bea5360ad6fbaea47be2b117c2759df1335820d8",
+    "aggregate": {
+      "total": 55,
+      "scored": 55,
+      "completed": 55,
+      "task_completion_rate": 1.0,
+      "expected_fail_total": 0,
+      "expected_fail_completed": 0,
+      "stop_reason_distribution": {
+        "agent_sufficient_evidence": 43,
+        "agent_validation_failed": 4,
+        "agent_needs_user_input": 4,
+        "agent_max_steps": 1,
+        "agent_tool_budget_exhausted": 1,
+        "agent_token_budget_exhausted": 1,
+        "agent_wall_clock_exceeded": 1
+      },
+      "invalid_transitions_total": 1,
+      "tool_argument_validity_mean": 0.9927272727272728,
+      "unnecessary_call_rate_mean": 0.0,
+      "epicure_compliance_rate": 0.9818181818181818,
+      "source_reference_correctness_rate": 1.0,
+      "unsupported_claim_cases": 5,
+      "adversarial_total": 4,
+      "adversarial_caught": 4,
+      "adversarial_catch_rate": 1.0,
+      "latency_tokens_cost": "not measured offline (scripted provider)"
+    },
+    "note": "pre-stall-recovery: the third identical call stopped the run at once"
+  },
   "note": "offline system results (loop control, tools, validators), not model judgement; latency/tokens/cost not measured offline",
   "aggregate": {
-    "total": 55,
-    "scored": 55,
-    "completed": 55,
+    "total": 58,
+    "scored": 58,
+    "completed": 58,
     "task_completion_rate": 1.0,
     "expected_fail_total": 0,
     "expected_fail_completed": 0,
     "stop_reason_distribution": {
-      "agent_sufficient_evidence": 43,
+      "agent_sufficient_evidence": 45,
       "agent_validation_failed": 4,
       "agent_needs_user_input": 4,
       "agent_max_steps": 1,
       "agent_tool_budget_exhausted": 1,
       "agent_token_budget_exhausted": 1,
-      "agent_wall_clock_exceeded": 1
+      "agent_wall_clock_exceeded": 1,
+      "agent_no_progress": 1
     },
     "invalid_transitions_total": 1,
-    "tool_argument_validity_mean": 0.9927272727272728,
+    "tool_argument_validity_mean": 0.993103448275862,
     "unnecessary_call_rate_mean": 0.0,
-    "epicure_compliance_rate": 0.9818181818181818,
+    "epicure_compliance_rate": 0.9827586206896551,
     "source_reference_correctness_rate": 1.0,
     "unsupported_claim_cases": 5,
     "adversarial_total": 4,
@@ -1670,6 +1703,94 @@
       "task_completion": true,
       "steps": 4,
       "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-stall-finish-options",
+      "criteria": [
+        "stall-finishing-turn",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_stall_recovery": true
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 5,
+      "tool_calls": 6,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-stall-finish-plan",
+      "criteria": [
+        "stall-finishing-turn",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "expect_stall_recovery": true,
+        "expect_wrapup": {
+          "withheld": [
+            "get_recipe"
+          ],
+          "offered_contains": [
+            "search_techniques"
+          ]
+        }
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 7,
+      "tool_calls": 8,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-stall-finish-tool-call",
+      "criteria": [
+        "stall-finishing-turn",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_no_progress",
+        "shape": "error",
+        "expect_stall_recovery": true,
+        "stop_message_contains": "repeated identical search_recipes calls without new information"
+      },
+      "stop_reason": "agent_no_progress",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 5,
+      "tool_calls": 6,
       "invalid_transitions": 0,
       "tool_argument_validity": 1.0,
       "unnecessary_call_rate": 0.0,
