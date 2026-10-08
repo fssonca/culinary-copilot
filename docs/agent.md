@@ -382,7 +382,29 @@ removed), and the next run substitutes (labelled `adaptation`,
   at least one step. Otherwise it is `"model_adaptation"` (shown in the
   client final), and at least one plan adaptation must state the steps
   are not from the source. A plan claiming the source has no
-  directions is rejected when the stored record has them. Source ingredients with raw meat, poultry, fish
+  directions is rejected when the stored record has them. Hardening
+  step H3 part 2 (2026-10-08): when `steps_source` is
+  `model_adaptation`, the model note, every adaptation description and
+  every plan text field (mise en place, steps, plating) must not claim
+  the steps follow, match or reproduce the source
+  (`agent/validate.py::plan_fidelity_errors`: deterministic patterns
+  for follow, match, reproduce/replicate, identical to, same as,
+  verbatim, word for word, faithful, true to, exact copy, exactly as
+  in, no changes, sticks to, taken/copied from, and "source ... with
+  no changes"). A negation counts only within the three words before
+  the verb, in the same clause, so "does not follow the source" passes
+  but "Without changing anything, this follows the original" is a
+  claim; for "verbatim" and "word for word" a negation anywhere earlier
+  in the clause counts. A claim about numbered steps ("Steps 1-3
+  follow the source; step 4 is mine") is allowed. Limits: keyword
+  patterns, not meaning, so other paraphrases pass; copied source
+  directions saying "Follow the recipe through step N" are rejected in
+  an adaptation step (3 lines in 2 of 16,033 recipes, read-only check
+  2026-10-08). A `source` plan is not affected. The rejection names the field and the matched claim so the
+  one validation retry can remove it. The plan client final carries the
+  model note (`note`, `note_source: "model"`) with the validated
+  `plan.steps_source`; the UI shows that label next to the note as well
+  as on the steps, never parsing the note text for the label. Source ingredients with raw meat, poultry, fish
   or eggs (not "cooked") need at least one `technique_ref` to a chunk
   from a food-safety manifest doc (`tech-fda-safe-32`,
   `tech-fsis-temp-34`, `tech-fda-kitchen-33`, `tech-fsis-leftover-36`);

@@ -4593,6 +4593,115 @@ def test_ingredient_only_plan_needs_admission_then_accepted(engine) -> None:
     assert any("model_adaptation" in e for e in rejects[0].payload["errors"])
 
 
+def test_plan_fidelity_claim_rejected_then_retry_succeeds(engine) -> None:
+    # H3 part 2 (2026-10-08): a model_adaptation plan whose note claims
+    # fidelity is rejected with a removable-claim message; the retry
+    # without the claim succeeds and the final carries the model note
+    # with the validated steps_source label.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    _select_curry(store, state.id)
+
+    def _adaptation_plan() -> dict[str, Any]:
+        return {
+            "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+            "mise_en_place": ["chop chicken"],
+            "steps": [
+                "brown the chicken with extra garlic",
+                "stir in yogurt",
+                "serve",
+            ],
+            "step_sources": [0, 1, 2],
+            "plating": "in a bowl",
+            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+        }
+
+    def _parsed(note: str) -> dict[str, Any]:
+        return {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {"plan": _adaptation_plan()},
+            "constraints_honored": [],
+            "note": note,
+        }
+
+    provider2 = ScriptedProvider(
+        [
+            (
+                "tools",
+                [("c9", "search_techniques", {"query": "safe internal temperatures"})],
+            ),
+            ("parsed", _parsed("This follows the original recipe exactly.")),
+            ("parsed", _parsed("An adaptation with extra garlic.")),
+        ]
+    )
+    deps2 = _deps(
+        store,
+        provider2,
+        overrides={"search_techniques": _tech_search([_safety_row()])},
+    )
+    deps2.technique_resolver = lambda doc_id, chunk_id: (
+        dict(_safety_row()) if (doc_id, chunk_id) == ("tech-fda-safe-32", 0) else None
+    )
+    result2 = _run(run_agent(state.id, deps=deps2))
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert result2.final is not None
+    assert result2.final["plan"]["steps_source"] == "model_adaptation"
+    assert result2.final.get("note") == "An adaptation with extra garlic."
+    assert result2.final.get("note_source") == "model"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert any("claims fidelity" in e for e in rejects[0].payload["errors"])
+    assert any("remove the claim" in e for e in rejects[0].payload["errors"])
+
+
+def test_plan_fidelity_source_plan_with_fidelity_wording_passes(engine) -> None:
+    # H3 part 2: a source-labelled plan is not affected by fidelity
+    # wording in the note.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    _select_curry(store, state.id)
+    plan = {
+        "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+        "mise_en_place": ["chop chicken"],
+        "steps": ["brown the chicken", "stir in yogurt", "serve"],
+        "step_sources": [0, 1, 2],
+        "plating": "in a bowl",
+        "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+    }
+    provider2 = ScriptedProvider(
+        [
+            (
+                "tools",
+                [("c9", "search_techniques", {"query": "safe internal temperatures"})],
+            ),
+            (
+                "parsed",
+                {
+                    "decision": "finish",
+                    "move_to": "plan",
+                    "result": {"plan": plan},
+                    "constraints_honored": [],
+                    "note": "This follows the source.",
+                },
+            ),
+        ]
+    )
+    deps2 = _deps(
+        store,
+        provider2,
+        overrides={"search_techniques": _tech_search([_safety_row()])},
+    )
+    deps2.technique_resolver = lambda doc_id, chunk_id: (
+        dict(_safety_row()) if (doc_id, chunk_id) == ("tech-fda-safe-32", 0) else None
+    )
+    result2 = _run(run_agent(state.id, deps=deps2))
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert result2.final is not None
+    assert result2.final["plan"]["steps_source"] == "source"
+    assert result2.final.get("note") == "This follows the source."
+
+
 # --- P3-L-10 truncation controls ------------------------------------------------
 
 

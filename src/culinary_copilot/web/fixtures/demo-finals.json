@@ -67,6 +67,7 @@
       "technique_refs": [{"doc_id": "demo-tech-simmer", "chunk_id": 2}],
       "steps_source": "model_adaptation"
     },
+    "note": "Demo plan note.",
     "note_source": "model"
   },
   "technique_answer": {

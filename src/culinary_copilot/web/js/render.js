@@ -245,6 +245,21 @@ function renderOptions(result, actions) {
   return wrap;
 }
 
+function renderPlanNote(note, stepsSource) {
+  // H3 part 2 (2026-10-08): the label comes from the validated
+  // plan.steps_source field, never from the model note text.
+  const wrap = el("div", null);
+  const head = el("h3", null, "Note");
+  if (stepsSource === "model_adaptation") {
+    head.appendChild(badge("model adaptation", "unverified"));
+  } else if (stepsSource === "source") {
+    head.appendChild(badge("source", "verified"));
+  }
+  wrap.appendChild(head);
+  wrap.appendChild(el("p", "prewrap", note || ""));
+  return wrap;
+}
+
 function renderPlan(result) {
   const plan = result.plan || {};
   const wrap = el("div", "card");
@@ -296,6 +311,9 @@ function renderPlan(result) {
   if (plan.plating) {
     wrap.appendChild(el("h3", null, "Plating"));
     wrap.appendChild(el("p", "prewrap", plan.plating));
+  }
+  if (result.note) {
+    wrap.appendChild(renderPlanNote(result.note, plan.steps_source));
   }
   return wrap;
 }

@@ -56,6 +56,7 @@ from culinary_copilot.agent.validate import (
     next_direction_slice,
     omitted_direction_indices,
     plan_attribution_note,
+    plan_fidelity_errors,
     raw_protein_hits,
     unresolved_unnamed_restriction,
     validate_one_option,
@@ -4031,6 +4032,19 @@ async def _handle_finish(
                     steps_source,
                 )
             )
+        # Authoritative label (H3 part 2, 2026-10-08): a
+        # model_adaptation plan must not claim the steps follow, match
+        # or reproduce the source. Checked here (after steps_source is
+        # known, before the app note is attached) across the model
+        # note, adaptations and plan text; a source plan is unaffected
+        # and a negated "does not follow the source" passes.
+        errors.extend(
+            plan_fidelity_errors(
+                plan_dump if isinstance(plan_dump, dict) else {},
+                str(getattr(directive, "note", "") or ""),
+                steps_source,
+            )
+        )
         # App-written label (2026-10-06 live fix): three live plans failed
         # only because the model did not write the admission for a
         # label the code had already computed. The code now states it.
@@ -4318,7 +4332,11 @@ async def _handle_finish(
     else:
         plan_final = dict(plan_payload.model_dump() if plan_payload else {})
         plan_final["steps_source"] = steps_source
-        final = {"plan": plan_final, "note_source": "model"}
+        # H3 part 2 (2026-10-08): the client shows the model note with
+        # the validated steps_source label next to it (render.js reads
+        # plan.steps_source, never the note text), so the final carries
+        # the note like the other answer shapes.
+        final = {"plan": plan_final, "note": note, "note_source": "model"}
     return AgentRunResult(
         stop_reason=REASON_AGENT_SUFFICIENT,
         phase=updated.current_phase,

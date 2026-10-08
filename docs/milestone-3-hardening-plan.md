@@ -1,8 +1,7 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
-Status: **H0, H1, H2 and H3 part 1 done** (H0 baseline `eae6f00` and
-H1 `a8aa69d` on 2026-10-07; H2 and H3 part 1 on 2026-10-08). H3 part 2
-onward not started. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
+Status: **H0 to H3 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
+2026-10-07; H2 and H3 on 2026-10-08). H4 onward not started. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
 `docs/phase7-owner-decisions.md`). Baseline: branch
@@ -222,8 +221,15 @@ coverage of scattered unread indices, shared summary bounds, and
 summary wording that keeps option comparison free of extra calls.
 Read-only count: 605 of 16,033 recipes need the path (184 clipped, 421
 with more than 12 directions); extra calls 1 for 589, 2 for 13, 3 for 2,
-4 for 1; largest 12-direction slice 2,436 characters. Part 2
-(authoritative label) not started.
+4 for 1; largest 12-direction slice 2,436 characters.
+
+Part 2 done 2026-10-08: `plan_fidelity_errors` rejects fidelity claims
+in a `model_adaptation` plan's note, adaptations and plan text; the plan
+final now carries the model note (it had none before), and the UI shows
+the validated label next to it. The review narrowed the negation window
+to the three words before the verb (an eight-word window let 5 of 8
+probe claims through), allowed claims about numbered steps, and added
+common paraphrases. Corpus check: 3 source lines in 2 recipes match.
 
 ## H4. Budget-exhaustion recovery
 

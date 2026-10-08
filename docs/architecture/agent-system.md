@@ -285,7 +285,13 @@ The validators run on every finish, with no model call:
     a dish is selected, the turn input states this requirement up
     front instead of leaving it to a rejected plan;
   - a plan that claims the source has no directions is rejected when
-    it does.
+    it does;
+  - since H3 part 2 (2026-10-08) a `model_adaptation` plan whose note,
+    adaptation or plan text claims the steps follow, match or
+    reproduce the source is rejected (deterministic patterns with
+    negation handling; a `source` plan is unaffected). The plan final
+    carries the model note with the validated `steps_source`, and the
+    UI shows that label next to the note as well as on the steps.
 - **Web answers:**
   - every URL must come from the provider's own citation evidence for
     this session;

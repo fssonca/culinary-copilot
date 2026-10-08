@@ -735,3 +735,142 @@ def test_quantities_show_improper_fractions_as_mixed_numbers() -> None:
         timeout=30,
     )
     assert json.loads(out.stdout) == ["5 1/2", "1 1/2", "1/2", "2", "2", None]
+
+
+def test_handle_finish_plan_final_carries_note_for_labelled_ui() -> None:
+    # H3 part 2 (2026-10-08): the plan client final carries the model
+    # note alongside the validated steps_source, so the UI can show the
+    # label next to the note from the validated field.
+    state = SessionState(id="ses-demo", revision=1, current_phase="select")
+    state.selected_dish = {"dataset_id": "d", "source_id": "s", "title": "Demo"}
+    state.suggestions = [{"dataset_id": "d", "source_id": "s"}]
+    doc = {
+        "dataset_id": "d",
+        "source_id": "s",
+        "ingredients": [{"canonical": "tofu"}],
+        "directions": ["Simmer the sauce.", "Serve hot."],
+    }
+    events = [
+        _event(
+            "tool_call",
+            {
+                "tool": "get_recipe",
+                "outcome": "ok",
+                "returned_identities": [{"dataset_id": "d", "source_id": "s", "via": "full"}],
+                "result_facts": {},
+            },
+        ),
+    ]
+    store = _FakeStore(state, events)
+    deps = SimpleNamespace(settings=_settings(), request_text=None, on_stage=None)
+    deps.technique_resolver = lambda doc_id, chunk_id: None
+    directive = AgentDirective(
+        decision="finish",
+        move_to="plan",
+        result={
+            "plan": {
+                "source": {"dataset_id": "d", "source_id": "s"},
+                "mise_en_place": ["open tofu"],
+                "steps": ["Simmer the sauce.", "Serve hot with extra herbs."],
+                "step_sources": [0, 1],
+                "plating": "in bowls",
+            }
+        },
+        note="Demo plan note.",
+    )
+    outcome = asyncio.run(
+        _handle_finish(
+            deps,  # type: ignore[arg-type]
+            store,  # type: ignore[arg-type]
+            "ses-demo",
+            state,
+            1,
+            directive,
+            lambda dataset_id, source_id: dict(doc),
+            run_epicure_ok=False,
+            pairing_lines=[],
+            validation_retries=0,
+        )
+    )
+    assert outcome.stop_reason == "agent_sufficient_evidence"
+    assert outcome.final is not None
+    assert outcome.final["plan"]["steps_source"] == "model_adaptation"
+    assert outcome.final.get("note") == "Demo plan note."
+    assert outcome.final.get("note_source") == "model"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_plan_note_shows_validated_source_label() -> None:
+    # H3 part 2 (2026-10-08): the plan card shows the source/adaptation
+    # label next to the note from plan.steps_source (validated), never
+    # from the model note text. The script renders an adaptation plan
+    # whose note says "source" and a source plan whose note says
+    # "model adaptation", and reports the badges found.
+    script = """
+globalThis.document = {
+  createElement(tag) {
+    const node = {
+      tag, className: "", textContent: "", children: [],
+      appendChild(c) { this.children.push(c); return c; },
+      setAttribute() {}, addEventListener() {},
+      querySelectorAll() { return []; }, querySelector() { return null; },
+      replaceChildren(...a) { this.children = a; },
+      classList: { add() {}, toggle() {}, remove() {} },
+      removeAttribute() {},
+    };
+    return node;
+  },
+  createTextNode(t) { return { text: String(t) }; },
+};
+import { renderFinal } from './src/culinary_copilot/web/js/render.js';
+function badges(node, out) {
+  out = out || [];
+  if (!node || typeof node !== 'object') return out;
+  if (node.className && String(node.className).includes('badge') && node.textContent) {
+    out.push(String(node.textContent));
+  }
+  for (const child of (node.children || [])) badges(child, out);
+  return out;
+}
+function texts(node, out) {
+  out = out || [];
+  if (!node || typeof node !== 'object') return out;
+  if (node.textContent
+    && !String(node.className || '').includes('badge'))
+    out.push(String(node.textContent));
+  if (node.text) out.push(String(node.text));
+  for (const child of (node.children || [])) texts(child, out);
+  return out;
+}
+const adaptation = renderFinal(
+  { plan: { source: { dataset_id: 'd', source_id: 's' },
+    steps: ['a'], steps_source: 'model_adaptation' },
+    note: 'says source here' }, {});
+const source = renderFinal(
+  { plan: { source: { dataset_id: 'd', source_id: 's' },
+    steps: ['a'], steps_source: 'source' },
+    note: 'says model adaptation here' }, {});
+console.log(JSON.stringify({
+  adaptationBadges: badges(adaptation),
+  adaptationTexts: texts(adaptation),
+  sourceBadges: badges(source),
+  sourceTexts: texts(source),
+}));
+"""
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        cwd=Path(__file__).parent.parent,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    payload = json.loads(out.stdout)
+    # The adaptation card labels the note from the validated field even
+    # though the note text says "source".
+    assert any("model adaptation" in badge for badge in payload["adaptationBadges"])
+    assert any("says source here" in text for text in payload["adaptationTexts"])
+    # The source card labels the note "source" even though the note text
+    # says "model adaptation".
+    assert any(badge == "source" for badge in payload["sourceBadges"])
+    assert any("says model adaptation here" in text for text in payload["sourceTexts"])

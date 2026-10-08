@@ -1628,3 +1628,149 @@ def test_generic_nut_lines_fail_tree_nuts_and_stay_unverified_for_peanut() -> No
     clean = {"ingredients": [{"canonical": "nutmeg"}, {"canonical": "coconut milk"}]}
     errors, entry = check_allergen_option(0, {"title": "Spiced Rice"}, clean, "tree nuts")
     assert not errors and entry["status"] != "violated"
+
+
+def _adaptation_plan(**overrides: Any) -> dict[str, Any]:
+    # 2026-10-08 H3 part 2: a model_adaptation plan shape for fidelity
+    # tests (steps differ from the source, so the label is adaptation).
+    base: dict[str, Any] = {
+        "mise_en_place": ["Chop the onion."],
+        "steps": ["Brown the chicken with extra garlic.", "Serve hot."],
+        "plating": "In warm bowls.",
+        "adaptations": [],
+    }
+    base.update(overrides)
+    return base
+
+
+def test_plan_fidelity_note_claim_rejected() -> None:
+    # H3 part 2: a model_adaptation plan whose note claims fidelity is
+    # rejected, naming the field and the claim for the retry.
+    from culinary_copilot.agent.validate import plan_fidelity_errors
+
+    plan = _adaptation_plan()
+    errors = plan_fidelity_errors(
+        plan, "This follows the original recipe exactly.", "model_adaptation"
+    )
+    assert errors and "note" in errors[0]
+    assert "follows the original recipe" in errors[0]
+    assert "remove the claim" in errors[0]
+
+
+def test_plan_fidelity_negated_claim_passes() -> None:
+    # H3 part 2: "does not follow the source exactly" is an honest
+    # exclusion, not a fidelity claim (negation handling reuses the
+    # loop.py::_negated_mention approach).
+    from culinary_copilot.agent.validate import plan_fidelity_errors
+
+    plan = _adaptation_plan()
+    assert (
+        plan_fidelity_errors(
+            plan,
+            "This does not follow the source exactly; it is an adaptation.",
+            "model_adaptation",
+        )
+        == []
+    )
+    assert plan_fidelity_errors(plan, "Doesn't match the source.", "model_adaptation") == []
+
+
+def test_plan_fidelity_source_plan_unaffected() -> None:
+    # H3 part 2: a source-labelled plan is not affected, even with the
+    # same fidelity wording.
+    from culinary_copilot.agent.validate import plan_fidelity_errors
+
+    plan = _adaptation_plan()
+    assert plan_fidelity_errors(plan, "This follows the source.", "source") == []
+    assert (
+        plan_fidelity_errors(
+            {"mise_en_place": [], "steps": ["Follows the source."], "plating": "Hot."},
+            "",
+            "source",
+        )
+        == []
+    )
+
+
+def test_plan_fidelity_adaptation_and_step_text_rejected() -> None:
+    # H3 part 2: adaptations text and plan text are checked as well as
+    # the note.
+    from culinary_copilot.agent.validate import plan_fidelity_errors
+
+    plan = _adaptation_plan(
+        adaptations=[{"label": "adaptation", "description": "Matches the source."}]
+    )
+    errors = plan_fidelity_errors(plan, "An adaptation.", "model_adaptation")
+    assert errors and "adaptation 0" in errors[0]
+    step_plan = _adaptation_plan(steps=["Serve, identical to the source."])
+    step_errors = plan_fidelity_errors(step_plan, "An adaptation.", "model_adaptation")
+    assert step_errors and "steps 0" in step_errors[0]
+    mise_errors = plan_fidelity_errors(
+        _adaptation_plan(mise_en_place=["Verbatim from the source."]),
+        "An adaptation.",
+        "model_adaptation",
+    )
+    assert mise_errors and "mise_en_place 0" in mise_errors[0]
+
+
+def test_plan_fidelity_honest_notes_pass() -> None:
+    # H3 part 2: adaptation language without a fidelity verb never
+    # matches, and the app-written attribution note (which contains a
+    # negated "not from the source verbatim") is not flagged.
+    from culinary_copilot.agent.validate import fidelity_claim, plan_fidelity_errors
+
+    honest = [
+        "An adaptation with extra garlic.",
+        "Adapted from the source with added herbs.",
+        "Based on the source.",
+        "plan from selected source",
+        "Both demo options use pantry staples.",
+        "Labelled by the app: these steps are not from the source verbatim "
+        "(plan steps [0] are not all grounded).",
+    ]
+    for text in honest:
+        assert fidelity_claim(text) is None, text
+    plan = _adaptation_plan()
+    for text in honest:
+        assert plan_fidelity_errors(plan, text, "model_adaptation") == [], text
+    # Every documented verb family is caught.
+    for text in (
+        "matches the source",
+        "reproduces the source recipe",
+        "same as the original",
+        "word for word from the recipe",
+        "faithful to the original",
+        "true to the source",
+        "exact copy of the source",
+        "exactly as in the original recipe",
+        "no changes to the source",
+    ):
+        assert fidelity_claim(text) is not None, text
+
+
+def test_plan_fidelity_negation_must_govern_the_claim() -> None:
+    # 2026-10-08 review: an eight-word negation window let 5 of 8 claims
+    # through ("Without changing anything, this follows ..."); a claim
+    # scoped to numbered steps is honest; common paraphrases are claims.
+    from culinary_copilot.agent.validate import fidelity_claim
+
+    claims = [
+        "Without changing anything, this follows the original recipe exactly.",
+        "No substitutions needed, so the steps follow the source exactly.",
+        "Nothing is skipped and every step matches the source.",
+        "I didn't change a thing, it reproduces the original recipe.",
+        "Avoids extra steps and follows the source recipe faithfully.",
+        "The plan sticks to the original recipe exactly.",
+        "Steps are taken directly from the source with no modifications.",
+        "The method is the source recipe without any changes.",
+        "Copied verbatim from the source.",
+    ]
+    honest = [
+        "It doesn't exactly follow the original recipe.",
+        "Steps 1-3 follow the source; step 4 is my addition.",
+        "Step 2 matches the source; the rest is adapted.",
+        "Not a verbatim copy of the source.",
+        "Based on the source, with a shorter simmer.",
+    ]
+    assert [text for text in claims if fidelity_claim(text) is None] == []
+    assert [text for text in honest if fidelity_claim(text) is not None] == []

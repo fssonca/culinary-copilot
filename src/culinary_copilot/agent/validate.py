@@ -1197,6 +1197,192 @@ _NO_DIRECTIONS_PATTERNS = (
 )
 
 
+#: Negation cue for fidelity claims (H3 part 2, 2026-10-08): same
+#: approach as agent/loop.py::_negated_mention — a cue within the
+#: eight words before the claim, in the same clause, marks it as an
+#: exclusion ("does not follow the source exactly") rather than a
+#: fidelity claim. The trailing n't alternative has no leading word
+#: boundary so "doesn't follow" counts ("doesn" + "n't" has no
+#: boundary before the n).
+_FIDELITY_NEGATION_RE = re.compile(
+    r"\b(?:no|not|without|never|omit\w*|exclud\w*|avoid\w*|skip\w*|"
+    r"instead of|rather than|free of)\b|n['\u2019]t\b",
+    re.IGNORECASE,
+)
+
+#: Fidelity claims rejected on a model_adaptation plan (H3 part 2,
+#: 2026-10-08): deterministic patterns for text claiming the steps
+#: follow, match or reproduce the source. Each pattern names the
+#: fidelity verb plus the source it points at, so honest adaptation
+#: language ("adapted from the source", "based on the source",
+#: "plan from selected source") never matches: it names the source
+#: without a fidelity verb. A bare "recipe" needs a determiner ("the
+#: recipe", not "cake recipe"), so source directions like "Follow cake
+#: recipe on the back of the box" never match. "verbatim" and "word
+#: for word" need no source word (they claim exact reproduction on
+#: their own). A negated match (see _FIDELITY_NEGATION_RE) is not a
+#: claim.
+#: Source group: original/source/stored (optionally + recipe), or the,
+#: this or that recipe (optionally original).
+_FIDELITY_SOURCE = (
+    r"(?:original(?:\s+recipe)?|source(?:\s+recipe)?|stored(?:\s+recipe)?"
+    r"|the\s+(?:original\s+)?recipe|this\s+(?:original\s+)?recipe"
+    r"|that\s+(?:original\s+)?recipe)"
+)
+_FIDELITY_CLAIM_PATTERNS = (
+    re.compile(rf"\bfollow(?:s|ed|ing)?\b[\s\S]{{0,40}}\b{_FIDELITY_SOURCE}\b", re.IGNORECASE),
+    re.compile(rf"\bmatch(?:es|ed|ing)?\b[\s\S]{{0,40}}\b{_FIDELITY_SOURCE}\b", re.IGNORECASE),
+    re.compile(
+        rf"\b(?:reproduc(?:e|es|ed|ing|tion)?|replicat(?:e|es|ed|ing|ion)?)\b"
+        rf"[\s\S]{{0,40}}\b{_FIDELITY_SOURCE}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(rf"\bidentical\s+to\b[\s\S]{{0,30}}\b{_FIDELITY_SOURCE}\b", re.IGNORECASE),
+    re.compile(
+        rf"\bsame\b[\s\S]{{0,30}}\bas\b[\s\S]{{0,10}}\b{_FIDELITY_SOURCE}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bverbatim\b", re.IGNORECASE),
+    re.compile(r"\bword\s+for\s+word\b", re.IGNORECASE),
+    re.compile(rf"\bfaithful\b[\s\S]{{0,30}}\b{_FIDELITY_SOURCE}\b", re.IGNORECASE),
+    re.compile(rf"\btrue\s+to\b[\s\S]{{0,20}}\b{_FIDELITY_SOURCE}\b", re.IGNORECASE),
+    re.compile(
+        rf"\bexact(?:ly)?\b[\s\S]{{0,20}}\b(?:copy|copies|reproduc\w*|replic\w*)\b"
+        rf"[\s\S]{{0,20}}\b{_FIDELITY_SOURCE}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\bexact(?:ly)?\s+as\s+in\b[\s\S]{{0,20}}\b{_FIDELITY_SOURCE}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\bno\s+changes?\b[\s\S]{{0,20}}\b(?:to|from|in)\b"
+        rf"[\s\S]{{0,10}}\b{_FIDELITY_SOURCE}\b",
+        re.IGNORECASE,
+    ),
+    # 2026-10-08 review: common paraphrases the verb list missed.
+    re.compile(
+        rf"\bstick(?:s|ing)?\s+(?:closely\s+)?to\b[\s\S]{{0,10}}\b{_FIDELITY_SOURCE}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b(?:taken|copied|lifted)\s+(?:directly\s+|straight\s+|exactly\s+)?from\b"
+        rf"[\s\S]{{0,10}}\b{_FIDELITY_SOURCE}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b{_FIDELITY_SOURCE}\b[\s\S]{{0,20}}\bwith(?:out)?\s+(?:no\s+|any\s+)?"
+        r"(?:changes?|modifications?|alterations?|deviations?)\b",
+        re.IGNORECASE,
+    ),
+)
+
+#: A claim scoped to numbered steps ("Steps 1-3 follow the source;
+#: step 4 is my addition") is an honest partial statement, not a claim
+#: about the whole plan (2026-10-08 review).
+_STEP_SCOPE_RE = re.compile(r"\bsteps?\s+\d", re.IGNORECASE)
+
+
+def _fidelity_clause_before(text: str, start: int) -> str:
+    """Text from the clause start (. ! ? ; : or comma) to the match."""
+    lowered = str(text or "").lower()
+    clause_start = max(lowered.rfind(mark, 0, start) for mark in ".!?;:,") + 1
+    return lowered[clause_start:start]
+
+
+def _fidelity_match_negated(text: str, start: int) -> bool:
+    """True when a negation cue governs the claim verb.
+
+    Only the three words right before the match, in the same clause
+    (a comma also ends it), count: "does not follow the source" and
+    "not a verbatim copy" are negated, but "Without changing anything,
+    this follows the original" and "Nothing is skipped and every step
+    matches the source" are claims. 2026-10-08 review: an eight-word
+    window (agent/loop.py::_negated_mention) let 5 of 8 claims through.
+    """
+    clause = _fidelity_clause_before(text, start)
+    if _TRAILING_ADVERB_RE.match(text[start:]):
+        # "verbatim" and "word for word" trail what they modify: "not
+        # from the source verbatim" is negated by the whole clause.
+        return _FIDELITY_NEGATION_RE.search(clause) is not None
+    before = " ".join(clause.split()[-3:])
+    return _FIDELITY_NEGATION_RE.search(before) is not None
+
+
+_TRAILING_ADVERB_RE = re.compile(r"verbatim|word\s+for\s+word", re.IGNORECASE)
+
+
+def fidelity_claim(text: str) -> str | None:
+    """First non-negated fidelity claim in the text, or None.
+
+    Each pattern match with a negation cue before it (for example
+    "does not follow the source exactly") is skipped; only an
+    unnegated claim ("follows the original recipe exactly") is
+    returned, truncated for error messages.
+    """
+    body = str(text or "")
+    if not body.strip():
+        return None
+    for pattern in _FIDELITY_CLAIM_PATTERNS:
+        for match in pattern.finditer(body):
+            if _fidelity_match_negated(body, match.start()):
+                continue
+            if _STEP_SCOPE_RE.search(_fidelity_clause_before(body, match.start())):
+                continue
+            return match.group(0).strip()[:120]
+    return None
+
+
+def plan_fidelity_errors(
+    plan: dict[str, Any] | None,
+    note: str | None,
+    steps_source: str,
+) -> list[str]:
+    """Fidelity-claim check for a model_adaptation plan (H3 part 2).
+
+    When ``steps_source`` is ``model_adaptation``, the model note,
+    every adaptation description, and every plan text field
+    (mise_en_place, steps, plating) must not claim the steps follow,
+    match or reproduce the source. A source-labelled plan is not
+    affected. A negated claim ("does not follow the source") passes.
+    The error names the field and the matched claim so the one
+    validation retry can remove it.
+    """
+    if steps_source != "model_adaptation":
+        return []
+    errors: list[str] = []
+    candidates: list[tuple[str, str]] = []
+    if isinstance(note, str) and note.strip():
+        candidates.append(("note", note))
+    adaptations = (plan or {}).get("adaptations") if isinstance(plan, dict) else []
+    if isinstance(adaptations, list):
+        for index, item in enumerate(adaptations):
+            if isinstance(item, dict):
+                description = str(item.get("description") or "")
+                if description.strip():
+                    candidates.append((f"adaptation {index}", description))
+    raw_plan = plan if isinstance(plan, dict) else {}
+    for field in ("mise_en_place", "steps"):
+        items = raw_plan.get(field)
+        if isinstance(items, list):
+            for index, entry in enumerate(items):
+                if isinstance(entry, str) and entry.strip():
+                    candidates.append((f"{field} {index}", entry))
+    plating = raw_plan.get("plating")
+    if isinstance(plating, str) and plating.strip():
+        candidates.append(("plating", plating))
+    for field, content in candidates:
+        claim = fidelity_claim(content)
+        if claim is not None:
+            errors.append(
+                f"plan is model_adaptation but {field} claims fidelity "
+                f"({claim!r}); remove the claim that the steps follow, "
+                "match or reproduce the source (a negated "
+                "'does not follow the source' is allowed)"
+            )
+    return errors
+
+
 #: A bare citation tag inside step text ("[Source direction 2]",
 #: "(direction 3)"): it restates step_sources and carries no cooking
 #: content. A tag with any other words is not matched and still counts.
@@ -1820,9 +2006,11 @@ __all__ = [
     "direction_supports_step",
     "doc_directions",
     "doc_text",
+    "fidelity_claim",
     "hard_constraint_keys",
     "mentions_restriction",
     "names_specific_avoidance",
+    "plan_fidelity_errors",
     "quantity_in_source",
     "session_web_sources",
     "unresolved_unnamed_restriction",
