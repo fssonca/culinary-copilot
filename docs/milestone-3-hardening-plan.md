@@ -1,8 +1,9 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
-Status: **H0 to H5 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
-2026-10-07; H2 to H5 on 2026-10-08; the H5 re-ingestion is not run and
-needs owner authorization). H6 onward not started. Harness
+Status: **H0 to H6 done** (H0 baseline `eae6f00` and H1 `a8aa69d` on
+2026-10-07; H2 to H6 on 2026-10-08; the H5 re-ingestion is not run and
+the H6 ranking change is a proposal, both for Checkpoint D). H7 not
+started. Harness
 cases v9 since H4 (44/44). Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
@@ -342,6 +343,19 @@ proposal for the owner.
 ```
 
 Evidence: judgment file and version; comparison table; proposal.
+
+Done 2026-10-08 (offline, read-only; production ranking unchanged):
+evidence in `evals/results/h6/` (README, 18 AI-prepared judgments
+pending owner review, outputs) and six dish-versus-ingredient cases in
+`evals/cases/h6_dish_vs_ingredient_v1.json`; `run_baseline.py` gained
+`--out`. Title-first reproduces the 2026-10-07 numbers (14 of 52 top 5s
+change). On the same 23 cases, both title-first and a title boost (2.0)
+score below the current ranking on recorded labels and above it only
+with the new judgments counted. The review found the agent's comparison
+scored each ranking on a different case set, which made the boost look
+better on recorded labels, and added the paired comparison. The
+recommendation is to change nothing until the owner reviews the
+judgments.
 
 ## H7. Harness coverage and decision logging
 

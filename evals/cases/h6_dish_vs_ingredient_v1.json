@@ -1,0 +1,123 @@
+{
+  "aggregation_notes": {
+    "policy": "Dish cases assert a dish-title expectation (at least one top-5 title names the dish); ingredient cases assert discovery is preserved (the phrase query still returns phrase carriers). Pairs share an aggregate_group so future aggregate scoring can count each intent once."
+  },
+  "cases": [
+    {
+      "aggregate_group": "h6-adobo",
+      "behavioral": [],
+      "case_id": "H6R-01",
+      "category": "dish_vs_ingredient",
+      "dataset_id": null,
+      "dish": null,
+      "expect_hits": true,
+      "ingredients": [],
+      "kind": "retrieval_only",
+      "limit": 5,
+      "notes": "Dish request adobo (H6, 2026-10-08). Corpus: 14 titles name adobo, 26 documents carry the ingredient phrase chipotle peppers in adobo sauce, 78 full-text matches. Current ranking top-5 holds 0 adobo titles (Turkey Chili, Onion Rings, Carnitas, Fish Tacos, Burrito Bowl). Title-first returns adobo titles; title-boost should recover most without unconditional precedence.",
+      "query_text": "adobo",
+      "relevance_expectation": "asserted",
+      "split": "development",
+      "unsupported": []
+    },
+    {
+      "aggregate_group": "h6-adobo",
+      "behavioral": [],
+      "case_id": "H6R-02",
+      "category": "dish_vs_ingredient",
+      "dataset_id": null,
+      "dish": null,
+      "expect_hits": true,
+      "ingredients": [],
+      "kind": "retrieval_only",
+      "limit": 5,
+      "notes": "Ingredient-discovery control for the adobo pair (H6, 2026-10-08). The phrase query matches 44 documents; discovery must keep returning phrase carriers (Turkey Chili, Crab Cakes, Meatloaf) and must not be reordered by the dish title boost.",
+      "query_text": "chipotle peppers in adobo sauce",
+      "relevance_expectation": "asserted",
+      "split": "development",
+      "unsupported": []
+    },
+    {
+      "aggregate_group": "h6-tzatziki",
+      "behavioral": [],
+      "case_id": "H6R-03",
+      "category": "dish_vs_ingredient",
+      "dataset_id": null,
+      "dish": null,
+      "expect_hits": true,
+      "ingredients": [],
+      "kind": "retrieval_only",
+      "limit": 5,
+      "notes": "Dish request tzatziki (H6, 2026-10-08). Corpus: 3 titles name tzatziki (Greek Tzatziki, Tzatziki Guacamole, Falafel with Tzatziki), 32 full-text matches. Current top-5 holds 1 title hit; the rest are gyro, kebab and salmon dishes carrying tzatziki as a condiment.",
+      "query_text": "tzatziki",
+      "relevance_expectation": "asserted",
+      "split": "development",
+      "unsupported": []
+    },
+    {
+      "aggregate_group": "h6-tzatziki",
+      "behavioral": [],
+      "case_id": "H6R-04",
+      "category": "dish_vs_ingredient",
+      "dataset_id": null,
+      "dish": null,
+      "expect_hits": true,
+      "ingredients": [],
+      "kind": "retrieval_only",
+      "limit": 5,
+      "notes": "Ingredient-discovery control for the tzatziki pair (H6, 2026-10-08). The gyro-phrase query matches 7 documents; discovery must keep returning gyro dishes and must not be reordered by the dish title boost.",
+      "query_text": "chicken gyro with tzatziki",
+      "relevance_expectation": "asserted",
+      "split": "development",
+      "unsupported": []
+    },
+    {
+      "aggregate_group": "h6-hollandaise",
+      "behavioral": [],
+      "case_id": "H6R-05",
+      "category": "dish_vs_ingredient",
+      "dataset_id": null,
+      "dish": null,
+      "expect_hits": true,
+      "ingredients": [],
+      "kind": "retrieval_only",
+      "limit": 5,
+      "notes": "Dish request hollandaise (H6, 2026-10-08). Corpus: 1 title names hollandaise (Blender Hollandaise Sauce), 5 full-text matches. Current top-5 holds the sauce at rank 4 behind Eggs Benedict, a known-malformed summary record at rank 2, and an omelet; the sauce is a component of the other dishes, not their identity.",
+      "query_text": "hollandaise",
+      "relevance_expectation": "asserted",
+      "split": "development",
+      "unsupported": []
+    },
+    {
+      "aggregate_group": "h6-hollandaise",
+      "behavioral": [],
+      "case_id": "H6R-06",
+      "category": "dish_vs_ingredient",
+      "dataset_id": null,
+      "dish": null,
+      "expect_hits": true,
+      "ingredients": [],
+      "kind": "retrieval_only",
+      "limit": 5,
+      "notes": "Ingredient-discovery control for the hollandaise pair (H6, 2026-10-08). The benedict-phrase query matches 3 documents including a known-malformed summary record; discovery must keep returning benedict dishes and must not be reordered by the dish title boost.",
+      "query_text": "eggs benedict with hollandaise",
+      "relevance_expectation": "asserted",
+      "split": "development",
+      "unsupported": []
+    }
+  ],
+  "changelog": [
+    "H6 dish-versus-ingredient regression pairs (adobo, tzatziki, hollandaise) with per-pair discovery controls."
+  ],
+  "default_limit": 5,
+  "frozen_split": {
+    "development": 6,
+    "held_out": 0
+  },
+  "kind_policy": "retrieval_only cases test raw query text against search_all. Dish cases pin the dish-title expectation; ingredient cases pin discovery preservation.",
+  "label_status": "AI-prepared, pending owner review. No relevance labels ship with this file; grade dish titles 2 and component-only carriers 1 or 0 under phase1-rubric-v1 when labels are added.",
+  "rubric_version": "phase1-rubric-v1",
+  "split_policy": "All six are development regression cases. Held-out stays empty so no tuning signal is hidden.",
+  "supersedes": null,
+  "version": "h6-dish-vs-ingredient-v1"
+}

@@ -1,0 +1,257 @@
+{
+  "ai_prepared": true,
+  "judgments_version": "h6-additional-v1-2026-10-08",
+  "labels": [
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-08",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-004166",
+      "suitability": "not_applicable",
+      "title": "Chicken Parmesan Pasta Casserole",
+      "topical_grade": 2,
+      "topical_reason": "A pasta casserole for a generic pasta request; pasta names the dish."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-15",
+      "constraint_checks": [
+        {
+          "constraint": "max_minutes<=25",
+          "evidence": "reported total 5 min <= 25",
+          "status": "satisfied_by_reported_value"
+        }
+      ],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_first_pool",
+      "source_id": "002516",
+      "suitability": "supported",
+      "title": "Honey and Garlic Dressing",
+      "topical_grade": 2,
+      "topical_reason": "Garlic-names dressing for a garlic query, as with the recorded garlic-forward dressings and sauces."
+    },
+    {
+      "ai_grade": 1,
+      "case_id": "DEV-18",
+      "constraint_checks": [],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_first_pool",
+      "source_id": "000461",
+      "suitability": "not_applicable",
+      "title": "Couscous Cakes With Tomato-Garlic Ragout",
+      "topical_grade": 1,
+      "topical_reason": "Garlic seasons the accompanying ragout; the dish is couscous cakes, so ingredient overlap only."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-18",
+      "constraint_checks": [],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_first_pool",
+      "source_id": "000556",
+      "suitability": "not_applicable",
+      "title": "Garlic Pizza Crust",
+      "topical_grade": 2,
+      "topical_reason": "Garlic-names crust for a garlic query, as with the recorded garlic-forward starches."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-19",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-012166",
+      "suitability": "not_applicable",
+      "title": "Air Fryer Honey Garlic Chicken Wings",
+      "topical_grade": 2,
+      "topical_reason": "Garlic-names wings for a garlic query in the foodie slice."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-20",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-003851",
+      "suitability": "not_applicable",
+      "title": "Mum's Irish Apple Pie",
+      "topical_grade": 2,
+      "topical_reason": "An apple pie for an apple pie request, as with the recorded apple pies."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-25",
+      "constraint_checks": [
+        {
+          "constraint": "equipment=[wok] (available, non-exclusive)",
+          "evidence": "recipe equipment requirements not extracted; availability of other equipment not stated",
+          "status": "unresolved"
+        }
+      ],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-017323",
+      "suitability": "unresolved",
+      "title": "Slow Cooker Chicken and Quinoa Dinner",
+      "topical_grade": 2,
+      "topical_reason": "A chicken dinner for a chicken dinner request, as with the recorded chicken dinners."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-25",
+      "constraint_checks": [
+        {
+          "constraint": "equipment=[wok] (available, non-exclusive)",
+          "evidence": "recipe equipment requirements not extracted; availability of other equipment not stated",
+          "status": "unresolved"
+        }
+      ],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-010415",
+      "suitability": "unresolved",
+      "title": "Mediterranean Chicken Sheet Pan Dinner",
+      "topical_grade": 2,
+      "topical_reason": "A chicken dinner for a chicken dinner request, as with the recorded chicken dinners."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-27",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-003851",
+      "suitability": "not_applicable",
+      "title": "Mum's Irish Apple Pie",
+      "topical_grade": 2,
+      "topical_reason": "An apple pie for an apple pie request."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-28",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-009890",
+      "suitability": "not_applicable",
+      "title": "Beef Short Rib French Onion Soup",
+      "topical_grade": 2,
+      "topical_reason": "A soup for a soup request, as with the recorded soups."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-29",
+      "constraint_checks": [
+        {
+          "constraint": "max_minutes<=60",
+          "evidence": "reported total 20 min <= 60",
+          "status": "satisfied_by_reported_value"
+        }
+      ],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_first_pool",
+      "source_id": "000619",
+      "suitability": "supported",
+      "title": "Egg Drop Soup",
+      "topical_grade": 2,
+      "topical_reason": "A soup for a soup request with a satisfying reported time."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-09",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-002654",
+      "suitability": "not_applicable",
+      "title": "Chocolate Tres Leches Cake",
+      "topical_grade": 2,
+      "topical_reason": "A chocolate cake for a chocolate cake request."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-09",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-015380",
+      "suitability": "not_applicable",
+      "title": "German Chocolate Cake",
+      "topical_grade": 2,
+      "topical_reason": "A chocolate cake for a chocolate cake request."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-09",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-004765",
+      "suitability": "not_applicable",
+      "title": "Swedish Sticky Chocolate Cake (Kladdkaka)",
+      "topical_grade": 2,
+      "topical_reason": "A chocolate cake for a chocolate cake request."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-14",
+      "constraint_checks": [
+        {
+          "constraint": "max_minutes<=45",
+          "evidence": "reported total 20 min <= 45",
+          "status": "satisfied_by_reported_value"
+        }
+      ],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_first_pool",
+      "source_id": "000619",
+      "suitability": "supported",
+      "title": "Egg Drop Soup",
+      "topical_grade": 2,
+      "topical_reason": "A soup for a soup request with a satisfying reported time."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-17",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-006843",
+      "suitability": "not_applicable",
+      "title": "Tofu Vegetable Pot Pie",
+      "topical_grade": 2,
+      "topical_reason": "Tofu and vegetables name the dish for a tofu vegetable request."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-17",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-011321",
+      "suitability": "not_applicable",
+      "title": "Panang Curry with Tofu and Vegetables",
+      "topical_grade": 2,
+      "topical_reason": "Tofu and vegetables in the dish for a tofu vegetable request."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-17",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-001553",
+      "suitability": "not_applicable",
+      "title": "Korean Tofu and Vegetable Soup",
+      "topical_grade": 2,
+      "topical_reason": "Tofu and vegetables in the dish for a tofu vegetable request."
+    }
+  ],
+  "method": "Each newly surfaced title-first top-5 hit with no recorded label was judged against displayed source evidence (title, ingredient list, reported total) under evals/rubric_v1.md and the checkpoint1 label schema. Reasons paraphrase the evidence; no source text is quoted. Time checks are mechanical from reported TotalTime; equipment preserved unenforced per the DEV-25 pattern.",
+  "owner_review": "pending",
+  "replaces": null,
+  "review_status": "AI-prepared, pending owner review; never edit checkpoint1_corrections.json or any frozen benchmark with this file.",
+  "rubric_version": "phase1-rubric-v1"
+}
