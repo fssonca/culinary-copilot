@@ -1,8 +1,8 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
-Status: **H0, H1 and H2 done** (H0 baseline `eae6f00` and H1 `a8aa69d`
-on 2026-10-07; H2 on 2026-10-08 after three review rounds). H3 onward
-not started. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
+Status: **H0, H1, H2 and H3 part 1 done** (H0 baseline `eae6f00` and
+H1 `a8aa69d` on 2026-10-07; H2 and H3 part 1 on 2026-10-08). H3 part 2
+onward not started. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
 `docs/phase7-owner-decisions.md`). Baseline: branch
@@ -213,6 +213,17 @@ plan whose note claims fidelity is rejected; a source plan is not.
 
 Evidence: tests; how many corpus recipes need the new path (read-only
 count); UI screenshot or DOM check.
+
+Part 1 done 2026-10-08: `get_recipe` `directions_from`/`to` (at most 12
+full directions per call); plan gate in `agent/validate.py`
+(`validate_omitted_directions`); the review added the up-front turn-input
+line (a gate rejection used the run's only validation retry), one-call
+coverage of scattered unread indices, shared summary bounds, and
+summary wording that keeps option comparison free of extra calls.
+Read-only count: 605 of 16,033 recipes need the path (184 clipped, 421
+with more than 12 directions); extra calls 1 for 589, 2 for 13, 3 for 2,
+4 for 1; largest 12-direction slice 2,436 characters. Part 2
+(authoritative label) not started.
 
 ## H4. Budget-exhaustion recovery
 

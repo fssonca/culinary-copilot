@@ -80,13 +80,29 @@ def search_modes(settings: Any) -> tuple[str, ...]:
     return ("fulltext", "vector") if embeddings_configured(settings) else ("fulltext",)
 
 
+#: Maximum directions returned full in one ranged get_recipe call
+#: (2026-10-08 H3: keeps each response within the get_recipe output
+#: limit; the worst corpus slice of 12 full directions is 2,451 chars).
+MAX_DIRECTIONS_RANGE = 12
+
+
 class GetRecipeArgs(BaseModel):
-    """Arguments for ``get_recipe`` (exact pair, never fallback)."""
+    """Arguments for ``get_recipe`` (exact pair, never fallback).
+
+    ``directions_from``/``directions_to`` select a 0-based direction
+    range (``to`` exclusive) returned full, without the 600-character
+    cut, so the model can read omitted text. Without them the summary
+    shows up to 12 directions clipped at 600 chars. A ranged call
+    never returns the duplicate pointer: it is new evidence, not a
+    repeat of the full fetch.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     dataset_id: str = Field(min_length=1, max_length=200)
     source_id: str = Field(min_length=1, max_length=200)
+    directions_from: int | None = Field(default=None, ge=0, le=1000)
+    directions_to: int | None = Field(default=None, ge=0, le=1000)
 
 
 def _settings_value(context: ToolContext, name: str, default: Any) -> Any:
@@ -303,31 +319,35 @@ async def get_recipe_impl(args: GetRecipeArgs, context: ToolContext) -> dict[str
     engine = getattr(context, "engine", None)
     if engine is None:
         return _not_configured("get_recipe not configured: no recipe engine")
-    # Repeat fetch (Phase 7 close-out): an identical pair already
-    # returned in this session comes back as a short typed result
-    # pointing at the earlier evidence — but only when the full output
-    # is still visible to the model (in the current run's capped
-    # history). A repeat the model can no longer see (new run, or
-    # capped out) comes back full, as before. The call still executes
-    # either way, so the tool budget is unchanged.
-    duplicate = _already_fetched_pair(context, args.dataset_id, args.source_id)
-    visible = getattr(context, "visible_full_recipes", None)
-    if (
-        duplicate is not None
-        and visible is not None
-        and (args.dataset_id, args.source_id) in set(visible)
-    ):
-        return {
-            "ok": True,
-            "duplicate_of_session_evidence": True,
-            "dataset_id": args.dataset_id,
-            "source_id": args.source_id,
-            "title": duplicate,
-            "message": (
-                "already returned in this session; use the earlier "
-                "evidence (see the evidence digest), do not re-fetch"
-            ),
-        }
+    is_range = args.directions_from is not None or args.directions_to is not None
+    if not is_range:
+        # Repeat fetch (Phase 7 close-out): an identical pair already
+        # returned in this session comes back as a short typed result
+        # pointing at the earlier evidence — but only when the full output
+        # is still visible to the model (in the current run's capped
+        # history). A repeat the model can no longer see (new run, or
+        # capped out) comes back full, as before. The call still executes
+        # either way, so the tool budget is unchanged. Ranged calls
+        # (H3, 2026-10-08) never take this path: they are new evidence,
+        # not a repeat of the full fetch, even for the same pair.
+        duplicate = _already_fetched_pair(context, args.dataset_id, args.source_id)
+        visible = getattr(context, "visible_full_recipes", None)
+        if (
+            duplicate is not None
+            and visible is not None
+            and (args.dataset_id, args.source_id) in set(visible)
+        ):
+            return {
+                "ok": True,
+                "duplicate_of_session_evidence": True,
+                "dataset_id": args.dataset_id,
+                "source_id": args.source_id,
+                "title": duplicate,
+                "message": (
+                    "already returned in this session; use the earlier "
+                    "evidence (see the evidence digest), do not re-fetch"
+                ),
+            }
     try:
         doc = await __import__("asyncio").to_thread(
             get_recipe, engine, args.source_id, dataset_id=args.dataset_id
@@ -370,7 +390,53 @@ async def get_recipe_impl(args: GetRecipeArgs, context: ToolContext) -> dict[str
             ),
             "next_action": _naf(REASON_TOOL_INVALID_ARGUMENTS),
         }
-    return {"ok": True, "recipe": dict(doc)}
+    if not is_range:
+        return {"ok": True, "recipe": dict(doc)}
+    # Ranged read (H3, 2026-10-08): a bounded slice returned full,
+    # without the 600-character cut, so the model can read omitted text.
+    from culinary_copilot.agent.validate import doc_directions as _doc_directions
+
+    total = len(_doc_directions(dict(doc)))
+    req_from = int(args.directions_from) if args.directions_from is not None else 0
+    req_to = int(args.directions_to) if args.directions_to is not None else total
+    if req_from >= total:
+        return _invalid_range(
+            f"get_recipe: directions_from {req_from} beyond {total} stored "
+            f"directions (0-{max(0, total - 1)}); pass a range within the total"
+        )
+    if req_to <= req_from:
+        return _invalid_range(
+            f"get_recipe: directions_to ({req_to}) must be above directions_from ({req_from})"
+        )
+    eff_to = min(int(req_to), total)
+    if eff_to - req_from > MAX_DIRECTIONS_RANGE:
+        return _invalid_range(
+            f"get_recipe: directions {req_from}-{eff_to} spans "
+            f"{eff_to - req_from} directions (max {MAX_DIRECTIONS_RANGE} per call); "
+            f"request smaller slices, e.g. directions_from={req_from} "
+            f"directions_to={req_from + MAX_DIRECTIONS_RANGE}"
+        )
+    return {
+        "ok": True,
+        "recipe": dict(doc),
+        "directions_from": int(req_from),
+        "directions_to": int(eff_to),
+        "directions_total": int(total),
+    }
+
+
+def _invalid_range(message: str) -> dict[str, Any]:
+    """Typed invalid-arguments result for a bad get_recipe direction range."""
+    from culinary_copilot.domain.recommendations import REASON_TOOL_INVALID_ARGUMENTS
+    from culinary_copilot.domain.recommendations import next_action_for as _naf
+
+    return {
+        "ok": False,
+        "error_type": "invalid_arguments",
+        "reason": REASON_TOOL_INVALID_ARGUMENTS,
+        "message": message,
+        "next_action": _naf(REASON_TOOL_INVALID_ARGUMENTS),
+    }
 
 
 def _already_fetched_pair(context: ToolContext, dataset_id: str, source_id: str) -> str | None:
@@ -477,7 +543,14 @@ def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="get_recipe",
-            description="Exact (dataset_id, source_id) recipe document fetch.",
+            description=(
+                "Exact (dataset_id, source_id) recipe document fetch. "
+                "Without directions_from/to: up to 12 directions clipped at "
+                "600 chars (directions_clipped lists the cut ones). With "
+                "directions_from/to (0-based, to exclusive, max 12 per call): "
+                "that slice returned full, without the cut, for reading "
+                "omitted text."
+            ),
             args_model=GetRecipeArgs,
             timeout_s=float(timeout_s),
             idempotent=True,
@@ -487,6 +560,7 @@ def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
 
 
 __all__ = [
+    "MAX_DIRECTIONS_RANGE",
     "TOOL_VECTOR_CUTOFF",
     "GetRecipeArgs",
     "SearchRecipesArgs",

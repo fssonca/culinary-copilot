@@ -347,6 +347,33 @@ removed), and the next run substitutes (labelled `adaptation`,
   600 ends with "…" and is listed in `directions_clipped`. Raised from
   6 x 200 on 2026-10-07 after a live plan lost a simmer time, two
   ingredients and the source's own thermometer check to the cut).
+  Hardening step H3 (2026-10-08): `get_recipe` accepts optional
+  `directions_from`/`directions_to` (0-based, `to` exclusive, at most
+  12 per call) returning that slice full, without the 600-character
+  cut, within the 9,000-character `get_recipe` output limit; each
+  response names what it still omits. A ranged call never returns the
+  duplicate pointer: it is new evidence, not a repeat of the full
+  fetch (same range twice shares a digest and counts as a repeat for
+  the wrap-up and stall rules). A plan for a recipe with omitted
+  directions (a clipped tail or an index beyond 11) is rejected until
+  every omitted index was returned full in this run (reads from an
+  earlier run do not count, since that text is no longer in the
+  model's history) via such calls, or the plan names each unread
+  index in an adaptation (for example "directions 12, 13 not read")
+  and is `model_adaptation`. Because a rejection uses the run's one
+  validation retry, the turn input states the requirement up front
+  once a dish is selected and no plan exists ("Plan requirement:
+  directions [12, 13] ...", with the exact call, covering scattered
+  unread indices in one call where they fit in 12), and drops it once
+  they are read. A recipe fetched only to compare options needs no
+  extra calls: its summary says to read the rest only if it is
+  planned. The rejection names the uncovered indices and the next
+  `directions_from`/`to` call. Corpus read-only 2026-10-08: 605 of
+  16,033 recipes need the path (184 with a clipped direction, 421
+  with more than 12); extra calls needed with 12 per call: 1 for 589,
+  2 for 13, 3 for 2, 4 for 1 (worst 52 directions, 5 calls total with
+  the first fetch, within the 12-call ordinary and 40-call demo
+  budgets).
   Attribution folds accents ("jalapeño" matches "jalapeno") and
   ignores bare citation tags such as "[Source direction 2]".
   `steps_source` is `"source"` only when every plan step cites a

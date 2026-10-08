@@ -406,7 +406,30 @@ def _returned_identities(
         dataset_id = getattr(parsed, "dataset_id", None)
         source_id = getattr(parsed, "source_id", None)
         if isinstance(dataset_id, str) and isinstance(source_id, str):
-            return [{"dataset_id": dataset_id, "source_id": source_id, "via": "full"}]
+            entry: dict[str, Any] = {
+                "dataset_id": dataset_id,
+                "source_id": source_id,
+                "via": "full",
+            }
+            # Ranged reads (H3): the covered slice travels in the
+            # identity so the plan gate can reconstruct coverage from
+            # events alone (args are digest-only by default).
+            for key in ("directions_from", "directions_to"):
+                value = getattr(parsed, key, None)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    entry[key] = int(value)
+                elif isinstance(value, str) and value.lstrip("-").isdigit():
+                    try:
+                        entry[key] = int(value)
+                    except ValueError:
+                        pass
+            result_from = result.get("directions_from")
+            result_to = result.get("directions_to")
+            if isinstance(result_from, int) and "directions_from" not in entry:
+                entry["directions_from"] = int(result_from)
+            if isinstance(result_to, int) and "directions_to" not in entry:
+                entry["directions_to"] = int(result_to)
+            return [entry]
         return None
     if tool_name == "search_techniques":
         rows = result.get("results")
@@ -481,7 +504,14 @@ def _result_facts(tool_name: str, result: dict[str, Any]) -> dict[str, Any] | No
         if result.get("duplicate_of_session_evidence"):
             # Repeat-fetch pointer: no recipe body, the title is top level.
             return {"title": str(result.get("title") or "")[:120], "duplicate": True}
-        return {"title": str(title or "")[:120]}
+        facts: dict[str, Any] = {"title": str(title or "")[:120]}
+        # Ranged reads (H3): the covered slice travels in the digest
+        # facts too, so the evidence digest can name what was read.
+        for key in ("directions_from", "directions_to", "directions_total"):
+            value = result.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                facts[key] = int(value)
+        return facts
     if tool_name == "search_web":
         sources = result.get("sources")
         classifications: list[str] = []

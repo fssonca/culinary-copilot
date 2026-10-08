@@ -177,10 +177,17 @@ in-memory transcript.
   has no directions" and "directions were cut here" are therefore
   different facts. The bound was 6 x 200 until 2026-10-07: 64% of
   corpus recipes had a longer direction, and the cut was silent; now
-  184 of 16,033 recipes have a clipped direction.
+  184 of 16,033 recipes have a clipped direction. Since 2026-10-08
+  (H3) the model reads omitted text with `get_recipe`
+  `directions_from`/`to` (0-based, at most 12 full directions per
+  call, each response within its output limit and naming what it
+  still omits); 605 of 16,033 recipes need the path.
 - **Visibility-aware de-duplication:** a repeated `get_recipe` returns
   a short pointer only when the full document is still in the model's
-  visible history. Otherwise it returns the full document.
+  visible history. Otherwise it returns the full document. Ranged
+  reads never return the pointer: the same pair with a direction range
+  is new evidence (same range twice shares a digest and counts as a
+  repeat for wrap-up and stall).
 - **Token accounting:** before each turn, the loop estimates everything
   it will send (items, tool definitions, directive schema) and stops
   before crossing the ceiling. The final turn is sent with no tools, so
@@ -265,7 +272,13 @@ The validators run on every finish, with no model call:
     the app writes the adaptation note itself, naming the steps and
     the words that differ; an ingredient-only source still needs the
     model's own admission. Matching folds accents and ignores bare
-    citation tags in step text;
+    citation tags in step text. Since H3 (2026-10-08) a plan for a
+    recipe with omitted directions (clipped tail or index beyond 11)
+    also needs every omitted index read full in this run via ranged
+    `get_recipe`, or an adaptation naming each unread index plus
+    `model_adaptation` (the turn input states this, with the exact
+    call, before the plan is drafted); attribution already checks full
+    stored directions, so ranged reads count;
   - raw meat, poultry, fish or eggs require a food-safety technique
     reference (technique search treats chicken, turkey, duck and goose
     as also matching "poultry", the word the FDA guidance uses). Once

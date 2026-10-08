@@ -1597,6 +1597,172 @@ def validate_web_refs(refs: Any, *, session_sources: dict[str, Any]) -> list[str
     return errors
 
 
+#: Phrases marking an adaptation as listing unread directions (H3,
+#: 2026-10-08): the plan states which stored-direction indices it did
+#: not read. Checked case-insensitive; "does not follow the source"
+#: is not in this list (that is the H3-part-2 fidelity claim).
+_UNREAD_DIRECTION_MARKERS = (
+    "not read",
+    "did not read",
+    "didn't read",
+    "didnt read",
+    "unread",
+    "not fetched",
+    "not retrieved",
+    "not reviewed",
+)
+
+#: Direction mention: "direction 3" or "directions 12-15, 17".
+_DIRECTION_MENTION_RE = re.compile(r"directions?\s+([0-9,\s\-–andto]+)", re.IGNORECASE)
+
+#: Standard get_recipe summary bounds (H3). agent/loop.py imports these
+#: as _DIRECTIONS_SHOWN / _DIRECTION_CHARS so the summary and the plan
+#: gate cannot drift apart. A ranged read returns at most
+#: DIRECTIONS_SHOWN directions full.
+DIRECTIONS_SHOWN = 12
+DIRECTION_CHARS = 600
+
+
+def next_direction_slice(uncovered: list[int], total: int) -> tuple[int, int]:
+    """The ranged get_recipe call that reads the most unread directions.
+
+    From the first unread index, a window of up to DIRECTIONS_SHOWN
+    ending after the last unread index inside it: unread [1, 5, 9] is
+    one call (1-10), not three.
+    """
+    start = int(uncovered[0])
+    inside = [i for i in uncovered if i < start + DIRECTIONS_SHOWN]
+    return start, min(int(inside[-1]) + 1, int(total))
+
+
+def omitted_direction_indices(doc: dict[str, Any] | None) -> list[int]:
+    """Stored-direction indices omitted from the standard summary.
+
+    2026-10-08 H3: the summary shows up to DIRECTIONS_SHOWN directions
+    clipped at DIRECTION_CHARS. Omitted means a shown direction cut at 600 (its tail) or a
+    direction beyond index 11. Empty when the summary shows everything
+    full (total <= 12 and none over 600 chars).
+    """
+    return [
+        index
+        for index, direction in enumerate(doc_directions(doc or {}))
+        if index >= DIRECTIONS_SHOWN or len(str(direction)) > DIRECTION_CHARS
+    ]
+
+
+def _parse_direction_numbers(group: str) -> set[int]:
+    """Indices named in one direction-mention group (inclusive ranges).
+
+    "12-15" expands to {12,13,14,15}; "12, 13 and 14" to {12,13,14};
+    "12 to 15" is read as a range. Out-of-range values are kept: the
+    caller decides coverage (a superset still lists every uncovered).
+    """
+    text = str(group or "").lower()
+    text = text.replace("–", "-").replace("—", "-")
+    text = re.sub(r"\bto\b", "-", text)
+    text = text.replace("and", ",").replace("&", ",")
+    found: set[int] = set()
+    for start_s, end_s in re.findall(r"(\d+)\s*-\s*(\d+)", text):
+        try:
+            start, end = int(start_s), int(end_s)
+        except ValueError:
+            continue
+        lo, hi = (start, end) if start <= end else (end, start)
+        # Bound expansion: a "0-100" typo must not allocate 101 ints.
+        if hi - lo > 200:
+            continue
+        found.update(range(lo, hi + 1))
+    stripped = re.sub(r"(\d+)\s*-\s*(\d+)", " ", text)
+    for num_s in re.findall(r"\d+", stripped):
+        try:
+            found.add(int(num_s))
+        except ValueError:
+            continue
+    return found
+
+
+def unread_directions_listed(plan: dict[str, Any] | None, uncovered: list[int]) -> bool:
+    """True when the plan's adaptations name every uncovered index.
+
+    The combined adaptation text must contain an unread marker (see
+    ``_UNREAD_DIRECTION_MARKERS``) and, in a "direction(s) <numbers>"
+    mention, every uncovered index — either 0-based (step_sources
+    indices, preferred) or 1-based. A plan with no uncovered indices
+    needs no listing (returns True).
+    """
+    uncovered_list = [int(i) for i in (uncovered or [])]
+    if not uncovered_list:
+        return True
+    adaptations = (plan or {}).get("adaptations") if isinstance(plan, dict) else []
+    texts: list[str] = []
+    if isinstance(adaptations, list):
+        for item in adaptations:
+            if isinstance(item, dict):
+                desc = str(item.get("description") or "")
+                if desc.strip():
+                    texts.append(desc)
+    combined = "\n".join(texts)
+    lowered = combined.lower()
+    if not any(marker in lowered for marker in _UNREAD_DIRECTION_MARKERS):
+        return False
+    named: set[int] = set()
+    for match in _DIRECTION_MENTION_RE.finditer(combined):
+        named |= _parse_direction_numbers(match.group(1))
+    if not named:
+        return False
+    uncovered_set = set(uncovered_list)
+    if uncovered_set <= named:
+        return True
+    # 1-based listing ("directions 13-14" for 0-based 12-13).
+    shifted = {i + 1 for i in uncovered_list}
+    return bool(shifted and shifted <= named)
+
+
+def validate_omitted_directions(
+    plan: dict[str, Any] | None,
+    doc: dict[str, Any] | None,
+    covered: set[int] | None,
+    steps_source: str,
+) -> list[str]:
+    """Plan gate for omitted directions (H3, 2026-10-08).
+
+    ``covered`` holds stored-direction indices returned full in this
+    session (standard fetch covers short directions among the first 12;
+    ranged fetches cover their slice). Returns errors (empty = valid):
+
+    - no omitted indices, or every omitted index covered: no requirement;
+    - otherwise the plan must list each uncovered index in an adaptation
+      (see ``unread_directions_listed``) and be ``model_adaptation``;
+    - the rejection names the uncovered indices and the ranged call to
+      read them, so the one validation retry can succeed.
+    """
+    directions = doc_directions(doc or {})
+    total = len(directions)
+    omitted = omitted_direction_indices(doc)
+    if not omitted:
+        return []
+    covered_set = set(int(i) for i in (covered or set()))
+    uncovered = sorted(i for i in omitted if i not in covered_set)
+    if not uncovered:
+        return []
+    if steps_source == "model_adaptation" and unread_directions_listed(plan, uncovered):
+        return []
+    source = (plan or {}).get("source") if isinstance(plan, dict) else {}
+    dataset_id = str((source or {}).get("dataset_id") or "") if isinstance(source, dict) else ""
+    source_id = str((source or {}).get("source_id") or "") if isinstance(source, dict) else ""
+    start, end = next_direction_slice(uncovered, total)
+    return [
+        f"directions {uncovered} of {total} not yet read in this run; "
+        f"call get_recipe with dataset_id={dataset_id!r}, "
+        f"source_id={source_id!r}, directions_from={start} directions_to={end} "
+        "before finishing, or list each unread direction index in a plan "
+        "adaptation (e.g. 'directions "
+        + ", ".join(str(i) for i in uncovered[:6])
+        + (" …' " if len(uncovered) > 6 else "' ")
+        + "not read') with model_adaptation"
+    ]
+
+
 def web_claim_context_ok(*, claim_subject: str, source_text: str | None) -> bool:
     """Subject-context fit for a numeric claim against source text.
 
@@ -1635,6 +1801,12 @@ __all__ = [
     "VEGAN_EXTRA_TERMS",
     "VEGAN_VIOLATION_TERMS",
     "VEGETARIAN_VIOLATION_TERMS",
+    "DIRECTIONS_SHOWN",
+    "DIRECTION_CHARS",
+    "next_direction_slice",
+    "omitted_direction_indices",
+    "unread_directions_listed",
+    "validate_omitted_directions",
     "RecipeResolver",
     "TECHNIQUE_OPTION_KEYS",
     "TechniqueResolver",

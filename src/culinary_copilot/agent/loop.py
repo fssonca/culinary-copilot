@@ -35,6 +35,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from culinary_copilot.agent.validate import (
     ALLERGEN_VIOLATED_TERMS,
+    DIRECTION_CHARS,
+    DIRECTIONS_SHOWN,
     SAFETY_DOC_IDS,
     RecipeResolver,
     TechniqueResolver,
@@ -46,10 +48,13 @@ from culinary_copilot.agent.validate import (
     check_dietary_option,
     check_plan_evidence,
     dietary_values,
+    doc_directions,
     doc_text,
     flatten_constraint_texts,
     hard_constraint_keys,
     mentions_restriction,
+    next_direction_slice,
+    omitted_direction_indices,
     plan_attribution_note,
     raw_protein_hits,
     unresolved_unnamed_restriction,
@@ -623,6 +628,82 @@ def recipe_session_evidence(
     return retrieved, full
 
 
+def direction_coverage_for_pair(
+    *, store: PostgresSessionStore, session_id: str, dataset_id: str, source_id: str, doc: Any
+) -> set[int]:
+    """Stored-direction indices returned full in the current run (H3).
+
+    2026-10-08: the standard summary shows up to 12 directions clipped
+    at 600 chars; a ranged ``get_recipe`` returns its slice full. The
+    set holds indices whose full text reached the model in this run
+    (tool_call events after the latest ``agent_run_started``; all
+    session events when no run marker exists, e.g. unit tests). A
+    standard fetch covers short directions among the first 12 (long
+    ones need their full slice); a ranged fetch covers its
+    ``directions_from``/``to`` slice. Fail-closed: store errors yield
+    an empty set.
+    """
+    from culinary_copilot.agent.validate import doc_directions as _doc_dirs
+
+    try:
+        events = store.list_events(session_id)
+    except Exception:
+        return set()
+    try:
+        stored = _doc_dirs(doc if isinstance(doc, dict) else {})
+    except Exception:
+        stored = []
+    total = len(stored)
+    short_first: set[int] = set()
+    for index in range(min(total, _DIRECTIONS_SHOWN)):
+        try:
+            if len(str(stored[index])) <= _DIRECTION_CHARS:
+                short_first.add(index)
+        except Exception:
+            continue
+    start_at = 0
+    for pos, event in enumerate(events):
+        if getattr(event, "event_type", "") == "agent_run_started":
+            start_at = pos + 1
+    covered: set[int] = set()
+    for event in events[start_at:]:
+        if getattr(event, "event_type", "") != "tool_call":
+            continue
+        payload = getattr(event, "payload", None) or {}
+        if payload.get("outcome") != "ok" or payload.get("tool") != "get_recipe":
+            continue
+        identities = payload.get("returned_identities")
+        if not isinstance(identities, list):
+            continue
+        facts = payload.get("result_facts")
+        if not isinstance(facts, dict):
+            facts = {}
+        for ident in identities:
+            if not isinstance(ident, dict):
+                continue
+            if ident.get("dataset_id") != dataset_id or ident.get("source_id") != source_id:
+                continue
+            if ident.get("via") != "full":
+                continue
+            from_val = facts.get("directions_from")
+            to_val = facts.get("directions_to")
+            if not isinstance(from_val, int):
+                from_val = ident.get("directions_from")
+            if not isinstance(to_val, int):
+                to_val = ident.get("directions_to")
+            if isinstance(from_val, int) and isinstance(to_val, int):
+                try:
+                    lo = max(0, int(from_val))
+                    hi = min(int(to_val), total)
+                except (TypeError, ValueError):
+                    continue
+                for idx in range(lo, hi):
+                    covered.add(idx)
+            else:
+                covered |= set(short_first)
+    return covered
+
+
 _EVIDENCE_DIGEST_LIMIT = 1500
 
 
@@ -693,9 +774,30 @@ def session_evidence_digest(
             if isinstance(identities, list):
                 for ident in identities:
                     if isinstance(ident, dict) and ident.get("via") == "full":
-                        lines.append(
+                        pair = (
                             f"fetched {ident.get('dataset_id')}:{ident.get('source_id')} {title!r}"
                         )
+                        # Ranged reads (H3): name the full slice so the
+                        # model sees what omitted text it already has.
+                        from_val = facts.get("directions_from")
+                        to_val = facts.get("directions_to")
+                        total_val = facts.get("directions_total")
+                        if isinstance(from_val, int) and isinstance(to_val, int):
+                            total_txt = (
+                                f" of {int(total_val)}" if isinstance(total_val, int) else ""
+                            )
+                            lines.append(
+                                f"{pair} directions {int(from_val)}-{int(to_val)}{total_txt} full"
+                            )
+                        else:
+                            ident_from = ident.get("directions_from")
+                            ident_to = ident.get("directions_to")
+                            if isinstance(ident_from, int) and isinstance(ident_to, int):
+                                lines.append(
+                                    f"{pair} directions {int(ident_from)}-{int(ident_to)} full"
+                                )
+                            else:
+                                lines.append(pair)
         elif tool == "search_web":
             # Web evidence already in hand (2026-10-03 step-2
             # diagnosis): without this branch the model could not see
@@ -1212,7 +1314,12 @@ _TASK_FRAMING = (
     "Never claim the source has no directions when the fetched record "
     "lists directions_total above 0. A direction ending in '…' (listed "
     "in directions_clipped) continues in the source: never call its "
-    "missing tail absent. Step text is the instruction only; "
+    "missing tail absent; read it with get_recipe directions_from/to "
+    "(0-based, to exclusive, at most 12 per call, full text without the "
+    "cut). When directions_truncated or directions_clipped is set, a plan "
+    "needs every omitted direction read in this session via such calls, "
+    "or an adaptation naming each unread direction index plus "
+    "model_adaptation. Step text is the instruction only; "
     "step_sources carries the citation, so add no '[Source direction N]' "
     "tags, and put an added safety check in its own adaptation rather "
     "than inside a cited step. A plan with raw meat, "
@@ -1261,6 +1368,27 @@ def food_safety_requirement(
         "the plan must cite a food-safety chunk in technique_refs. Call "
         f"search_techniques (e.g. '{raw_hits[0]} safe internal temperature') in the "
         "same step as get_recipe, before finishing."
+    )
+
+
+def omitted_directions_requirement(doc: dict[str, Any], covered: set[int]) -> str | None:
+    """Plan-phase line naming the selected recipe's unread directions.
+
+    2026-10-08 review of H3: the plan gate rejects a plan whose recipe
+    has omitted directions that were not read, and that rejection used
+    the run's one validation retry. As with the food-safety line, the
+    model gets the requirement and the exact call before it drafts.
+    """
+    uncovered = [i for i in omitted_direction_indices(doc) if i not in covered]
+    if not uncovered:
+        return None
+    start, end = next_direction_slice(uncovered, len(doc_directions(doc)))
+    return (
+        f"Plan requirement: directions {uncovered[:12]} of the selected recipe are cut "
+        "or not shown in get_recipe output. Read them before finishing: call get_recipe "
+        f"with directions_from={start} directions_to={end} (more slices if needed, at "
+        "most 12 per call), or name each unread direction index in an adaptation "
+        "('directions N not read') and use model_adaptation."
     )
 
 
@@ -1427,40 +1555,97 @@ def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
         from culinary_copilot.agent.validate import doc_directions
 
         stored_directions = doc_directions(doc)
-        shown_directions: list[str] = []
-        clipped_directions: list[int] = []
-        for index, direction in enumerate(stored_directions[:_DIRECTIONS_SHOWN]):
-            direction_text = str(direction)
-            if len(direction_text) > _DIRECTION_CHARS:
-                direction_text = direction_text[:_DIRECTION_CHARS].rstrip() + "…"
-                clipped_directions.append(index)
-            shown_directions.append(direction_text)
-        summary["recipe"] = {
-            "dataset_id": doc.get("dataset_id"),
-            "source_id": doc.get("source_id"),
-            "title": doc.get("title"),
-            "servings": doc.get("servings"),
-            "ingredients": [
-                {
-                    "canonical": i.get("canonical") or i.get("name"),
-                    "amount": readable_amount(i),
-                    "unit": i.get("unit"),
-                }
-                for i in (doc.get("ingredients") or [])[:30]
-                if isinstance(i, dict)
-            ],
-            # Bounded source directions (Phase 7 close-out): the model
-            # never saw directions before, so it invented method and
-            # mislabelled absence. directions_total 0 ("absent from the
-            # source") is distinct from truncated True ("omitted from
-            # this response"). directions_clipped lists shown directions
-            # cut at _DIRECTION_CHARS (they end with "…").
-            "directions": shown_directions,
-            "directions_total": len(stored_directions),
-            "directions_shown": len(shown_directions),
-            "directions_truncated": len(stored_directions) > len(shown_directions),
-            "directions_clipped": clipped_directions,
-        }
+        total_directions = len(stored_directions)
+        req_from = result.get("directions_from")
+        req_to = result.get("directions_to")
+        ingredients_preview = [
+            {
+                "canonical": i.get("canonical") or i.get("name"),
+                "amount": readable_amount(i),
+                "unit": i.get("unit"),
+            }
+            for i in (doc.get("ingredients") or [])[:30]
+            if isinstance(i, dict)
+        ]
+        if isinstance(req_from, int) or isinstance(req_to, int):
+            # Ranged read (H3, 2026-10-08): the requested slice full,
+            # without the 600-character cut, within the output limit.
+            from_idx = int(req_from) if isinstance(req_from, int) else 0
+            to_idx = int(req_to) if isinstance(req_to, int) else total_directions
+            from_idx = max(0, min(from_idx, total_directions))
+            to_idx = max(min(to_idx, total_directions), min(from_idx + 1, total_directions))
+            sliced = [str(d) for d in stored_directions[from_idx:to_idx]]
+            omitted_parts: list[str] = []
+            if from_idx > 0:
+                omitted_parts.append(f"0-{from_idx}")
+            if to_idx < total_directions:
+                omitted_parts.append(f"{to_idx}-{total_directions}")
+            omitted_text = ", ".join(omitted_parts) if omitted_parts else "none"
+            summary["recipe"] = {
+                "dataset_id": doc.get("dataset_id"),
+                "source_id": doc.get("source_id"),
+                "title": doc.get("title"),
+                "servings": doc.get("servings"),
+                "ingredients": ingredients_preview,
+                # Full slice: no 600-char cut, so directions_clipped is
+                # empty; directions_from/to name the slice and the
+                # message names what this response still omits.
+                "directions": sliced,
+                "directions_total": total_directions,
+                "directions_from": from_idx,
+                "directions_to": to_idx,
+                "directions_shown": len(sliced),
+                "directions_truncated": (from_idx > 0 or to_idx < total_directions),
+                "directions_clipped": [],
+            }
+            summary["message"] = (
+                f"directions {from_idx}-{to_idx} of {total_directions} shown full; "
+                f"still omitted in this response: {omitted_text}; request further "
+                "slices with get_recipe directions_from/to"
+            )
+        else:
+            shown_directions: list[str] = []
+            clipped_directions: list[int] = []
+            for index, direction in enumerate(stored_directions[:_DIRECTIONS_SHOWN]):
+                direction_text = str(direction)
+                if len(direction_text) > _DIRECTION_CHARS:
+                    direction_text = direction_text[:_DIRECTION_CHARS].rstrip() + "…"
+                    clipped_directions.append(index)
+                shown_directions.append(direction_text)
+            summary["recipe"] = {
+                "dataset_id": doc.get("dataset_id"),
+                "source_id": doc.get("source_id"),
+                "title": doc.get("title"),
+                "servings": doc.get("servings"),
+                "ingredients": ingredients_preview,
+                # Bounded source directions (Phase 7 close-out): the model
+                # never saw directions before, so it invented method and
+                # mislabelled absence. directions_total 0 ("absent from the
+                # source") is distinct from truncated True ("omitted from
+                # this response"). directions_clipped lists shown directions
+                # cut at _DIRECTION_CHARS (they end with "…").
+                "directions": shown_directions,
+                "directions_total": total_directions,
+                "directions_shown": len(shown_directions),
+                "directions_truncated": total_directions > len(shown_directions),
+                "directions_clipped": clipped_directions,
+            }
+            if clipped_directions or total_directions > len(shown_directions):
+                omitted: list[str] = []
+                if clipped_directions:
+                    omitted.append(f"tails of {clipped_directions} cut at 600 chars")
+                if total_directions > len(shown_directions):
+                    omitted.append(
+                        f"directions {len(shown_directions)}-{total_directions} not shown"
+                    )
+                # Only a plan needs the rest: a recipe fetched to compare
+                # options must not cost extra calls (2026-10-08 review).
+                summary["message"] = (
+                    "omitted text remains (" + "; ".join(omitted) + "); only if you "
+                    "plan this recipe, read it with get_recipe directions_from/to "
+                    "before finishing the plan, or list each unread direction index "
+                    "in an adaptation"
+                )
     elif name in _PAIRING_TOOLS and result.get("ok"):
         key = "candidates" if name == "find_substitutions" else "pairings"
         summary[key] = (result.get(key) or result.get("pairings") or [])[:10]
@@ -1788,8 +1973,9 @@ _TECHNIQUE_EXCERPT_LIMIT = 600
 #: cut at this bound ends with "…" and is listed in directions_clipped
 #: (184 of 16,033 records). Measured summaries peak at 3,926 chars; the
 #: get_recipe bound covers the 12 x 600 worst case plus ingredients.
-_DIRECTION_CHARS = 600
-_DIRECTIONS_SHOWN = 12
+#: Defined in agent/validate.py, shared with the H3 plan gate.
+_DIRECTION_CHARS = DIRECTION_CHARS
+_DIRECTIONS_SHOWN = DIRECTIONS_SHOWN
 _TOOL_OUTPUT_LIMITS = {"search_techniques": 6500, "get_recipe": 9000}
 
 
@@ -2185,6 +2371,20 @@ async def _run_agent(
             if selected_doc is not None and not state.cooking_plan
             else None
         )
+        if selected_doc is not None and not state.cooking_plan:
+            dish = state.selected_dish or {}
+            directions_line = omitted_directions_requirement(
+                selected_doc,
+                direction_coverage_for_pair(
+                    store=store,
+                    session_id=session_id,
+                    dataset_id=str(dish.get("dataset_id") or ""),
+                    source_id=str(dish.get("source_id") or ""),
+                    doc=selected_doc,
+                ),
+            )
+            if directions_line:
+                plan_requirement = "\n".join(filter(None, [plan_requirement, directions_line]))
         if final_turn:
             # No tools are sent on the final turn: the request carries
             # an empty tool list, so the model can only return a
@@ -3805,6 +4005,32 @@ async def _handle_finish(
             auto_label=True,
         )
         errors.extend(plan_evidence_errors)
+        # Clipped-direction gate (H3, 2026-10-08): a plan for a recipe
+        # with omitted directions needs every omitted direction read in
+        # this run via ranged get_recipe, or an adaptation naming each
+        # unread index plus model_adaptation. Attribution already counts
+        # ranged reads (it checks full stored directions).
+        if isinstance(plan_source, dict) and isinstance(plan_doc, dict):
+            from culinary_copilot.agent.validate import validate_omitted_directions
+
+            try:
+                covered = direction_coverage_for_pair(
+                    store=store,
+                    session_id=session_id,
+                    dataset_id=str(plan_source.get("dataset_id") or ""),
+                    source_id=str(plan_source.get("source_id") or ""),
+                    doc=plan_doc,
+                )
+            except Exception:
+                covered = set()
+            errors.extend(
+                validate_omitted_directions(
+                    plan_dump if isinstance(plan_dump, dict) else {},
+                    plan_doc,
+                    covered,
+                    steps_source,
+                )
+            )
         # App-written label (2026-10-06 live fix): three live plans failed
         # only because the model did not write the admission for a
         # label the code had already computed. The code now states it.
@@ -4246,6 +4472,7 @@ __all__ = [
     "TechniqueAnswer",
     "TechniqueRef",
     "build_turn_input",
+    "direction_coverage_for_pair",
     "effective_request_text",
     "epicure_evidence",
     "estimate_tokens",
