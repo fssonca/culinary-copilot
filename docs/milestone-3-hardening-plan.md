@@ -3,11 +3,11 @@
 Status: **H0 to H7 done; Checkpoint D decided** (2026-10-08, recorded in
 `docs/phase7-owner-decisions.md`). Ranking unchanged. H5 cleanup
 corrected, rehearsed and applied to the application database on
-2026-10-08 (`docs/h5-summary-cleanup.md`). H8 run twice (`evals/h8_live/RESULTS.md`): attempt 1, 0 of 2,
-both stopped by the repeat-stall guard; stall recovery added; attempt 2
-on fresh scenarios, 0 of 2 but further (a validator false positive,
-fixed, and a follow-up answered as a re-issued plan). H8 spend $0.0566
-of the owner's $1.00 pool; next step awaits the owner. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
+2026-10-08 (`docs/h5-summary-cleanup.md`). H8 run three times (`evals/h8_live/RESULTS.md`), each attempt on
+fresh scenarios after fixing what the previous one exposed: 0 of 2,
+0 of 2, then 1 of 2 (the allergy workflow completed; the other session
+hit a quantity-check false positive, fixed). H8 spend $0.0885 of the
+owner's $1.00 pool; next step awaits the owner. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
 `docs/phase7-owner-decisions.md`). Baseline: branch

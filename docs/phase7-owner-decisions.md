@@ -504,3 +504,8 @@ recommendations: the plan-phase follow-up framing (option b; option a,
 rejecting a re-issued plan, only if attempt 3 still shows the problem)
 and a third, separately labelled attempt on fresh scenarios
 (`scenarios_v4.json`). Push still not authorized.
+
+H8 attempt 3 result (recorded by an AI assistant): 1 of 2 complete (the
+allergy sleepover session); the office-birthday plan was rejected by a
+quantity-check false positive, fixed afterwards. H8 total $0.0885 of
+$1.00. See `evals/h8_live/RESULTS.md`, "Third attempt".

@@ -1774,3 +1774,58 @@ def test_plan_fidelity_negation_must_govern_the_claim() -> None:
     ]
     assert [text for text in claims if fidelity_claim(text) is None] == []
     assert [text for text in honest if fidelity_claim(text) is not None] == []
+
+
+def _list_doc() -> dict[str, Any]:
+    # Synthetic baking source: a unit-less count (eggs) makes the
+    # amounts and ingredient mentions unequal, so order pairing is off.
+    def entry(canonical: str, amount: str, amount_text: str, unit: str | None, original: str):
+        return {
+            "canonical": canonical,
+            "name": canonical,
+            "amount": amount,
+            "amount_text": amount_text,
+            "unit": unit,
+            "original": original,
+        }
+
+    return {
+        "title": "Synthetic Cocoa Muffins",
+        "ingredients": [
+            entry("all-purpose flour", "2", "2", "cup", "2 cups all-purpose flour"),
+            entry("white sugar", "3/2", "1 1/2", "cup", "1 1/2 cups white sugar"),
+            entry("butter, softened", "3", "3", "tbsp", "3 tablespoons butter, softened"),
+            entry("large eggs", "2", "2", None, "2 large eggs"),
+            entry("milk", "1", "1", "cup", "1 cup milk"),
+        ],
+        "instructions": ["Mix.", "Bake."],
+    }
+
+
+def test_h8_amount_leads_its_ingredient_past_a_prep_word() -> None:
+    # H8 attempt 3 (2026-10-08): "..., 1 1/2 cup white sugar, 3 tbsp
+    # softened butter, ..." attached "3 tbsp" to the sugar before it and
+    # rejected a correct plan. Wrong amounts and swaps still fail.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = _list_doc()
+    line = (
+        "Measure out 2 cup all-purpose flour, 1 1/2 cup white sugar, "
+        "3 tbsp softened butter, 2 large eggs, and 1 cup milk."
+    )
+
+    def check(text: str) -> list[str]:
+        return plan_prose_quantity_errors(
+            {"mise_en_place": [text], "steps": ["S."], "plating": "S."}, doc
+        )
+
+    assert check(line) == []
+    wrong = check(line.replace("3 tbsp softened butter", "1 cup softened butter"))
+    assert len(wrong) == 1 and "'butter softened' as 3 tbsp" in wrong[0]
+    swapped = check(
+        line.replace(
+            "1 1/2 cup white sugar, 3 tbsp softened butter",
+            "3 tbsp white sugar, 1 1/2 cup softened butter",
+        )
+    )
+    assert len(swapped) == 2

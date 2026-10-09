@@ -637,6 +637,50 @@ def _nearest_with_ties(
     return best, []
 
 
+def _forward_list_attachment(
+    text: str,
+    amount_start: int,
+    amount_end: int,
+    mentions: dict[int, list[tuple[int, int, int, int, bool]]],
+) -> int | None:
+    """Group an amount leads in an "AMOUNT UNIT [prep] INGREDIENT" list.
+
+    H8 attempt 3 (2026-10-08): in "..., 1 1/2 cup white sugar, 3 tbsp
+    softened butter, ..." the nearest mention to "3 tbsp" was the white
+    sugar before it (the prep word "softened" pushed the butter further
+    away), and a correct plan was rejected. When a comma or semicolon
+    separates the amount from the mention before it, and only prep,
+    descriptor or function words lie between the amount and the next
+    mention, the amount belongs to the next mention. Name-then-amount
+    lists ("chicken, 5 1/2 lb, potatoes") have a separator after the
+    amount, so they never take this path. Returns None when the rule
+    does not apply or the next mention is tied between groups.
+    """
+    after: list[tuple[int, int]] = []
+    before_end: int | None = None
+    for gi, items in mentions.items():
+        for start, end, _length, _variant_len, _exact in items:
+            if start >= amount_end:
+                after.append((start, gi))
+            elif end <= amount_start and (before_end is None or end > before_end):
+                before_end = end
+    if not after or before_end is None:
+        return None
+    if not re.search(r"[,;]", text[before_end:amount_start]):
+        return None
+    next_start = min(start for start, _ in after)
+    next_groups = {gi for start, gi in after if start == next_start}
+    if len(next_groups) != 1:
+        return None
+    gap = text[amount_end:next_start]
+    if re.search(r"[^a-z0-9\s]", _fold_match_text(gap)):
+        return None
+    gap_words = re.findall(r"[a-z0-9]+", _fold_match_text(gap))
+    if any(word not in DESCRIPTOR_WORDS and word not in FUNCTION_WORDS for word in gap_words):
+        return None
+    return next_groups.pop()
+
+
 def _nearest_group(
     amount_start: int,
     amount_end: int,
@@ -840,6 +884,10 @@ def plan_prose_quantity_errors(plan: dict[str, Any], doc: dict[str, Any]) -> lis
                 group_index = prev_group
             elif pos in order_pair:
                 group_index = order_pair[pos]
+            elif (
+                forward := _forward_list_attachment(normalized, start, end, mentions)
+            ) is not None:
+                group_index = forward
             else:
                 # Candidate set (2026-10-07 H2R): tied best-key groups
                 # pass if any states it (butter chilled/melted); longer

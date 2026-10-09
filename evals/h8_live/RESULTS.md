@@ -190,3 +190,84 @@ $0.0566 of $1.00; $0.9434 left.
 2. **A third attempt**, separately labelled, on a new freeze. Fresh
    scenarios again would keep the check independent of the fixes. Cost
    so far is about $0.03 to $0.05 per attempt.
+
+---
+
+# Third attempt (2026-10-08)
+
+Run after the owner approved the attempt-2 recommendations, on a new
+freeze (`PLAN.md`, "Third attempt"): code `5447fac` (answers support
+note claims; follow-ups after a plan get a technique answer), fresh
+scenarios `scenarios_v4.json` (`h8c-office-birthday`,
+`h8c-allergy-sleepover` with an egg allergy). First attempts only.
+Model output paraphrased; raw records in `data/h8-live/raw-attempt-3/`
+(not committed).
+
+## Outcome: 1 of 2 complete
+
+| Scenario | Reached | Ended | Mechanical grade |
+|---|---|---|---|
+| `h8c-allergy-sleepover` | question, "eggs" recorded, 3 options, plan, technique answer | complete | task completion, workflow complete, allergy pass |
+| `h8c-office-birthday` | 2 options (no question), selection | `agent_no_progress`: the stall finishing turn's plan was rejected by a quantity-check false positive | options only |
+
+**Allergy sleepover: complete.** The model asked which food the guest
+is allergic to, also suggesting the family confirm cross-contact
+precautions. After "eggs" it offered three shortbread recipes whose
+listed ingredients contain no egg term (the app's constraint check
+agrees for each, with its standard not-a-guarantee disclaimer); the note
+said which ingredients were checked and advised confirming packaged
+ingredients. After selection it fetched the recipe three times, the
+stall recovery's finishing turn followed, and it returned a four-step
+plan labelled as a model adaptation, with the source's quantities. The
+follow-up about soft-looking cookies took two technique searches; the
+answer used the recipe's own firm-to-the-touch cue, cited one returned
+chunk, and said the returned sources give no further cookie-specific
+cue. Observation: before asking, the model ran 16 steps of searches and
+pairing queries. The question still came before any options (point 1
+holds), but the framing asks for the question before any search; 30
+steps in all, inside the demo limits.
+
+**Office birthday: rejected by a validator bug.** After selection the
+model fetched the recipe three times; the finishing turn followed and it
+returned a plan whose amounts all match the source. The H2 quantity
+check rejected it: in a mise-en-place list of the form "..., 1 1/2 cup
+white sugar, 3 tbsp softened butter, ..." it attached "3 tbsp" to the
+sugar before it, because the prep word in "softened butter" put the
+butter further from the amount than the sugar. A rejected finishing
+turn has no retry, so the run stopped. Fixed after the run (below).
+
+Against the predeclared points, allergy session: (1) asked before
+options, (2) answer recorded and used, (3) options fetched and checked
+for egg, none containing it (suitability for owner review), (4) plan
+for exactly the selected dish, labelled as an adaptation (owner review
+of quantities and label), (5) a cited technique answer that states what
+the sources do not cover, (6) no budget stop. Office birthday: (3) met
+for the options; (4) to (6) not reached.
+
+## Spend
+
+$0.0319: 49 model turns (295,721 input and 4,619 output tokens), 18
+query embeddings, all reconciled; largest single reservation $0.0072.
+H8 total $0.0885 of $1.00; $0.9115 left.
+
+## Fixed after the run
+
+- **Quantity attribution in lists** (`agent/plan_quantities.py`,
+  `_forward_list_attachment`): when a comma or semicolon separates an
+  amount from the mention before it, and only prep, descriptor or
+  function words lie between the amount and the next mention, the amount
+  belongs to the next mention. Name-then-amount lists are unaffected.
+  Wrong amounts and swaps are still rejected. Test
+  `test_h8_amount_leads_its_ingredient_past_a_prep_word` (synthetic
+  recipe; fails on `dec4ef4`).
+
+## Across the three attempts
+
+Each attempt failed for a different reason, and each reason was a real
+defect: the stall stop (attempt 1), a claim check that ignored the
+user's answers (attempt 2), and quantity attribution in lists (attempt
+3). The follow-up framing worked in its one observed use. In every plan
+run the model re-fetched the selected recipe until the stall recovery
+fired; the recovery now carries the plan, but it costs three steps per
+plan. Six sessions in all, one complete: this says the workflows can
+complete under demo limits, not that they reliably do.

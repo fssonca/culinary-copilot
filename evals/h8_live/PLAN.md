@@ -186,3 +186,10 @@ Command: the attempt-2 command with
 `--scenarios-file evals/h8_live/scenarios_v4.json`,
 `--raw-dir data/h8-live/raw-attempt-3` and
 `--summary-out data/h8-live/summary-attempt-3.json`.
+
+## Third attempt result (2026-10-08)
+
+1 of 2 complete (`h8c-allergy-sleepover`: options checked for egg, plan,
+cited technique answer). The office-birthday plan was rejected by a
+quantity-check false positive, fixed after the run. $0.0319 spent, H8
+total $0.0885 of $1.00. Details: `RESULTS.md`, "Third attempt".
