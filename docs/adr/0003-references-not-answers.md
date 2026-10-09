@@ -1,6 +1,7 @@
 # ADR 0003: Stored recipes as references, not the answer
 
-Status: **proposed, amended** (2026-10-09), for Checkpoint E of
+Status: **accepted** (2026-10-09, Checkpoint E, owner approval as
+recommended, with the amendments below). Plan:
 `docs/milestone-4-plan.md`. Supersedes nothing; ADR 0002 (agent loop)
 stays in force. Evidence: `docs/m4/r1-corpus-readiness.md`.
 Evaluation: `docs/m4/evaluation-design.md`.
@@ -172,7 +173,7 @@ Computed by the loop from session evidence, not by the model alone:
 - supportability: whether each change has a substitution-table entry
   or a technique chunk.
 
-Proposed rule (thresholds owner-set at Checkpoint E): no changes →
+Proposed rule (thresholds owner-set at Checkpoint F, per Checkpoint E): no changes →
 `source`; changes all supportable and applicable → `adapted`;
 otherwise a clarification or an incomplete proposal, or (in increment
 2) `composed`. The model proposes a kind; the loop rejects a
@@ -337,3 +338,8 @@ Keep the data-integrity rule for the corpus and add one for answers:
   their source demonstrates, keep per-use distinctions, and record
   cooking guidance; the egg-free example is written against an entry's
   coverage, and a light butter cake is shown as not covered.
+- **2026-10-09, accepted at Checkpoint E:** the owner approved the
+  design as amended, the `AGENTS.md` wording (applied in R3), the
+  per-direction flag, the King Arthur sources (limited to their
+  demonstrated uses), and dropping the mandatory Epicure mention;
+  closeness thresholds move to Checkpoint F.

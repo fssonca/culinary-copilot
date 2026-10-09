@@ -1,7 +1,8 @@
 # Milestone 4 plan: recipes as references, the AI as the cook
 
-Status: **revision 3; R0 to R2 delivered and amended, awaiting the
-owner's Checkpoint E decisions** (2026-10-09). The owner approved R0 to
+Status: **revision 3; R0 to R2 delivered and amended; Checkpoint E
+approved as recommended by the owner** (2026-10-09). Next: D0 and R3,
+each on the owner's go-ahead. The owner approved R0 to
 R2 as preparation. R0: review packet `evals/h8_live/OWNER_REVIEW.md`
 (review findings recorded; owner verdict open; baseline skipped). R1:
 `docs/m4/r1-corpus-readiness.md`. R2:
@@ -278,17 +279,18 @@ demonstrates (a light butter cake is not covered).
 
 | Decision | Review recommendation | Owner decision |
 |---|---|---|
-| Design, check matrix, ingredient contract, evaluation design | Approve as amended | |
-| `AGENTS.md` wording for labelled answer content (ADR 0003) | Approve; applied in R3 | |
-| Per-direction flag | Approve: keep original text and indices; record class, rule and classifier version; credits may be skipped; headings and yield notes kept as structure; a placeholder marks missing instructions and never makes a recipe eligible for a finished plan; review `name_like` and `unclear` classes before applying | |
-| Substitution sources (R5) | Approve King Arthur's egg-replacement guide and its tested buttermilk substitutions, each limited to its demonstrated uses, with citation, applicability and reuse terms | |
-| Mandatory Epicure mention in options | Remove the mandatory user-facing mention; keep consulting Epicure before options (after any needed clarification) as default policy; name a pairing only when it informs the recommendation, otherwise keep the result in diagnostics | |
-| Optional Milestone 3 baseline | Skip for now | |
-| Closeness thresholds (ADR 0003) | Not covered by the review; proposed: set at Checkpoint F with the envelope thresholds, once R3 to R5 show what the measure sees | |
-| Push and merge of the reviewed work | Approve after normal checks pass, recording the limitations; paid Milestone 4 evaluation stays separately gated | |
+| Design, check matrix, ingredient contract, evaluation design | Approve as amended | Approved as recommended (owner, 2026-10-09) |
+| `AGENTS.md` wording for labelled answer content (ADR 0003) | Approve; applied in R3 | Approved as recommended (owner, 2026-10-09) |
+| Per-direction flag | Approve: keep original text and indices; record class, rule and classifier version; credits may be skipped; headings and yield notes kept as structure; a placeholder marks missing instructions and never makes a recipe eligible for a finished plan; review `name_like` and `unclear` classes before applying | Approved as recommended (owner, 2026-10-09) |
+| Substitution sources (R5) | Approve King Arthur's egg-replacement guide and its tested buttermilk substitutions, each limited to its demonstrated uses, with citation, applicability and reuse terms | Approved as recommended (owner, 2026-10-09) |
+| Mandatory Epicure mention in options | Remove the mandatory user-facing mention; keep consulting Epicure before options (after any needed clarification) as default policy; name a pairing only when it informs the recommendation, otherwise keep the result in diagnostics | Approved as recommended (owner, 2026-10-09) |
+| Optional Milestone 3 baseline | Skip for now | Approved as recommended (owner, 2026-10-09) |
+| Closeness thresholds (ADR 0003) | Not covered by the review; proposed: set at Checkpoint F with the envelope thresholds, once R3 to R5 show what the measure sees | Approved as recommended (owner, 2026-10-09) |
+| Push and merge of the reviewed work | Approve after normal checks pass, recording the limitations; paid Milestone 4 evaluation stays separately gated | Approved as recommended (owner, 2026-10-09) |
 
-Recorded by an AI assistant; not a signature. The decision column is
-the owner's.
+The owner approved every row as recommended on 2026-10-09 ("Checkpoint
+E - approve as recommended"). Recorded by an AI assistant at the
+owner's instruction; not a signature.
 
 ### R3. Ingredient contract, provenance schema, compatibility
 
@@ -500,6 +502,9 @@ checkpoints are recorded, never signed, by an assistant.
   Correction: not every H8 failure after the stall fix was a check
   rejecting a reasonable answer. Adapted answers become the first
   increment; composition keeps a separate acceptance gate.
+- **Checkpoint E (2026-10-09)**: the owner approved all decisions as
+  recommended; ADR 0003 accepted, evaluation design approved, closeness
+  thresholds moved to Checkpoint F.
 - **Revision 3 (2026-10-09)**: after the Checkpoint E review and the
   owner demo:
   1. D0 added for three defects seen in the demo (a new dish after a

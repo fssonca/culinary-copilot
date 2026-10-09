@@ -1,7 +1,7 @@
 # Milestone 4 evaluation design (R2)
 
-Proposed 2026-10-09 for Checkpoint E, with
-`docs/adr/0003-references-not-answers.md`. Written before any
+Proposed 2026-10-09 and approved at Checkpoint E the same day (owner,
+as recommended), with `docs/adr/0003-references-not-answers.md`. Written before any
 Milestone 4 implementation so it can guide it. Cases are drafts until
 Checkpoint F freezes them.
 
@@ -181,3 +181,4 @@ caught invalid proposal) and nothing invalid is delivered.
   demo defects (M4-12b to M4-14); adversarial cases for advice read as a
   fidelity claim, a use hidden beside a mention, a kept bake time
   without guidance and an entry used outside its recipe types.
+- **2026-10-09, approved at Checkpoint E** (owner, as recommended).
