@@ -4183,8 +4183,9 @@ def _mirror_get_factory(seen: list[tuple[tuple[str, str], str]]) -> Any:
 
 def test_plan_run_refetch_after_select_gets_full_document(engine) -> None:
     # Close-out regression (a): the plan run starts with an empty
-    # history, so re-fetching the selected recipe returns the full
-    # document and the plan with source quantities is accepted.
+    # history; since H8 attempt 3 (2026-10-08) its input carries the
+    # selected recipe's get_recipe output, so a re-fetch returns the
+    # short pointer and the plan with source quantities is accepted.
     from culinary_copilot.agent.loop import record_select
 
     store = PostgresSessionStore(engine)
@@ -4277,7 +4278,11 @@ def test_plan_run_refetch_after_select_gets_full_document(engine) -> None:
     result2 = _run(run_agent(state.id, deps=deps2))
     assert result2.stop_reason == "agent_sufficient_evidence"
     assert result2.phase == "plan"
-    assert seen == [(("odunola/foodie", "lentil-2"), "full")]
+    assert seen == [(("odunola/foodie", "lentil-2"), "short")]
+    first_turn = str(provider2.seen_inputs[0][-1].get("content"))
+    assert "Selected recipe: " in first_turn
+    assert '"source_id": "lentil-2"' in first_turn
+    assert "do not fetch it again" in first_turn
 
 
 def test_same_pair_twice_in_one_run_gets_pointer(engine) -> None:

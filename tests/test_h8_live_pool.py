@@ -77,7 +77,11 @@ def test_h8_live_needs_ack_and_fits_cap(monkeypatch: pytest.MonkeyPatch) -> None
         _args(acknowledge_live_run=live_run.H8_ACK_VALUE, ceiling_usd=1.01), _settings(), scenarios
     )
     assert any("exceeds $1.00 h8 pool cap" in p for p in over)
-    for old_value in ("h8-checkpoint-d-2026-10-08", "h8-attempt-2-2026-10-08"):
+    for old_value in (
+        "h8-checkpoint-d-2026-10-08",
+        "h8-attempt-2-2026-10-08",
+        "h8-attempt-3-2026-10-08",
+    ):
         old_ack = _problems(_args(acknowledge_live_run=old_value), _settings(), scenarios)
         assert any("h8 live run refused" in p for p in old_ack)
 
@@ -280,3 +284,20 @@ def test_v4_is_fresh_with_the_same_workflows() -> None:
             assert new["session"] == old["session"]
             assert new["settings"] == old["settings"]
     assert v4[1]["expected"]["allergen_terms"][0] == "egg"
+
+
+def test_v5_is_fresh_with_the_same_workflows() -> None:
+    earlier = [
+        live_run.load_scenarios(SCENARIOS.with_name(name))["scenarios"]
+        for name in ("scenarios.json", "scenarios_v3.json", "scenarios_v4.json")
+    ]
+    v5 = live_run.load_scenarios(SCENARIOS.with_name("scenarios_v5.json"))["scenarios"]
+    assert [s["key"] for s in v5] == ["h8d-family-picnic", "h8d-allergy-potluck"]
+    for i, new in enumerate(v5):
+        for old in (e[i] for e in earlier):
+            assert new["request"] != old["request"]
+            assert new["followup_message"] != old["followup_message"]
+            assert new["flow"] == old["flow"]
+            assert new["session"] == old["session"]
+            assert new["settings"] == old["settings"]
+    assert "walnut" in v5[1]["expected"]["allergen_terms"]

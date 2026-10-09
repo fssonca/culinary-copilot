@@ -1,6 +1,6 @@
 # Agent scoreboard (Milestone 3, Phase 7)
 
-Status: offline harness v12, updated 2026-10-08. The harness makes no
+Status: offline harness v13, updated 2026-10-08. The harness makes no
 model calls, embedding calls, web requests or downloads. Writes go to
 the disposable `culinary_check_phase7` database only (dropped
 afterward). The live evaluation (11 sessions, part 2) is summarized
@@ -25,11 +25,12 @@ Model quality is measured only by the live run.
   `uv run python evals/phase7_agent/run.py`. Writes `results.json` and
   `epicure_compare.json` into that directory.
 - `evals/phase7_agent/cases.json`: version
-  `phase7-cases-v12-2026-10-08`, 59 cases, sha256
-  `749e1bb76c9161ee45a9dd1d00d5a456ad3044ccf2e64f086f88008bf079d62e`
-  (recorded in `results.json` as `cases_sha256`; v1 and v8 to v11 sha
-  and aggregate kept as `history_v1`, `history_v8` to `history_v11`).
-  v12 adds the allergy-note case after the second H8 attempt; v11 adds
+  `phase7-cases-v13-2026-10-08`, 59 cases, sha256
+  `0bf78cf946dc52bfae3046ab8f6e26296edcd59cdcb332f82fd6ebe40117e67a`
+  (recorded in `results.json` as `cases_sha256`; v1 and v8 to v12 sha
+  and aggregate kept as `history_v1`, `history_v8` to `history_v12`).
+  v13 changes one expectation after the third H8 attempt (below); v12
+  adds the allergy-note case after the second; v11 adds
   the 3 stall-recovery cases after the first (both listed below). v10
   (H7) adds 11 cases (listed below) and checks the per-turn decision
   log in every case: one `agent_turn` event per turn with offered and
@@ -49,7 +50,7 @@ Model quality is measured only by the live run.
   permission-off backend gate is additionally probed directly with
   `run_tool`.
 
-## Aggregates (59 cases, v12)
+## Aggregates (59 cases, v13)
 
 - Task completion (scored): 59/59 (rate 1.0). Expected-fail: none.
 - Adversarial catch rate: 4/4 (1.0), each with its pinned rejection
@@ -160,6 +161,12 @@ Model quality is measured only by the live run.
   answer): rejected once, then a description passes. Imperatives
   count after first/next/now/finally/simply/just/you/we/after-that
   as well as sentence starts.
+
+v13 (2026-10-08, after the third H8 attempt): the plan run's input now
+carries the selected recipe's `get_recipe` output, so
+`p7-plan-refetch-full` expects its re-fetch to return the short pointer
+(`duplicate: true`) instead of the full document; the plan with source
+quantities is still accepted. Aggregates unchanged from v12.
 
 v12 (2026-10-08, after the second H8 attempt), passes; fails on the
 loop before the fix (`b40ece2`):

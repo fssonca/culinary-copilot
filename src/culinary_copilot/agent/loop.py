@@ -1405,6 +1405,7 @@ def build_turn_input(
     wrap_up: bool = False,
     plan_requirement: str | None = None,
     withheld_tools: list[str] | None = None,
+    selected_recipe: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Model input: user messages + history + task framing snapshot.
 
@@ -1485,8 +1486,18 @@ def build_turn_input(
             f"\nSelected dish: {dish.get('title')!r} ({dish.get('dataset_id')}/"
             f"{dish.get('source_id')}). The user chose it from your options, so "
             "the earlier request is answered: finish with its cooking plan "
-            "(fetch it with get_recipe if its output is not in this conversation)."
         )
+        if selected_recipe is not None:
+            # H8 attempt 3 (2026-10-08): every plan run fetched the selected
+            # recipe three times (full, pointer, pointer) until the stall
+            # recovery fired. The run now carries its get_recipe output.
+            text += (
+                "from its get_recipe output below, already fetched: do not "
+                "fetch it again (use a ranged get_recipe only for directions "
+                "marked clipped).\nSelected recipe: " + json.dumps(selected_recipe, default=str)
+            )
+        else:
+            text += "(fetch it with get_recipe if its output is not in this conversation)."
     if isinstance(plan_steps, list) and plan_steps:
         # H8 attempt 2 (2026-10-08): asked how to store the bars, the model
         # ran 17 technique searches, then re-issued the plan with advice
@@ -1561,10 +1572,10 @@ def _summarize_result(name: str, result: dict[str, Any]) -> dict[str, Any]:
             "title": result.get("title"),
         }
         summary["message"] = (
-            "not re-sent: the full recipe (ingredients and directions) is "
-            "in your earlier get_recipe output for this dataset_id and "
-            "source_id, still in this conversation; use that output, do "
-            "not re-fetch"
+            "not re-sent: the full recipe (ingredients and directions) for "
+            "this dataset_id and source_id is still in this conversation, "
+            "in an earlier get_recipe output or as the Selected recipe; use "
+            "it, do not re-fetch"
         )
     elif name == "get_recipe" and result.get("ok"):
         doc = result.get("recipe") or {}
@@ -2722,6 +2733,25 @@ async def _run_agent(
         # in this run's capped history. A new run starts empty, and
         # capped-out outputs come back full.
         context.visible_full_recipes = visible_full_recipe_pairs(history)
+        # Selected recipe in the plan run's input (H8 attempt 3,
+        # 2026-10-08): the same summary a fetch returns, so the model need
+        # not fetch it, and a fetch returns the short pointer.
+        selected_recipe: dict[str, Any] | None = None
+        if state.current_phase == "select" and not state.cooking_plan and selected_doc:
+            dish = state.selected_dish or {}
+            pair = (str(dish.get("dataset_id") or ""), str(dish.get("source_id") or ""))
+            shown = _summarize_result(
+                "get_recipe",
+                {
+                    "ok": True,
+                    "recipe": {"dataset_id": pair[0], "source_id": pair[1], **selected_doc},
+                },
+            )
+            if isinstance(shown.get("recipe"), dict) and shown["recipe"].get("ingredients"):
+                selected_recipe = {"recipe": shown["recipe"]}
+                if shown.get("message"):
+                    selected_recipe["message"] = shown["message"]
+                context.visible_full_recipes = set(context.visible_full_recipes) | {pair}
         wrap_up = wrap_up_next and not final_turn
         wrap_up_next = False
         # Only before a plan exists: after it, the line made a technique
@@ -2767,6 +2797,7 @@ async def _run_agent(
             wrap_up=wrap_up,
             plan_requirement=plan_requirement,
             withheld_tools=wrap_up_withheld if wrap_up else None,
+            selected_recipe=selected_recipe,
         )
         est_in = estimate_turn_input(turn_input, tool_defs, response_schema=directive_schema)
         if used_in + est_in >= in_ceiling or used_out >= out_ceiling:
@@ -2819,6 +2850,7 @@ async def _run_agent(
                 evidence_digest=session_evidence_digest(store, session_id),
                 final_turn=True,
                 plan_requirement=plan_requirement,
+                selected_recipe=selected_recipe,
             )
             est_in = estimate_turn_input(turn_input, tool_defs, response_schema=directive_schema)
         # H7 decision log: offered/withheld with reasons plus the

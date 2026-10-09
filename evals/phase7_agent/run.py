@@ -1522,6 +1522,41 @@ def main() -> int:
         },
         "note": "pre-v12: 58 cases; an answer-named allergen in a note was not tested",
     }
+    # v12 history: the last result before v13 (after H8 attempt 3,
+    # 2026-10-08): v13 expects the plan-run re-fetch to return the pointer.
+    history_v12 = {
+        "cases_version": "phase7-cases-v12-2026-10-08",
+        "cases_sha256": "749e1bb76c9161ee45a9dd1d00d5a456ad3044ccf2e64f086f88008bf079d62e",
+        "aggregate": {
+            "total": 59,
+            "scored": 59,
+            "completed": 59,
+            "task_completion_rate": 1.0,
+            "expected_fail_total": 0,
+            "expected_fail_completed": 0,
+            "stop_reason_distribution": {
+                "agent_sufficient_evidence": 46,
+                "agent_validation_failed": 4,
+                "agent_needs_user_input": 4,
+                "agent_max_steps": 1,
+                "agent_tool_budget_exhausted": 1,
+                "agent_token_budget_exhausted": 1,
+                "agent_wall_clock_exceeded": 1,
+                "agent_no_progress": 1,
+            },
+            "invalid_transitions_total": 1,
+            "tool_argument_validity_mean": 0.9932203389830508,
+            "unnecessary_call_rate_mean": 0.0,
+            "epicure_compliance_rate": 0.9830508474576272,
+            "source_reference_correctness_rate": 1.0,
+            "unsupported_claim_cases": 5,
+            "adversarial_total": 4,
+            "adversarial_caught": 4,
+            "adversarial_catch_rate": 1.0,
+            "latency_tokens_cost": "not measured offline (scripted provider)",
+        },
+        "note": "pre-v13: no selected recipe in the plan run's input; a re-fetch came back full",
+    }
     out = {
         "cases_file": "cases.json",
         "cases_version": payload.get("version"),
@@ -1531,6 +1566,7 @@ def main() -> int:
         "history_v9": history_v9,
         "history_v10": history_v10,
         "history_v11": history_v11,
+        "history_v12": history_v12,
         "note": (
             "offline system results (loop control, tools, validators), "
             "not model judgement; latency/tokens/cost not measured offline"
