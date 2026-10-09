@@ -1,13 +1,11 @@
 # Milestone 3 hardening plan: quantity, directions, budgets, data and ranking
 
-Status: **H0 to H7 done; Checkpoint D decided** (2026-10-08, recorded in
-`docs/phase7-owner-decisions.md`). Ranking unchanged. H5 cleanup
-corrected, rehearsed and applied to the application database on
-2026-10-08 (`docs/h5-summary-cleanup.md`). H8 run four times (`evals/h8_live/RESULTS.md`), each attempt on
-fresh scenarios after fixing what the previous one exposed: 0 of 2,
-0 of 2, 1 of 2 (allergy), 1 of 2 (party baking); each workflow has
-completed once. H8 spend $0.1133 of the owner's $1.00 pool; next step
-awaits the owner. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
+Status: **Closed 2026-10-08** by the owner as the grounded baseline
+(see "Close-out" at the end). H0 to H7 done; Checkpoint D decided
+(recorded in `docs/phase7-owner-decisions.md`); ranking unchanged; H5
+cleanup applied to the application database (`docs/h5-summary-cleanup.md`);
+H8 run four times (`evals/h8_live/RESULTS.md`): 2 of 8 sessions complete,
+one per workflow. The next goal is `docs/milestone-4-plan.md`. Agent prompts per phase: `docs/milestone-3-hardening-prompts.md`. This plan follows the
 owner's review of the 2026-10-06/07 demo-hardening work and the
 five-session live evaluation (both recorded in
 `docs/phase7-owner-decisions.md`). Baseline: branch
@@ -425,3 +423,38 @@ evidence, not confirmation.
 Raising session limits; global title-first ranking; application-database
 writes outside an approved H5 re-ingestion; LangGraph, tracing platforms,
 deployment and CI gates (later milestones).
+
+## Close-out (2026-10-08)
+
+Recorded by an AI assistant; not a signature. After H8 attempt 4 the
+owner asked what retrieval and Epicure are for, noted that holding every
+answer to one stored recipe makes the system a recipe search with little
+room for the AI, and decided to close Milestone 3 as the grounded
+baseline and plan a new goal: recipes as references, with the AI
+adapting and composing under explicit provenance
+(`docs/milestone-4-plan.md`).
+
+What Milestone 3 delivers:
+
+- The agent loop with sessions, clarification, options, selection,
+  plans, technique answers and web discovery answers, all grounded:
+  every option fetched, every plan from one stored recipe with exact
+  amounts, technique answers citing returned chunks, food-safety
+  citations for raw protein, allergy checks on listed ingredients.
+- Hardening H0 to H7: ingredient-aware quantity checks, clipped
+  directions and authoritative labels, budget and stall recovery,
+  decision logging, harness cases v13 (59/59).
+- The H5 corpus cleanup (158 malformed records removed and quarantined).
+- H8: each workflow completed once live under demo limits, on fresh
+  scenarios; four check false positives found and fixed along the way.
+
+Not done, carried as open items:
+
+- No measurement batch on one frozen build: the completion rate of the
+  final build is unknown (2 of 8 sessions across four builds).
+- Owner review of the two completed H8 transcripts against the
+  predeclared criteria; reconciliation of the 2026-10-06/07 spend.
+- 1,121 recipes have a direction of two words or fewer (a heuristic
+  upper bound for author credits and similar non-steps); plans of
+  those recipes cannot be labelled faithful.
+- Push and merge of `m3-checkpoint-c-demo-hardening` (not authorized).

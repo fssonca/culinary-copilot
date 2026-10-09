@@ -523,3 +523,13 @@ family picnic session); the potluck plan was rejected by an
 equipment-size false positive (fixed afterwards), then by the fidelity
 check over an author-credit "direction" in the source (open). H8 total
 $0.1133 of $1.00. See `evals/h8_live/RESULTS.md`, "Fourth attempt".
+
+## Milestone 3 closed; new goal (2026-10-08)
+
+Recorded by an AI assistant; not a signature. The owner closed
+Milestone 3 as the grounded baseline (close-out in
+`docs/milestone-3-hardening-plan.md`) and set a new goal: stored recipes
+as references and guidance rather than the answer itself, with Epicure
+and retrieval supporting adaptation and composition under explicit
+provenance. Plan: `docs/milestone-4-plan.md` (drafted, not approved).
+No measurement batch was run. Push still not authorized.
