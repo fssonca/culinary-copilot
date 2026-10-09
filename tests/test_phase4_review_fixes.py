@@ -376,7 +376,7 @@ async def _stream_then_disconnect(
 
     async def send(message: dict[str, Any]) -> None:
         if message["type"] == "http.response.body" and message.get("body"):
-            if first_chunk.is_set() and spec >= "2.4":
+            if first_chunk.is_set() and spec >= "2.4" and (ready is None or ready.is_set()):
                 raise OSError("client gone")
             chunks.append(message["body"])
             first_chunk.set()

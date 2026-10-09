@@ -1570,6 +1570,21 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr(_socket.socket, "connect", _guarded_connect)
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
 
+    # The technique loader reads the local corpus (data/technique-corpus,
+    # git-ignored); a checkout without it (CI) cannot run this path.
+    corpus_dir = Path(__file__).resolve().parents[1] / "data" / "technique-corpus"
+    manifest_path = (
+        Path(__file__).resolve().parents[1] / "evals" / "technique_corpus" / "manifest.json"
+    )
+    ingested = [
+        doc_id
+        for doc_id, record in json.loads(manifest_path.read_text(encoding="utf-8"))["docs"].items()
+        if record.get("status") == "ingested"
+    ]
+    missing = [d for d in ingested if not (corpus_dir / f"{d}.txt").exists()]
+    if missing:
+        pytest.skip(f"local technique corpus absent ({len(missing)} docs missing)")
+
     base = Settings().database_url.get_secret_value()
     head, _, _ = base.rpartition("/")
     db_name = "culinary_test_livepath"
