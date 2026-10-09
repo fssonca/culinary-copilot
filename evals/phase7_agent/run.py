@@ -1557,6 +1557,42 @@ def main() -> int:
         },
         "note": "pre-v13: no selected recipe in the plan run's input; a re-fetch came back full",
     }
+    # v13 history: the last result before v14 (D0, after the owner
+    # demo of 2026-10-09): v14 adds a new dish after a plan and advice
+    # to follow a source cue.
+    history_v13 = {
+        "cases_version": "phase7-cases-v13-2026-10-08",
+        "cases_sha256": "0bf78cf946dc52bfae3046ab8f6e26296edcd59cdcb332f82fd6ebe40117e67a",
+        "aggregate": {
+            "total": 59,
+            "scored": 59,
+            "completed": 59,
+            "task_completion_rate": 1.0,
+            "expected_fail_total": 0,
+            "expected_fail_completed": 0,
+            "stop_reason_distribution": {
+                "agent_sufficient_evidence": 46,
+                "agent_validation_failed": 4,
+                "agent_needs_user_input": 4,
+                "agent_max_steps": 1,
+                "agent_tool_budget_exhausted": 1,
+                "agent_token_budget_exhausted": 1,
+                "agent_wall_clock_exceeded": 1,
+                "agent_no_progress": 1,
+            },
+            "invalid_transitions_total": 1,
+            "tool_argument_validity_mean": 0.9932203389830508,
+            "unnecessary_call_rate_mean": 0.0,
+            "epicure_compliance_rate": 0.9830508474576272,
+            "source_reference_correctness_rate": 1.0,
+            "unsupported_claim_cases": 5,
+            "adversarial_total": 4,
+            "adversarial_caught": 4,
+            "adversarial_catch_rate": 1.0,
+            "latency_tokens_cost": "not measured offline (scripted provider)",
+        },
+        "note": "pre-v14: no new dish after a plan, no advice to follow a source cue",
+    }
     out = {
         "cases_file": "cases.json",
         "cases_version": payload.get("version"),
@@ -1567,6 +1603,7 @@ def main() -> int:
         "history_v10": history_v10,
         "history_v11": history_v11,
         "history_v12": history_v12,
+        "history_v13": history_v13,
         "note": (
             "offline system results (loop control, tools, validators), "
             "not model judgement; latency/tokens/cost not measured offline"

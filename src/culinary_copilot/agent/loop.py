@@ -1510,7 +1510,9 @@ def build_turn_input(
             "question, say so in the answer text instead of adding advice "
             "they do not support. Two or three technique searches are "
             "enough; then answer. Re-issue the plan only when the user asks "
-            "to change it."
+            "to change it. If the user asks for a different dish, treat it "
+            "as a new request: search and fetch recipes for it and finish "
+            "with options (the current plan stays in the session history)."
         )
     if plan_requirement:
         text += "\n" + plan_requirement
@@ -3935,7 +3937,10 @@ async def _handle_finish(
             reasoning_diagnostic=reasoning_diagnostic,
         )
     selected = state.selected_dish or {}
-    if selected and wants_options:
+    # After a finished plan, options answer a request for a different
+    # dish (owner demo 2026-10-09); before the plan they stay rejected.
+    new_dish = bool(selected and wants_options and state.cooking_plan)
+    if selected and wants_options and not new_dish:
         return await _validation_feedback(
             deps,
             store,
@@ -4667,6 +4672,11 @@ async def _handle_finish(
 
         def _apply(snapshot: Any) -> Any:
             snapshot.suggestions = selections
+            if new_dish:
+                # The earlier plan stays in the event log
+                # (``superseded_plan`` below); the state moves on.
+                snapshot.selected_dish = None
+                snapshot.cooking_plan = {}
             snapshot.evidence = list(snapshot.evidence) + [
                 {
                     "type": "recommend_options",
@@ -4698,6 +4708,11 @@ async def _handle_finish(
             "tool_calls_remaining": state.tool_calls_remaining,
             **(turn_usage or {}),
         }
+        if new_dish:
+            event_payload["superseded_plan"] = {
+                "selected_dish": dict(selected),
+                "plan": dict(state.cooking_plan),
+            }
         if reasoning_diagnostic is not None:
             event_payload["reasoning_diagnostic"] = reasoning_diagnostic
     elif wants_answer:

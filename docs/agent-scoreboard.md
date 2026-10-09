@@ -1,6 +1,6 @@
 # Agent scoreboard (Milestone 3, Phase 7)
 
-Status: offline harness v13, updated 2026-10-08. The harness makes no
+Status: offline harness v14, updated 2026-10-09. The harness makes no
 model calls, embedding calls, web requests or downloads. Writes go to
 the disposable `culinary_check_phase7` database only (dropped
 afterward). The live evaluation (11 sessions, part 2) is summarized
@@ -25,11 +25,12 @@ Model quality is measured only by the live run.
   `uv run python evals/phase7_agent/run.py`. Writes `results.json` and
   `epicure_compare.json` into that directory.
 - `evals/phase7_agent/cases.json`: version
-  `phase7-cases-v13-2026-10-08`, 59 cases, sha256
-  `0bf78cf946dc52bfae3046ab8f6e26296edcd59cdcb332f82fd6ebe40117e67a`
-  (recorded in `results.json` as `cases_sha256`; v1 and v8 to v12 sha
-  and aggregate kept as `history_v1`, `history_v8` to `history_v12`).
-  v13 changes one expectation after the third H8 attempt (below); v12
+  `phase7-cases-v14-2026-10-09`, 61 cases, sha256
+  `b63d98beccfc083fc490eb5a74423987974a54a7f3077d92fcee0a148fe96989`
+  (recorded in `results.json` as `cases_sha256`; v1 and v8 to v13 sha
+  and aggregate kept as `history_v1`, `history_v8` to `history_v13`).
+  v14 adds 2 cases after the owner demo of 2026-10-09 (below); v13
+  changes one expectation after the third H8 attempt (below); v12
   adds the allergy-note case after the second; v11 adds
   the 3 stall-recovery cases after the first (both listed below). v10
   (H7) adds 11 cases (listed below) and checks the per-turn decision
@@ -50,14 +51,14 @@ Model quality is measured only by the live run.
   permission-off backend gate is additionally probed directly with
   `run_tool`.
 
-## Aggregates (59 cases, v13)
+## Aggregates (61 cases, v14)
 
-- Task completion (scored): 59/59 (rate 1.0). Expected-fail: none.
+- Task completion (scored): 61/61 (rate 1.0). Expected-fail: none.
 - Adversarial catch rate: 4/4 (1.0), each with its pinned rejection
   text. Adversarial cases: `p7-epicure-skip-unjustified` ("needs
   Epicure consulted"), `p7-search-invented-url` ("was not returned in
   this session"), `p7-tool-invalid-args`, `p7-invalid-transition-caught`.
-- Stop reasons: `agent_sufficient_evidence` 46,
+- Stop reasons: `agent_sufficient_evidence` 48,
   `agent_validation_failed` 4, `agent_needs_user_input` 4,
   `agent_max_steps` 1, `agent_tool_budget_exhausted` 1,
   `agent_token_budget_exhausted` 1, `agent_wall_clock_exceeded` 1,
@@ -68,9 +69,9 @@ Model quality is measured only by the live run.
   `p7-tool-invalid-args` (0.8) and `p7-vector-unconfigured` (0.8:
   the refused vector call, recovered with fulltext).
 - Unnecessary-call rate (mean): 0.0. No forbidden calls.
-- Epicure compliance: 58/59 (0.983). The single non-compliant case is
+- Epicure compliance: 60/61 (0.984). The single non-compliant case is
   the adversarial unjustified skip, correctly caught.
-- Source-reference correctness: 59/59 (1.0).
+- Source-reference correctness: 61/61 (1.0).
 - Unsupported-claim cases: 5 (the three time-claim regression cases
   plus `p7-dropped-named` and `p7-negated-pairing`, whose first
   finishes are rejected on purpose; all recover or fail as designed).
@@ -161,6 +162,18 @@ Model quality is measured only by the live run.
   answer): rejected once, then a description passes. Imperatives
   count after first/next/now/finally/simply/just/you/we/after-that
   as well as sentence starts.
+
+v14 (2026-10-09, D0, after the owner demo), passes; both cases fail on
+the loop before the fixes (`681927a`) and the other 59 pass:
+
+- `p7-new-dish-after-plan`: after a finished plan, a request for a
+  different dish finishes with options; the session moves to
+  `recommend`, the selection and plan are cleared, and the earlier plan
+  is kept in the finish event (`superseded_plan`).
+- `p7-plan-advice-source-cue`: an adaptation telling the cook to follow
+  the source's visual doneness cues is advice, not a fidelity claim;
+  the plan is accepted on its first attempt. Fidelity claims keep their
+  verdict (`p7-h3-fidelity-claim`).
 
 v13 (2026-10-08, after the third H8 attempt): the plan run's input now
 carries the selected recipe's `get_recipe` output, so

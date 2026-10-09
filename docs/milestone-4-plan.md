@@ -147,6 +147,15 @@ version, history kept) alongside the code; Checkpoint F freezes them.
 
 ### D0. Demo defects on the Milestone 3 build (offline)
 
+Status (2026-10-09, branch `m4-d0-demo-defects`): items 1, 3 and 4
+done, harness v14 (61/61); item 2 is blocked on the owner: the
+technique corpus has no source classifying cured meats as ready to
+eat, so no term has moved. The demo pizza plan's retry (which cited a
+food-safety chunk) was rejected only for the fidelity claim; replayed
+offline, the fixed check accepts it.
+Item 1 allows `plan → recommend` only; `plan → clarify` was not needed
+by the demo case and is left out.
+
 Three defects from the owner's demo sessions of 2026-10-09
 (`evals/h8_live/RESULTS.md`, "Demo check"). They concern today's
 behaviour, not the Milestone 4 design, so D0 does not wait for

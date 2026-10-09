@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,7 +15,7 @@ from culinary_copilot.api.clarification import build_router as build_clarificati
 from culinary_copilot.api.recommendations import build_router as build_recommendations_router
 from culinary_copilot.api.retrieval import build_router as build_retrieval_router
 from culinary_copilot.api.sessions import build_router as build_sessions_router
-from culinary_copilot.config import Settings
+from culinary_copilot.config import Settings, session_limit_report
 from culinary_copilot.db import check_database, create_db_engine
 from culinary_copilot.llm.client import OpenAIApplicationProvider
 from culinary_copilot.recipes.repository import (
@@ -88,6 +89,22 @@ def _checked_dataset_id(dataset_id: str | None) -> str | None:
     return dataset_id
 
 
+_LOG = logging.getLogger(__name__)
+
+
+def log_session_limits(settings: Settings) -> list[str]:
+    """Log the session limits; warn when any is above the demo value."""
+    summary, above = session_limit_report(settings)
+    _LOG.info("session limits: %s", summary)
+    if above:
+        _LOG.warning(
+            "session limits above the make demo values: %s; for a demo, start "
+            "the server with make demo",
+            "; ".join(above),
+        )
+    return above
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     engine = create_db_engine(settings)
@@ -99,6 +116,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        log_session_limits(settings)
         if settings.llm_enabled:
             try:
                 await llm_provider.start()
