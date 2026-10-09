@@ -1,11 +1,16 @@
 # Milestone 4 plan: recipes as references, the AI as the cook
 
-Status: **draft revision 2, not approved** (2026-10-09). Revision 1
-(2026-10-08) was reviewed; this revision addresses the review (see
-"Revision history"). Follows the close of Milestone 3
-(`docs/milestone-3-hardening-plan.md`, "Close-out"). Branch for this
-work: to be cut from `m3-checkpoint-c-demo-hardening` after the owner
-decides on pushing and merging it.
+Status: **draft revision 2; R0 to R2 delivered, awaiting Checkpoint E**
+(2026-10-09). The owner approved R0 to R2 as preparation. R0: review
+packet `evals/h8_live/OWNER_REVIEW.md` (owner items open; baseline not
+run). R1: `docs/m4/r1-corpus-readiness.md`. R2:
+`docs/adr/0003-references-not-answers.md` and
+`docs/m4/evaluation-design.md`. Revision 1 (2026-10-08) was reviewed;
+revision 2 addresses the review (see "Revision history"). Follows the
+close of Milestone 3 (`docs/milestone-3-hardening-plan.md`,
+"Close-out"). Branch: this work continues on
+`m3-checkpoint-c-demo-hardening` until the owner decides on pushing and
+merging it.
 
 ## Goal
 

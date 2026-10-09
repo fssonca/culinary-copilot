@@ -533,3 +533,12 @@ as references and guidance rather than the answer itself, with Epicure
 and retrieval supporting adaptation and composition under explicit
 provenance. Plan: `docs/milestone-4-plan.md` (drafted, not approved).
 No measurement batch was run. Push still not authorized.
+
+## Milestone 4 preparation, R0 to R2 (2026-10-09)
+
+Recorded by an AI assistant; not a signature. The owner approved R0 to
+R2 of `docs/milestone-4-plan.md` (revision 2) as preparation ("proceed
+until r2"). Delivered: the H8 review packet and spend table (R0; the
+owner items and the optional paid baseline remain open), the read-only
+corpus readiness report (R1), and ADR 0003 with the evaluation design
+(R2). Checkpoint E is next: the owner approves or amends the design.
