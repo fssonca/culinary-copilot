@@ -95,7 +95,7 @@ Corpus facts (read-only, 2026-10-08/09):
 | Kind | When | Built from | Strict | Plausibility |
 |---|---|---|---|---|
 | Source | A stored recipe fits as is | One recipe | Everything (Milestone 3 checks) | — |
-| Adapted | A stored recipe fits after changes (restriction, pantry, scale with a known anchor, technique, style) | One recipe, cited substitution guidance, Epicure candidates, technique chunks | Unchanged elements meet the source rule; allergens; food safety | Changed amounts, times, temperatures, where evidence suffices |
+| Adapted | A stored recipe fits after changes (restriction, pantry, scale, technique, style) | One recipe, cited substitution guidance, Epicure candidates, technique chunks | Unchanged elements meet the source rule; allergens; food safety | Changed amounts, times, temperatures, where evidence suffices |
 | Composed | No stored recipe is close enough, or the user asks for something new | 2–5 fetched reference recipes plus the above | Allergens; food safety; any element labelled source | All generated amounts, times, temperatures, where evidence suffices |
 
 "Close enough" is measured, not left to the model alone: ingredient and
@@ -103,10 +103,13 @@ title overlap between the request (with confirmed answers) and the best
 fetched recipe, plus the constraint check. The model proposes the kind;
 the loop checks it against the measure and the evidence.
 
-**Scaling.** Ratios alone cannot scale a recipe: doubling every amount
-keeps them. Scaling needs a batch-size anchor (stated servings or yield,
-pan size, piece count). Without one, the answer is a generated batch
-with an estimated yield, labelled as such, not a verified scaling.
+**Scaling.** An explicit factor ("double this") supplies itself:
+multiply the stated amounts and leave an unstated yield unknown. A
+target quantity ("enough for eight") needs an anchor (stated servings or
+yield, a yield note, a piece count, a portion size from the user);
+without one the answer asks or is an incomplete proposal. Times, pans
+and equipment are rechecked separately, never multiplied (ADR 0003,
+"Scaling").
 
 **Delivery order.** Adapted answers are the first increment, starting
 with a small set of well-supported adaptations. Composed answers stay
@@ -191,7 +194,7 @@ version, history kept) alongside the code; Checkpoint F freezes them.
 - UI labels; the proposed `AGENTS.md` wording for labelled answer
   content;
 - worked examples: an egg-free version of a stored cake, a pantry swap,
-  a doubled batch with and without a yield anchor, a dish the corpus
+  an explicit doubling and a target quantity with and without an anchor, a dish the corpus
   lacks.
 
 Evaluation design, in the same phase so it guides implementation:
@@ -280,8 +283,8 @@ whether the Epicure-before-options rule is kept.
 
 - One source recipe, changes labelled with reason and basis.
 - Start with well-supported cases: allergen or diet versions covered by
-  the substitution table, pantry swaps with table entries, scaling with
-  a known anchor, technique changes backed by technique chunks.
+  the substitution table, pantry swaps with table entries, explicit
+  scaling factors and anchored target quantities, technique changes backed by technique chunks.
 - Recipes previously dropped for one violating ingredient become
   candidates for an adapted answer when the table covers the swap.
 - Framing, loop and UI for adapted answers: per-element provenance
