@@ -193,3 +193,27 @@ Command: the attempt-2 command with
 cited technique answer). The office-birthday plan was rejected by a
 quantity-check false positive, fixed after the run. $0.0319 spent, H8
 total $0.0885 of $1.00. Details: `RESULTS.md`, "Third attempt".
+
+## Fourth attempt: freeze record (2026-10-08)
+
+Recorded by an AI assistant at the owner's go-ahead ("proceed with your
+recommendations, do the new attempt"); not a signature.
+
+| Item | Value |
+|---|---|
+| Label | H8 attempt 4; acknowledgement `h8-attempt-4-2026-10-08` (earlier values refused) |
+| Commit | Code as of `3ec6beb`: attempt-3 fix (list quantity attribution, `8bb1449`) and the selected recipe in the plan run's input. The commit that records this table changes only docs. |
+| Corpus | Unchanged: 15,875 recipes, 644 quarantine rows, 3 imports (last `foodie-repair-v5-20261008`), 0 `summary` titles |
+| Model, reasoning effort, service tier | `gpt-6-luna`, `LLM_REC_REASONING_EFFORT=none`, standard tier |
+| Limits | Demo limits, as in the scenarios file |
+| Retrieval, Epicure, embeddings | `RETRIEVAL_MODE=fulltext`, technique retrieval fulltext, `EPICURE_ENABLED=true`, `EMBEDDINGS_ENABLED=true`, `WEB_SEARCH_ENABLED=false` |
+| Scenarios | `scenarios_v5.json`, freeze sha256 `cbbc6126ceb63e604eda19e419cc57e0cd023d9769c61b706cf65f4c560b1db3`: `h8d-family-picnic`, `h8d-allergy-potluck` (tree nuts), written before this run |
+| Harness | Cases v13, 59/59 |
+| Budget | H8 pool $1.00; $0.0885 spent by attempts 1 to 3; $0.9115 available |
+| Success | Unchanged from "Success, declared before the run" above |
+
+Command: the attempt-3 command with
+`--acknowledge-live-run h8-attempt-4-2026-10-08`,
+`--scenarios-file evals/h8_live/scenarios_v5.json`,
+`--raw-dir data/h8-live/raw-attempt-4` and
+`--summary-out data/h8-live/summary-attempt-4.json`.

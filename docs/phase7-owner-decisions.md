@@ -509,3 +509,11 @@ H8 attempt 3 result (recorded by an AI assistant): 1 of 2 complete (the
 allergy sleepover session); the office-birthday plan was rejected by a
 quantity-check false positive, fixed afterwards. H8 total $0.0885 of
 $1.00. See `evals/h8_live/RESULTS.md`, "Third attempt".
+
+### After the third H8 attempt (2026-10-08)
+
+Recorded by an AI assistant; not a signature. The owner approved the
+recommendations: the selected recipe goes into the plan run's input
+(instead of withholding the full fetch), and a fourth, separately
+labelled attempt runs on fresh scenarios (`scenarios_v5.json`). Push
+still not authorized.
