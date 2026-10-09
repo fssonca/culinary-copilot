@@ -147,6 +147,23 @@ version, history kept) alongside the code; Checkpoint F freezes them.
 
 ### D0. Demo defects on the Milestone 3 build (offline)
 
+Status (2026-10-09, branch `m4-d0-demo-defects`): items 1, 3 and 4
+done, harness v14 (61/61). Item 2 stays open with the list unchanged
+(strict): the technique corpus has no source classifying cured meats as
+ready to eat, and with the owner's go-ahead the FSIS "Sausages and Food
+Safety" page was tried through the allowlisted fetcher, but
+fsis.usda.gov now answers 403 to every page, including ones fetched
+before, so the source was not added and the block was not worked
+around. Search summaries of that page describe dry sausages such as
+pepperoni as ready to eat but not cooked, with a caution for at-risk
+groups; a future rule should keep that caution rather than drop the
+food-safety line. Options: retry the fetch later, or ingest a copy the
+owner saves from a browser, with its provenance recorded. The demo pizza plan's retry (which cited a
+food-safety chunk) was rejected only for the fidelity claim; replayed
+offline, the fixed check accepts it.
+Item 1 allows `plan → recommend` only; `plan → clarify` was not needed
+by the demo case and is left out.
+
 Three defects from the owner's demo sessions of 2026-10-09
 (`evals/h8_live/RESULTS.md`, "Demo check"). They concern today's
 behaviour, not the Milestone 4 design, so D0 does not wait for

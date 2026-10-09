@@ -1,6 +1,6 @@
 {
-  "version": "phase7-cases-v13-2026-10-08",
-  "note": "SYNTHETIC scripted model turns, not model output. v13 (after H8 attempt 3): the plan run's input carries the selected recipe's get_recipe output, so p7-plan-refetch-full now expects the re-fetch in the plan run to return the short pointer (duplicate true); the plan with source quantities is still accepted. SYNTHETIC scripted model turns, not model output. v12 (H8 attempt 2) adds p7-allergy-note-names-allergen: after the answer \"peanuts\", an option note telling the user to check packages for peanut ingredients is not an unsupported pairing claim. SYNTHETIC scripted model turns, not model output. v11 (stall recovery, after the first H8 attempt) adds 3 cases: a stall gets one tool-less finishing turn that finishes with options (discover) or with the plan (select, the H8 party-baking pattern), and a tool call on that turn still stops with agent_no_progress. SYNTHETIC scripted model turns, not model output. v10 (H7) adds 11 cases: the 2026-10-07 recovery paths (technique answer after a plan, dropped option named, negated pairing mention, wrap-up withholds only repeated tools, repeated search marked, select phase withholds search and pairings, tree-nut allergy checked, allergy line keeps constraints_honored empty) and H2/H3 (swapped quantities, clipped directions, fidelity claim); every case also checks the per-turn decision log. v9 (H4 budget recovery): p7-budget-tools now scripts the tool-less finishing turn after the excess batch (a question), and p7-budget-tools-no-finish keeps the immediate stop when that turn is unaffordable (output ceiling 520: the first turn has the 500-token minimum, the batch leaves less). v8 requires direction coverage for \"source\" (p7-plan-partial-coverage omits the marinade and is model_adaptation; p7-plan-faithful-source cites all six). v7 web guard; v6 plan attribution; v5 duplicate visibility; v4 time/honored/refetch; v3 vector/resume; v2 scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored stop reasons alone; aggregates kept in results.json history. Later edits need a new version, never a silent change.",
+  "version": "phase7-cases-v14-2026-10-09",
+  "note": "SYNTHETIC scripted model turns, not model output. v14 (D0, after the owner demo of 2026-10-09) adds 2 cases: p7-new-dish-after-plan (after a finished plan, a request for a different dish finishes with options and moves the session to recommend) and p7-plan-advice-source-cue (an adaptation telling the cook to follow the source's doneness cues is advice, not a fidelity claim; the plan is accepted on its first attempt). SYNTHETIC scripted model turns, not model output. v13 (after H8 attempt 3): the plan run's input carries the selected recipe's get_recipe output, so p7-plan-refetch-full now expects the re-fetch in the plan run to return the short pointer (duplicate true); the plan with source quantities is still accepted. SYNTHETIC scripted model turns, not model output. v12 (H8 attempt 2) adds p7-allergy-note-names-allergen: after the answer \"peanuts\", an option note telling the user to check packages for peanut ingredients is not an unsupported pairing claim. SYNTHETIC scripted model turns, not model output. v11 (stall recovery, after the first H8 attempt) adds 3 cases: a stall gets one tool-less finishing turn that finishes with options (discover) or with the plan (select, the H8 party-baking pattern), and a tool call on that turn still stops with agent_no_progress. SYNTHETIC scripted model turns, not model output. v10 (H7) adds 11 cases: the 2026-10-07 recovery paths (technique answer after a plan, dropped option named, negated pairing mention, wrap-up withholds only repeated tools, repeated search marked, select phase withholds search and pairings, tree-nut allergy checked, allergy line keeps constraints_honored empty) and H2/H3 (swapped quantities, clipped directions, fidelity claim); every case also checks the per-turn decision log. v9 (H4 budget recovery): p7-budget-tools now scripts the tool-less finishing turn after the excess batch (a question), and p7-budget-tools-no-finish keeps the immediate stop when that turn is unaffordable (output ceiling 520: the first turn has the 500-token minimum, the batch leaves less). v8 requires direction coverage for \"source\" (p7-plan-partial-coverage omits the marinade and is model_adaptation; p7-plan-faithful-source cites all six). v7 web guard; v6 plan attribution; v5 duplicate visibility; v4 time/honored/refetch; v3 vector/resume; v2 scoring (see METRICS.md); v1 (sha 5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b) scored stop reasons alone; aggregates kept in results.json history. Later edits need a new version, never a silent change.",
   "cases": [
     {
       "id": "p7-epicure-default",
@@ -8093,6 +8093,448 @@
         "onion",
         "yogurt",
         "peanut"
+      ]
+    },
+    {
+      "id": "p7-new-dish-after-plan",
+      "criteria": [
+        "new-dish-after-plan",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "request": "I want a chicken dinner for tonight.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "default",
+      "technique_rows": "safety",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "chicken dinner"
+              }
+            ],
+            [
+              "c2",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ],
+            [
+              "c3",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c4",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "select": {
+        "dataset_id": "odunola/foodie",
+        "source_id": "curry-1"
+      },
+      "plan_turns": [
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "curry-1"
+              }
+            ],
+            [
+              "c6",
+              "search_techniques",
+              {
+                "query": "safe internal temperatures"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1"
+                },
+                "mise_en_place": [
+                  "dice chicken",
+                  "measure yogurt"
+                ],
+                "steps": [
+                  "brown chicken",
+                  "stir in yogurt",
+                  "serve"
+                ],
+                "plating": "over rice in shallow bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "packet plan"
+          }
+        ]
+      ],
+      "followup_turns": [
+        [
+          "tools",
+          [
+            [
+              "c20",
+              "search_recipes",
+              {
+                "query": "lentil soup"
+              }
+            ],
+            [
+              "c21",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "lentil-2"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "lentil-2",
+                  "title": "Red Lentil Soup",
+                  "quantities": [
+                    {
+                      "ingredient": "red lentils",
+                      "amount": "200",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                },
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "curry-1",
+                  "title": "Creamy Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "new dish options"
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "expect_phase": "recommend",
+        "min_options": 2
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques",
+        "scale_recipe",
+        "convert_units"
+      ],
+      "forbidden_tools": [
+        "search_web"
+      ]
+    },
+    {
+      "id": "p7-plan-advice-source-cue",
+      "criteria": [
+        "plan-advice-source-cue",
+        "plan-fidelity"
+      ],
+      "adversarial": false,
+      "request": "Give me the creamy cashew chicken curry recipe with a twist.",
+      "session": {},
+      "settings": {},
+      "epicure_enabled": true,
+      "search_rows": "cashew",
+      "technique_rows": "safety",
+      "turns": [
+        [
+          "tools",
+          [
+            [
+              "c1",
+              "search_recipes",
+              {
+                "query": "cashew chicken"
+              }
+            ],
+            [
+              "c2",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "cashew-8"
+              }
+            ],
+            [
+              "c3",
+              "find_balanced_pairings",
+              {
+                "ingredient": "chicken"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "recommend",
+            "result": {
+              "options": [
+                {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "cashew-8",
+                  "title": "Creamy Cashew Chicken Curry",
+                  "quantities": [
+                    {
+                      "ingredient": "chicken",
+                      "amount": "500",
+                      "unit": "g"
+                    }
+                  ],
+                  "adaptations": []
+                }
+              ]
+            },
+            "constraints_honored": [],
+            "epicure_lines": [
+              {
+                "ingredient": "pork",
+                "decision": "rejected",
+                "reason": "not used"
+              }
+            ],
+            "note": "packet finish"
+          }
+        ]
+      ],
+      "select": {
+        "dataset_id": "odunola/foodie",
+        "source_id": "cashew-8"
+      },
+      "plan_turns": [
+        [
+          "tools",
+          [
+            [
+              "c5",
+              "get_recipe",
+              {
+                "dataset_id": "odunola/foodie",
+                "source_id": "cashew-8"
+              }
+            ],
+            [
+              "c6",
+              "search_techniques",
+              {
+                "query": "safe internal temperatures"
+              }
+            ]
+          ]
+        ],
+        [
+          "parsed",
+          {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {
+              "plan": {
+                "source": {
+                  "dataset_id": "odunola/foodie",
+                  "source_id": "cashew-8"
+                },
+                "mise_en_place": [
+                  "Have 500 g chicken pieces.",
+                  "Have 100 g cashews."
+                ],
+                "steps": [
+                  "Mix salt and spices.",
+                  "Cut chicken.",
+                  "Smoke chicken with applewood."
+                ],
+                "plating": "in bowls",
+                "quantities": [
+                  {
+                    "ingredient": "chicken",
+                    "amount": "500",
+                    "unit": "g"
+                  },
+                  {
+                    "ingredient": "cashews",
+                    "amount": "100",
+                    "unit": "g"
+                  }
+                ],
+                "adaptations": [
+                  {
+                    "description": "Smoking step is not from the source, model-created twist.",
+                    "label": "adaptation"
+                  },
+                  {
+                    "description": "The source gives no internal temperature for the smoked pieces; follow the source's visual doneness cues for the sauce.",
+                    "label": "adaptation"
+                  }
+                ],
+                "technique_refs": [
+                  {
+                    "doc_id": "tech-fda-safe-32",
+                    "chunk_id": 0
+                  }
+                ],
+                "step_sources": [
+                  0,
+                  1,
+                  2
+                ]
+              }
+            },
+            "constraints_honored": [],
+            "note": "A modern twist."
+          }
+        ]
+      ],
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "steps_source": "model_adaptation"
+      },
+      "required_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "allowed_tools": [
+        "search_recipes",
+        "get_recipe",
+        "find_balanced_pairings",
+        "search_techniques"
+      ],
+      "forbidden_tools": [
+        "search_web"
       ]
     }
   ]

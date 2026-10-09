@@ -1776,6 +1776,32 @@ def test_plan_fidelity_negation_must_govern_the_claim() -> None:
     assert [text for text in honest if fidelity_claim(text) is not None] == []
 
 
+def test_plan_fidelity_advice_to_follow_a_source_cue_is_not_a_claim() -> None:
+    # Owner demo 2026-10-09 (paraphrased): an adaptation said the source
+    # gives no temperature for a topping, so follow the source's visual
+    # doneness cues; the check read "follow ... the source" as a claim
+    # and the second rejection ended the run. Claims keep their verdict.
+    from culinary_copilot.agent.validate import fidelity_claim, plan_fidelity_errors
+
+    advice = [
+        "The source gives no temperature for the topping; follow the source's "
+        "visual doneness cues for the pizza and cheese.",
+        "Follow the recipe's doneness test for the cake.",
+        "Then follow the original recipe\u2019s cues for the crust.",
+    ]
+    claims = [
+        "These steps follow the source's method exactly.",
+        "The plan follows the source's doneness cues and every step.",
+        "Follow the source's steps.",
+        "This follows the original recipe exactly.",
+        "Bake as written; the timing matches the source.",
+    ]
+    assert [text for text in advice if fidelity_claim(text) is not None] == []
+    assert [text for text in claims if fidelity_claim(text) is None] == []
+    plan = _adaptation_plan(adaptations=[{"label": "adaptation", "description": advice[0]}])
+    assert plan_fidelity_errors(plan, "An adaptation.", "model_adaptation") == []
+
+
 def _list_doc() -> dict[str, Any]:
     # Synthetic baking source: a unit-less count (eggs) makes the
     # amounts and ingredient mentions unequal, so order pairing is off.
