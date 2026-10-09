@@ -146,7 +146,8 @@ version, history kept) alongside the code; Checkpoint F freezes them.
 - **Non-instruction directions, per direction index.** Classify each of
   the 1,219 short directions (and any longer candidates found) with the
   evidence for the call: author credit, site name, placeholder,
-  heading, or real step. "Stir well." is a step; "Dianne" is not.
+  heading, or real step. "Stir well." is a step; an author's name is
+  not.
   Propose a per-index flag; plans may skip flagged indices without
   losing the source label. Application-database writes only after an
   owner decision, with the H5-style procedure.
