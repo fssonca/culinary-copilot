@@ -1829,3 +1829,22 @@ def test_h8_amount_leads_its_ingredient_past_a_prep_word() -> None:
         )
     )
     assert len(swapped) == 2
+
+
+def test_h8_equipment_size_is_not_an_amount() -> None:
+    # H8 attempt 4 (2026-10-08): "Grease a 12-cup muffin tin" was read as
+    # 12 cups of an ingredient and a sound plan was rejected. A hyphenated
+    # size before an equipment noun is skipped; ingredient amounts are not.
+    from culinary_copilot.agent.validate import plan_prose_quantity_errors
+
+    doc = _list_doc()
+
+    def check(text: str) -> list[str]:
+        return plan_prose_quantity_errors(
+            {"mise_en_place": [text], "steps": ["S."], "plating": "S."}, doc
+        )
+
+    assert check("Grease a 12-cup muffin tin or line it with paper liners.") == []
+    assert check("Heat the milk in a 2-quart saucepan.") == []
+    assert len(check("Measure out 12-cup all-purpose flour.")) == 1
+    assert len(check("Measure 12 cup all-purpose flour into a large bowl.")) == 1

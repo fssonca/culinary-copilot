@@ -517,3 +517,9 @@ recommendations: the selected recipe goes into the plan run's input
 (instead of withholding the full fetch), and a fourth, separately
 labelled attempt runs on fresh scenarios (`scenarios_v5.json`). Push
 still not authorized.
+
+H8 attempt 4 result (recorded by an AI assistant): 1 of 2 complete (the
+family picnic session); the potluck plan was rejected by an
+equipment-size false positive (fixed afterwards), then by the fidelity
+check over an author-credit "direction" in the source (open). H8 total
+$0.1133 of $1.00. See `evals/h8_live/RESULTS.md`, "Fourth attempt".

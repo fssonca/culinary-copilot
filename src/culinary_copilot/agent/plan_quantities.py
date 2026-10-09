@@ -37,6 +37,46 @@ _PROSE_QUANTITY_RE = re.compile(
 )
 
 
+#: Equipment nouns a hyphenated size can modify ("a 12-cup muffin tin",
+#: "a 2-quart saucepan"): such a size is not an ingredient amount.
+EQUIPMENT_WORDS = frozenset(
+    {
+        "tin",
+        "pan",
+        "saucepan",
+        "skillet",
+        "pot",
+        "dish",
+        "casserole",
+        "sheet",
+        "tray",
+        "mold",
+        "mould",
+        "ramekin",
+        "bowl",
+        "jar",
+        "container",
+        "measuring",
+        "cooker",
+        "oven",
+    }
+)
+
+
+def _equipment_size(text: str, number_end: int, unit_end: int) -> bool:
+    """Whether a hyphenated amount sizes the equipment named after it.
+
+    H8 attempt 4 (2026-10-08): "Grease a 12-cup muffin tin" was read as
+    12 cups of an ingredient and a sound plan was rejected. Only the
+    hyphenated form counts ("12-cup", not "12 cup"), and only when an
+    equipment noun follows within two words.
+    """
+    if "-" not in text[number_end:unit_end]:
+        return False
+    following = re.findall(r"[a-z]+", text[unit_end : unit_end + 40].lower())[:2]
+    return any(_singular_token(word) in EQUIPMENT_WORDS for word in following)
+
+
 def prose_quantities(text: Any) -> list[tuple[str, str, str]]:
     """Mass/volume amounts in free text as (claim, exact value, unit)."""
     from culinary_copilot.recipes.llm_validate import canonical_unit
@@ -55,6 +95,8 @@ def prose_quantities(text: Any) -> list[tuple[str, str, str]]:
             unit = canonical_unit(first)
             claim = normalized[match.start() : match.end(2)]
         if unit not in PROSE_MEASURE_UNITS:
+            continue
+        if _equipment_size(normalized, match.end(1), match.end(2)):
             continue
         value = quantity(" ".join(number.split()))
         if value is not None:
@@ -323,6 +365,8 @@ def prose_quantities_with_spans(text: Any) -> list[tuple[str, str, str, int, int
             unit = canonical_unit(first)
             claim_start, claim_end = match.start(), match.end(2)
         if unit not in PROSE_MEASURE_UNITS:
+            continue
+        if _equipment_size(normalized, match.end(1), match.end(2)):
             continue
         value = quantity(" ".join(number.split()))
         if value is not None:

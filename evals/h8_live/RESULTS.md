@@ -271,3 +271,85 @@ run the model re-fetched the selected recipe until the stall recovery
 fired; the recovery now carries the plan, but it costs three steps per
 plan. Six sessions in all, one complete: this says the workflows can
 complete under demo limits, not that they reliably do.
+
+---
+
+# Fourth attempt (2026-10-08)
+
+Run after the owner approved the attempt-3 recommendations, on a new
+freeze (`PLAN.md`, "Fourth attempt"): code `3ec6beb` (list quantity
+attribution; the selected recipe in the plan run's input), fresh
+scenarios `scenarios_v5.json` (`h8d-family-picnic`,
+`h8d-allergy-potluck` with a tree-nut allergy). First attempts only.
+Model output paraphrased; raw records in `data/h8-live/raw-attempt-4/`
+(not committed).
+
+## Outcome: 1 of 2 complete
+
+| Scenario | Reached | Ended | Mechanical grade |
+|---|---|---|---|
+| `h8d-family-picnic` | 3 options (no question), plan, technique answer | complete | task completion, workflow complete |
+| `h8d-allergy-potluck` | question, "tree nuts" recorded, options, selection | `agent_validation_failed`: the plan was rejected twice | options only |
+
+**Family picnic: complete, and short.** Five steps to three bar-cookie
+options. The plan run used the selected recipe from its input: the plan
+came on the first turn, with no fetch (in attempts 1 to 3 every plan run
+fetched the recipe three times). The follow-up asked how long the bars
+can sit out; after five steps the answer cited the one returned FDA
+chunk it used (refrigerate perishables within 2 hours, 1 hour above
+90°F), said the returned sources do not set a time limit for this baked
+good, and did not invent one.
+
+**Allergy potluck: rejected by a validator false positive, then by a
+fidelity check.** After "tree nuts" the model offered options whose
+listed ingredients show no tree nut, and a banana muffin recipe was
+selected. Its first plan was sound: the note listed the ingredients
+checked and advised label and cross-contact checks, and an adaptation
+explained that the source's last "direction" is an author credit, not a
+cooking step. It was rejected because the mise en place said to grease
+"a 12-cup muffin tin", which the quantity check read as 12 cups of an
+ingredient. The retry's note then said the steps follow the recipe,
+while the app labels the plan an adaptation (the author-credit
+direction is not cited); the fidelity check rejected that as designed,
+and with no retry left the run stopped.
+
+Against the predeclared points, picnic session: (1) no question,
+allowed; (3) options from fetched recipes (owner review of suitability:
+one of the three is pecan pie bars, fine here as there is no
+restriction); (4) a plan for exactly the selected dish, labelled as an
+adaptation; (5) a cited answer stating what the sources do not cover;
+(6) no budget stop. Allergy session: (1) asked before options, (2)
+answer recorded and used, (3) options checked for tree nuts; (4) to (6)
+not reached.
+
+## Spend
+
+$0.0249: 37 model turns (225,002 input and 4,732 output tokens), 13
+query embeddings, all reconciled; largest single reservation $0.0082.
+H8 total $0.1133 of $1.00; $0.8867 left.
+
+## Fixed after the run
+
+- **Equipment sizes are not amounts** (`agent/plan_quantities.py`,
+  `_equipment_size`): a hyphenated size followed within two words by an
+  equipment noun ("12-cup muffin tin", "2-quart saucepan") is skipped;
+  ingredient amounts, hyphenated or not, are still checked. Test
+  `test_h8_equipment_size_is_not_an_amount` (fails on `27029dc`).
+
+## Open for the owner
+
+- **Non-instruction "directions" in the corpus.** The selected muffin
+  record stores an author credit as its last direction. Plan coverage
+  counts it, so a faithful plan is labelled an adaptation and a note
+  saying the steps follow the recipe is rejected. Options: flag such
+  directions at ingestion, or let the plan cite them as non-cooking
+  text. Not changed here.
+
+## Across the four attempts
+
+Eight sessions, two complete (one per workflow, attempts 3 and 4). Each
+failure exposed a defect that is now fixed: the immediate stall stop,
+answers not supporting claims, list quantity attribution, and equipment
+sizes read as amounts. The plan run no longer re-fetches the selected
+recipe. This shows each workflow can complete under demo limits on this
+build; it does not establish reliability.

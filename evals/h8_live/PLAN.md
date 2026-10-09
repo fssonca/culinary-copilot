@@ -217,3 +217,11 @@ Command: the attempt-3 command with
 `--scenarios-file evals/h8_live/scenarios_v5.json`,
 `--raw-dir data/h8-live/raw-attempt-4` and
 `--summary-out data/h8-live/summary-attempt-4.json`.
+
+## Fourth attempt result (2026-10-08)
+
+1 of 2 complete (`h8d-family-picnic`: options, a plan on the plan run's
+first turn, a cited technique answer). The potluck plan was rejected by
+an equipment-size false positive (fixed after the run), then by the
+fidelity check. $0.0249 spent, H8 total $0.1133 of $1.00. Details:
+`RESULTS.md`, "Fourth attempt".
