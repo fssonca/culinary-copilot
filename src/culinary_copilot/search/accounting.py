@@ -23,6 +23,26 @@ PROVISIONAL_WORDING = (
 SEARCH_CALL_FEE_USD = 0.01
 
 
+class SearchEstimateExceeded(RuntimeError):
+    """A search's reconciled cost exceeded its estimate: stop the campaign.
+
+    Raised after recording ``search_estimate_exceeded`` in the ledger.
+    Carries ``runner_stop = True`` so the tool layer re-raises it
+    instead of converting it to a tool error, plus the per-search
+    report. The owner must acknowledge it in the campaign history
+    before preflight runs again.
+    """
+
+    runner_stop = True
+
+    def __init__(
+        self, message: str, *, label: str = "", report: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(message)
+        self.label = label
+        self.report: dict[str, Any] = dict(report or {})
+
+
 def estimate_search_usd(
     *,
     input_bytes: int,
@@ -64,6 +84,7 @@ def search_estimate_breakdown(
 __all__ = [
     "PROVISIONAL_WORDING",
     "SEARCH_CALL_FEE_USD",
+    "SearchEstimateExceeded",
     "estimate_search_usd",
     "search_estimate_breakdown",
 ]

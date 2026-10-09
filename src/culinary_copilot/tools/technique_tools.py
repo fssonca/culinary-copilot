@@ -3,9 +3,11 @@
 Phase 2 schema kept (``query``, ``limit``) plus an optional ``mode``
 (``fulltext | vector``); omitted mode follows the new
 ``TECHNIQUE_RETRIEVAL_MODE`` setting (default ``fulltext``), mirroring
-the ``search_recipes`` mode decision. Vector mode without embeddings
-or pgvector returns a typed unavailable (``tool_not_configured`` /
-``contact_operator``) with no silent fallback. ``mode_ran`` is logged.
+the ``search_recipes`` mode decision. The offered mode enum is built
+from settings (vector absent without embeddings). Vector mode without
+embeddings or pgvector returns a typed unavailable
+(``tool_not_configured``) pointing back at full-text, with no silent
+fallback. ``mode_ran`` is logged.
 When the 006 tables are missing the tool reports ``tool_not_configured``
 with ``contact_operator`` — never ``retry`` for a missing table.
 
@@ -22,6 +24,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from culinary_copilot.domain.recommendations import (
+    NEXT_RETRY,
     REASON_TOOL_NOT_CONFIGURED,
     REASON_TOOL_UNAVAILABLE,
     next_action_for,
@@ -47,6 +50,72 @@ class SearchTechniquesArgs(BaseModel):
     )
     mode: Literal["fulltext", "vector"] | None = None
     limit: int = Field(default=5, ge=1, le=10)
+
+
+class SearchTechniquesArgsFulltext(BaseModel):
+    """``search_techniques`` arguments when vector mode is not configured.
+
+    Same fields, but the mode enum carries only ``"fulltext"`` so the
+    offered schema never invites vector (Phase 7 live fix, mirroring
+    ``search_recipes``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(
+        min_length=1, max_length=500, description="2-5 keyword query (content terms)"
+    )
+    mode: Literal["fulltext"] | None = None
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+def search_techniques_description(settings: Any = None) -> str:
+    """Description built from settings: vector named only when configured.
+
+    No settings means unknown configuration: keep the full description
+    (the offer path always passes real settings).
+    """
+    from culinary_copilot.tools.search_tools import search_modes
+
+    if settings is None or "vector" in search_modes(settings):
+        return (
+            "Technique chunk search with attribution "
+            "(fulltext default | vector cutoff 0.66); "
+            "send 2-5 keyword queries; full-text matches every term "
+            "per chunk first, then any term (see match); "
+            "mode omitted follows TECHNIQUE_RETRIEVAL_MODE."
+        )
+    return (
+        "Technique chunk search with attribution "
+        '(only mode "fulltext" is configured; vector needs '
+        "EMBEDDINGS_ENABLED); send 2-5 keyword queries; "
+        "mode omitted runs full-text."
+    )
+
+
+def with_configured_technique_modes(
+    definitions: list[ToolDefinition], settings: Any
+) -> list[ToolDefinition]:
+    """Swap the technique definition for the settings-built one (offer path)."""
+    from dataclasses import replace
+
+    from culinary_copilot.tools.search_tools import search_modes
+
+    if settings is None or "vector" in search_modes(settings):
+        return list(definitions)
+    out: list[ToolDefinition] = []
+    for definition in definitions:
+        if definition.name == "search_techniques":
+            out.append(
+                replace(
+                    definition,
+                    description=search_techniques_description(settings),
+                    args_model=SearchTechniquesArgsFulltext,
+                )
+            )
+        else:
+            out.append(definition)
+    return out
 
 
 def resolve_technique_mode(explicit: str | None, context: ToolContext) -> str:
@@ -139,9 +208,18 @@ async def search_techniques_impl(
     from culinary_copilot.embeddings.provider import DisabledEmbeddingProvider
 
     if provider is None or isinstance(provider, DisabledEmbeddingProvider):
-        return _not_configured(
-            "search_techniques not configured: vector mode needs EMBEDDINGS_ENABLED with a provider"
-        )
+        # Phase 7 live fix: point back at full-text (retry with new
+        # args, not a config change). No silent fallback.
+        return {
+            "ok": False,
+            "error_type": "unavailable",
+            "reason": REASON_TOOL_NOT_CONFIGURED,
+            "message": (
+                "search_techniques not configured: vector mode needs "
+                'EMBEDDINGS_ENABLED with a provider; retry the search with mode "fulltext"'
+            ),
+            "next_action": NEXT_RETRY,
+        }
     model = str(_settings_value(context, "embedding_model", "text-embedding-3-small"))
     dimension = int(_settings_value(context, "embedding_dimension", 1536))
     try:
@@ -207,7 +285,10 @@ def tool_definitions(timeout_s: float = 10.0) -> list[ToolDefinition]:
 __all__ = [
     "DEFAULT_TECHNIQUE_RETRIEVAL_MODE",
     "SearchTechniquesArgs",
+    "SearchTechniquesArgsFulltext",
     "resolve_technique_mode",
+    "search_techniques_description",
     "search_techniques_impl",
     "tool_definitions",
+    "with_configured_technique_modes",
 ]

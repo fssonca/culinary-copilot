@@ -441,3 +441,228 @@ pending until the reservation issue (decision 4) is resolved.
       the later authorized probe.
     - The outstanding ask-and-resume scenario (P3-L-13) is included, and
       it verifies that the agent asks, receives the answer and resumes.
+
+## Owner answers, follow-up (2026-10-02)
+
+Recorded by an AI assistant from the owner's answers; not a signature.
+
+**Decision 4 (reservation): option A, an estimate with a stepwise live
+check.** The owner explicitly accepts that paid web searches are
+budgeted with an estimate (about $0.025 per search), not a proven upper
+bound, with acknowledged overrun risk. This applies only to searches.
+Agent turns and embeddings keep hard, true-upper-bound reservations.
+Conditions:
+- **At most 4 paid searches** across the whole Phase 5 live campaign,
+  counted across runs.
+- **Stepwise:** the first live run makes exactly **one** search and
+  stops. Its reported usage (fee, content and input tokens, cost) is
+  compared with the estimate before any further search is authorized.
+- Any search whose reported cost exceeds its estimate stops the
+  campaign, and preflight refuses until the owner acknowledges it.
+- The $0.10 Phase 5 cap applies (decision 5). Each live run still needs
+  its own "run it".
+
+**P3-L-13 (live ask-and-resume): run separately now, without web
+search.** One scenario, one attempt, hard reservations. It is charged to
+the Phase 3 cap's remaining ~$0.025, not to the Phase 5 share.
+
+## Live runs and an authorization overrun (2026-10-03)
+
+Recorded by an AI assistant. The owner asked the assistant to run the
+commands.
+
+- **P3-L-13 rerun** (Phase 3 pool, $0.0025): the agent asked which
+  allergy, recorded the answer ("peanuts"), and resumed using it. It
+  then asked a reasonable follow-up about tree nuts (the recipe it found
+  contains walnuts), so the session ended on a question, not options.
+  The ask, record and resume mechanism is shown live. The final
+  allergen-checked options were not reached.
+- **Search run, step 2** (Phase 5 pool, $0.0355): the owner authorized
+  at most 2 searches; the assistant intended 1. **3 searches were
+  made.** The flags `--max-campaign-searches 1` and
+  `--search-max-per-live-session 1` were not enforced during the run:
+  the per-session limit stayed at the code default of 3, and the
+  campaign limit was checked only in preflight. The assistant did not
+  verify that enforcement before running. Each search cost about $0.011
+  (within the $0.025 estimate).
+- **Consequence:** the decision 4 campaign cap of 4 searches is used up
+  (1 in step 1, 3 here). Phase 5 pool: $0.0489 of $0.10. No further
+  search may run without a new owner decision. Enforcement of the
+  run-level search limits must be fixed and tested first.
+
+## Owner answers (2026-10-03)
+
+Recorded by an AI assistant; not a signature.
+
+- **P3-L-13 is closed.** Asking, recording the answer and resuming are
+  shown live (the agent asked which allergy, recorded "peanuts" and
+  resumed using it). Reaching allergen-checked options after resuming
+  becomes a Phase 7 scenario.
+- **One more search.** The decision 4 campaign cap is raised from 4 to 5
+  for one live `web_answer` check: a single missing-dish session, with
+  `--max-campaign-searches 1 --search-max-per-live-session 1`, both now
+  enforced during the run. Expected cost is about $0.012. The search
+  estimate terms of decision 4 are otherwise unchanged.
+- **The proposed rule** (reject `ask_user` when local search found
+  nothing and a web search succeeded for a named dish) is **not
+  implemented for now**. The digest and framing fixes are tested first.
+
+## The web_answer check run (2026-10-03)
+
+Recorded by an AI assistant. The run was owner-authorized.
+
+- The limits held during the run: one slot (`slots_max` 1) was claimed
+  and dispatched, and a second search was refused with
+  `search_budget_exhausted` and no provider call.
+- **The dispatched search timed out** at the 10-second per-tool limit.
+  Earlier searches took 4.1–7.4 s. The agent received no web results and
+  asked whether a Japanese cabbage salad would do instead.
+  **`web_answer` is still not shown live.**
+- **A ledger defect:** the timed-out search stayed `reserved` at $0 and
+  was never resolved, so the run reported $0.0023. The request was sent
+  and may have been billed. Counted conservatively, with the unclear
+  search at its $0.025 reservation, the run cost up to $0.0273 and the
+  Phase 5 pool stands at about **$0.0762 of $0.10**. The campaign is at
+  5 of 5 searches.
+
+## Owner answers, one more web_answer attempt (2026-10-03)
+
+Recorded by an AI assistant; not a signature.
+
+- **One more attempt** at a live `web_answer`. The assistant's option
+  text wrongly said the pool would stay at or below $0.10. With $0.0238
+  left and a $0.025 search reservation, the attempt does not fit, and
+  the owner was told so.
+- **The Phase 5 live cap is raised from $0.10 to $0.13**, and the
+  campaign search cap from 5 to 6. One missing-dish session, one search.
+- **`SEARCH_WEB_TIMEOUT_S=30` for this run only**, set as an environment
+  variable on the command, with `.env` and the code default (10 s)
+  unchanged. The provider request is bounded at
+  min(30, `llm_rec_timeout_s` 20) = 20 s. Approving 30 s as the
+  permanent search timeout is still open.
+
+## The last web_answer attempt and the root cause (2026-10-03)
+
+Recorded by an AI assistant.
+
+- The run cost $0.0130 (the search $0.01114, reconciled). Phase 5 pool:
+  $0.0892 of $0.13. Campaign: 6 of 6 searches.
+- The model **did attempt a `web_answer`** this time. It was correctly
+  rejected because it cited site home pages
+  (`https://japan-food.jetro.go.jp/`) instead of the exact returned URLs.
+  It then tried to search again, was refused by the limit, and the run
+  stopped on "no progress".
+- **The root cause of every failed `web_answer` attempt:** the loop's
+  model-facing summary of tool results (`_summarize_result`,
+  `agent/loop.py`) has no `search_web` branch. The model received only
+  the status of each search, never its summary, sources or URLs. The
+  evidence digest showed only host names and titles. The earlier
+  diagnosis, that the model received the full results, was wrong. The
+  fake tests missed it because the fake model hard-codes its URLs.
+
+## Owner answer, final web_answer attempt (2026-10-03)
+
+Recorded by an AI assistant; not a signature. After the root-cause fix,
+the owner approved **one final attempt**. The campaign search cap is
+raised from 6 to 7, with one search and the same command as before
+(`SEARCH_WEB_TIMEOUT_S=30` for the run only, with in-run limits). It
+fits the remaining Phase 5 pool, about $0.041 of $0.13. If it fails,
+Phase 5 moves to checkpoint B regardless.
+
+## The final web_answer attempt succeeded (2026-10-03)
+
+Recorded by an AI assistant.
+
+- With the model-facing search summary fixed, the agent produced a
+  `web_answer` in 4 turns with one search. It cited the exact returned
+  URLs (MAFF, Just One Cookbook, JETRO), labelled the answer external
+  and as a discovery answer, and stated that no verified quantities or
+  directions were available. Its note claims are marked `unverified`.
+  The scenario passed and reached its expected stop.
+- Cost: $0.0123 (search $0.01113). Phase 5 pool: **$0.1015 of $0.13**.
+  Campaign: **7 of 7** searches. Every search cost about $0.011, within
+  the $0.025 estimate.
+- Phase 5's live checks are complete. Next: checkpoint B (logs, gap
+  records, and the open search-timeout proposal).
+
+## Owner answers, search timeout and checkpoint B packet (2026-10-03)
+
+Recorded by an AI assistant; not a signature. The owner adopted the
+suggested decisions:
+
+- **The search timeout becomes 30 s permanently.** The
+  `SEARCH_WEB_TIMEOUT_S` default changes from 10 to 30 s for
+  `search_web` only. The general per-tool timeout (10 s, checkpoint 0)
+  is unchanged. The provider request stays bounded at
+  min(tool timeout, `llm_rec_timeout_s`). Evidence: latencies of 4.1 to
+  7.4 s across six reconciled searches, and one over 10 s that timed
+  out.
+- **Prepare a checkpoint B review packet**, with no paid calls and only
+  read-only access to the application database. It covers:
+  - the live search events;
+  - the gap candidates;
+  - a logging and privacy summary.
+
+## Checkpoint B: owner decisions (2026-10-03)
+
+Recorded by an AI assistant; not a signature. The owner adopted an
+external review of the checkpoint B packet
+(`evals/phase5_search/REVIEW.md`). Checkpoint B is **approved with
+conditions**. Phase 5 closes only after the offline fixes below.
+
+1. **Provider:** the OpenAI hosted web search, called through the
+   `search_web` wrapper, is approved on one condition. Accepted
+   references must come from the provider's own evidence
+   (`url_citation` annotations and/or `web_search_call.action.sources`),
+   not from URLs in the search model's generated JSON.
+   - Verified before recording: `action_sources` and `citations` are
+     collected in `llm/client.py` but never compared with the parsed
+     sources. A fake-provider reproduction showed that an invented URL
+     passes both the search processing and the final `web_refs`
+     validation.
+   - The 7 live searches did not store `action_sources`, so their
+     provenance cannot be shown after the fact. This does not mean the
+     live links were invented.
+2. **Search limit:** 3 per session stays the development ceiling. Future
+   live checks default to 1, or 2 when a test needs a follow-up search.
+   - The step-2 overrun stays on record. The refusals that followed show
+     that the fix works.
+   - Any future shared budget must reserve capacity atomically across
+     workers. A preflight check alone is not enough.
+3. **Budget:** $0.13 is this campaign's final ceiling. No further
+   searches are authorized.
+   - Accounting: $0.07649 reconciled, plus a $0.02500 timeout
+     reservation, gives $0.10149 against the budget.
+   - The reservation stays until its actual usage can be resolved.
+   - Call this "budget accounting", not invoiced spend or a proven
+     maximum charge.
+4. **Logs:** accepted as useful and privacy-acceptable, but only for
+   synthetic, owner-only development data. This acceptance does not
+   cover real users. Before any real-user storage, define retention and
+   deletion for:
+   - user messages, agent questions and raw trails;
+   - exports and backup copies.
+
+   The search purge is one component of that, not complete session-data
+   retention. Provider-side retention is separate from local deletion
+   and from `store: false`.
+5. **Gap queue:** keep the events plus the export, and defer a dedicated
+   table. The candidates are investigation leads, to be reviewed before
+   any cause is confirmed:
+   - four repeated missing-dish sessions are not four distinct missing
+     recipes;
+   - a successful manual recipe lookup does not show that it answers the
+     failed query.
+6. **Before Phase 6:** a small offline correction pass, then proceed.
+   - Fix the citation provenance and add the fake-provider regression.
+   - Correct the "completed: answered" labels on sessions that stopped
+     to ask the user a question.
+   - Describe the final success as **one demonstrated discovery answer
+     after fixes**, not a reliability result.
+   - Extend the Phase 6 specification to render:
+     - `web_answer`, with visible, clickable citations;
+     - its external/discovery status;
+     - clarification prompts;
+     - timeout and budget outcomes.
+
+No additional paid runs and no real-user logging are authorized.

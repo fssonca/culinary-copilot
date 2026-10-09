@@ -177,6 +177,30 @@ def test_fulltext_falls_back_to_any_term_match(engine, tmp_path: Path) -> None:
     assert hits and hits[0]["doc_id"] == "tech-test-sear"
 
 
+def test_poultry_species_terms_also_match_poultry(engine) -> None:
+    # 2026-10-06 live session: "chicken safe internal temperature" missed
+    # the FDA chunk that says "Poultry", so the plan's required
+    # food-safety citation was never found.
+    from culinary_copilot.recipes.technique_repository import _TSQUERY_ALL, _TSQUERY_ANY
+
+    doc = "Poultry (ground, parts, whole) safe minimum internal temperature 165 F"
+    with engine.connect() as conn:
+
+        def matches(tsquery: str, query: str, body: str = doc) -> bool:
+            sql = f"SELECT to_tsvector('english', :body) @@ {tsquery}"
+            return bool(conn.execute(text(sql), {"body": body, "query": query}).scalar())
+
+        assert matches(_TSQUERY_ALL, "chicken safe internal temperature")
+        assert matches(_TSQUERY_ALL, "turkey internal temperature")
+        assert matches(_TSQUERY_ALL, "goose safe temperature")
+        # Only an alternative is added: other terms still must match.
+        assert not matches(_TSQUERY_ALL, "chicken braising liquid")
+        assert matches(_TSQUERY_ANY, "chicken braising liquid")
+        # Lexemes that merely start with a species stem are untouched.
+        assert not matches(_TSQUERY_ALL, "chickpea safe internal temperature")
+        assert matches(_TSQUERY_ALL, "chicken thighs", "Sear the chicken thighs")
+
+
 def test_tool_result_contract_on_pg(engine, tmp_path: Path) -> None:
     import asyncio
 

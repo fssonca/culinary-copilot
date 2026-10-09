@@ -135,11 +135,13 @@ class Settings(BaseSettings):
     # only when full-text returned at least one result.
     retrieval_vector_cutoff: float | None = None
     retrieval_fulltext_gate: bool = False
-    # Agent sessions (Milestone 3, Phase 1, Checkpoint 0 budgets): MAX_STEPS 8,
-    # 12 tool calls per session. Phase 1 stores the remaining budgets on the
-    # session row (defaults below); the bounded loop in Phase 3 enforces them.
+    # Agent sessions (Milestone 3, Phase 1, Checkpoint 0 budgets): 12 tool
+    # calls per session; MAX_STEPS raised 8 -> 12 by the owner on 2026-10-04
+    # (P3-L-12: recommend plus plan did not fit live; see
+    # docs/phase7-owner-decisions.md). Phase 1 stores the remaining budgets
+    # on the session row (defaults below); the bounded loop enforces them.
     session_max_tool_calls: int = 12
-    session_max_steps: int = 8
+    session_max_steps: int = 12
     # Permission-gated web search (Milestone 3, Phase 5, part 2, offline).
     # Per-session search slots (owner decision 3: 3 in code, 2 in the live
     # check via runner flag). Enforced by an atomic slot claim in
@@ -236,6 +238,11 @@ class Settings(BaseSettings):
             raise ValueError("SEARCH_CONTENT_ALLOWANCE_TOKENS must be >= 1")
         if not math.isfinite(float(self.tool_timeout_s)) or float(self.tool_timeout_s) <= 0:
             raise ValueError("TOOL_TIMEOUT_S must be a finite positive number")
+        if (
+            not math.isfinite(float(self.search_web_timeout_s))
+            or float(self.search_web_timeout_s) <= 0
+        ):
+            raise ValueError("SEARCH_WEB_TIMEOUT_S must be a finite positive number")
         if not math.isfinite(float(self.agent_wall_clock_s)) or float(self.agent_wall_clock_s) <= 0:
             raise ValueError("AGENT_WALL_CLOCK_S must be a finite positive number")
         if int(self.agent_input_token_ceiling) < 1:
@@ -283,6 +290,15 @@ class Settings(BaseSettings):
     # Typed tool layer (Milestone 3, Phase 2, Checkpoint 0 budgets):
     # per-tool timeout 10 s. Read by tools/registry.py on every call.
     tool_timeout_s: float = 10.0
+    # Hosted web search timeout (owner decision 2026-10-03: 30 s
+    # permanent default for search_web only; the general TOOL_TIMEOUT_S
+    # stays 10 s). Read by tools/registry.py for search_web calls only,
+    # and passed to the search provider as its own request timeout at
+    # most the tool timeout (see tools/stub_tools.py), so an abandoned
+    # request cannot long outlive the tool that gave up on it. With
+    # defaults the provider request is bounded at
+    # min(tool 30 s, llm_rec_timeout_s 20 s) = 20 s.
+    search_web_timeout_s: float = 30.0
     # Bounded agent loop (Milestone 3, Phase 3, Checkpoint 0 budgets):
     # wall clock 90 s per agent run. Read by agent/loop.py at run start.
     # Steps (8) and tool calls (12) are per-session budgets stored on the
@@ -294,11 +310,26 @@ class Settings(BaseSettings):
     # (chars/4; the repo has no token estimator). Measured: fixed part
     # ~2600/turn, realistic 4-turn session ~11.3k in (real doc sizes from
     # data/recipe-import/normalized.jsonl), recorded live structured
-    # outputs up to ~2k/call. Input 30k covers ~2.6x measured and a full
-    # 8-step session; output 12k covers ~6 max-recorded turns; the
-    # per-turn output cap (min 6500 configured max, 500 useful minimum)
-    # keeps single turns sane. Overshoot is impossible: 8 steps bound
-    # totals by construction. See evals/phase3_agent/. Read by
-    # agent/loop.py before every turn.
-    agent_input_token_ceiling: int = 30_000
+    # outputs up to ~2k/call; the per-turn output cap (min 6500
+    # configured max, 500 useful minimum) keeps single turns sane. Input
+    # raised 30k -> 60k by the owner on 2026-10-04 with the 12-step
+    # budget: the Phase 7 live run measured 3k-4.5k input per turn, so
+    # 30k ran out after ~8 turns (docs/phase7-owner-decisions.md).
+    # Output 12k covers ~6 max-recorded turns. See evals/phase3_agent/
+    # and evals/phase7_agent/. Read by agent/loop.py before every turn.
+    agent_input_token_ceiling: int = 60_000
     agent_output_token_ceiling: int = 12_000
+    # Full trajectory recording (2026-10-05): off by default. When true,
+    # the agent loop also records tool arguments (minimized), what each
+    # tool returned to the model, every model directive (including
+    # rejected answers) and each run's result as session_events, so a
+    # session can be analyzed later. Scrubbed and bounded; stays in the
+    # local database. Export: scripts/sessions/export_session.py.
+    agent_record_trajectory: bool = False
+    # Operator switch for real hosted web search from the app
+    # (2026-10-05): off by default, so search_web stays
+    # tool_not_configured. When true, the agent endpoints pass the
+    # application provider as the search_web sub-request provider.
+    # Each session still needs its own toggle on, and
+    # SEARCH_MAX_PER_SESSION caps searches per session. Paid.
+    web_search_enabled: bool = False

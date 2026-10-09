@@ -15,7 +15,11 @@ implementations run once under ``wait_for``; sync ones run once via
 ``to_thread`` under ``wait_for``. A timed-out thread is abandoned, not
 killed: it keeps running in the background and its late result is
 discarded, so implementations must be side-effect free or idempotent
-(or the tool marked non-idempotent). Every call records a structured
+(or the tool marked non-idempotent). An async implementation is
+cancelled instead (``CancelledError`` thrown into the coroutine):
+the client-side HTTP connection is torn down, but the server may
+already be executing — billing stays unknown, so dispatched paid
+calls are kept as spent (see the ledger wrappers), never $0. Every call records a structured
 event (session id, call id, tool, args digest, outcome/error, latency,
 cost); with a session id the event is appended to ``session_events``
 via ``PostgresSessionStore.append_event``, otherwise it goes to the
@@ -245,6 +249,18 @@ class ToolContext:
     # with ``async complete_web_search(*, instruction, query,
     # max_output_tokens)``. None means unconfigured (tool_not_configured).
     search_provider: Any = None
+    # In-run search limits for live evaluations (2026-10-03 overrun
+    # fix): a SearchRunLimits-like object with ``max_per_session`` and
+    # ``check_and_claim()``. search_web takes min(code limit, flag) for
+    # the slot claim and refuses dispatches past the run/campaign
+    # bounds. None means pre-limit behavior (unit tests, API path).
+    search_limits: Any = None
+    # Pairs whose full get_recipe outputs are still in the current
+    # run's capped history (set per turn by the agent loop; None means
+    # unknown, e.g. direct impl calls). get_recipe returns its short
+    # duplicate pointer only for pairs in this set: a repeat the model
+    # can no longer see comes back full. run_tool copies it per call.
+    visible_full_recipes: set[tuple[str, str]] | None = None
     # Test hook: wrap the raw implementation (e.g. inject a sleeping fake).
     impl_overrides: dict[str, Callable[..., Any]] = field(default_factory=dict)
     # Review hook: also store the bounded validated args in the session
@@ -253,16 +269,68 @@ class ToolContext:
     record_tool_args: bool = False
 
 
-def _timeout_for(context: ToolContext, tool: ToolDefinition) -> float:
-    settings = getattr(context, "settings", None)
-    if settings is not None and hasattr(settings, "tool_timeout_s"):
+# Per-tool timeout overrides by settings key (2026-10-03 search
+# proposal): search_web reads SEARCH_WEB_TIMEOUT_S, every other tool
+# reads TOOL_TIMEOUT_S. The literal tool name avoids importing the
+# tool module here (it imports this registry).
+_TOOL_TIMEOUT_SETTINGS = {"search_web": "search_web_timeout_s"}
+
+
+def tool_timeout_s(tool_name: str, settings: Any, default: float = 10.0) -> float:
+    """Effective timeout for one tool call (single source of truth).
+
+    Precedence for a tool with a dedicated setting (currently
+    ``search_web`` -> ``SEARCH_WEB_TIMEOUT_S``, owner decision
+    2026-10-03):
+    1. the dedicated setting when explicitly set (constructor kwarg
+       or environment; pydantic ``model_fields_set``);
+    2. ``TOOL_TIMEOUT_S`` when explicitly set (the owner deliberately
+       retunes every tool, search_web included);
+    3. the dedicated setting's code default (30 s for search_web:
+       applies with no env var at all);
+    4. the passed default (10 s; tools without a dedicated setting
+       resolve here via ``TOOL_TIMEOUT_S`` first).
+    Without the explicitness checks the dedicated default would either
+    shadow a deliberately set general timeout or be shadowed by the
+    general default. Used both by ``run_tool`` (via ``_timeout_for``)
+    and by implementations that must bound their own sub-requests at
+    most at the tool timeout.
+    """
+
+    def _positive(key: str) -> float | None:
         try:
-            value = float(getattr(settings, "tool_timeout_s"))
-            if value > 0:
-                return value
+            value = float(getattr(settings, key))
         except (TypeError, ValueError):
-            pass
-    return float(tool.timeout_s)
+            return None
+        return value if value > 0 else None
+
+    override_key = _TOOL_TIMEOUT_SETTINGS.get(str(tool_name))
+    if override_key is not None and settings is not None and hasattr(settings, override_key):
+        fields_set = getattr(settings, "model_fields_set", None)
+
+        def _explicit(key: str) -> bool:
+            return (key in fields_set) if fields_set is not None else True
+
+        if _explicit(override_key):
+            value = _positive(override_key)
+            if value is not None:
+                return value
+        if hasattr(settings, "tool_timeout_s") and _explicit("tool_timeout_s"):
+            value = _positive("tool_timeout_s")
+            if value is not None:
+                return value
+        value = _positive(override_key)
+        if value is not None:
+            return value
+    if settings is not None and hasattr(settings, "tool_timeout_s"):
+        value = _positive("tool_timeout_s")
+        if value is not None:
+            return value
+    return float(default)
+
+
+def _timeout_for(context: ToolContext, tool: ToolDefinition) -> float:
+    return tool_timeout_s(tool.name, getattr(context, "settings", None), float(tool.timeout_s))
 
 
 def _as_opt_str(value: Any) -> str | None:
@@ -338,7 +406,30 @@ def _returned_identities(
         dataset_id = getattr(parsed, "dataset_id", None)
         source_id = getattr(parsed, "source_id", None)
         if isinstance(dataset_id, str) and isinstance(source_id, str):
-            return [{"dataset_id": dataset_id, "source_id": source_id, "via": "full"}]
+            entry: dict[str, Any] = {
+                "dataset_id": dataset_id,
+                "source_id": source_id,
+                "via": "full",
+            }
+            # Ranged reads (H3): the covered slice travels in the
+            # identity so the plan gate can reconstruct coverage from
+            # events alone (args are digest-only by default).
+            for key in ("directions_from", "directions_to"):
+                value = getattr(parsed, key, None)
+                if isinstance(value, int) and not isinstance(value, bool):
+                    entry[key] = int(value)
+                elif isinstance(value, str) and value.lstrip("-").isdigit():
+                    try:
+                        entry[key] = int(value)
+                    except ValueError:
+                        pass
+            result_from = result.get("directions_from")
+            result_to = result.get("directions_to")
+            if isinstance(result_from, int) and "directions_from" not in entry:
+                entry["directions_from"] = int(result_from)
+            if isinstance(result_to, int) and "directions_to" not in entry:
+                entry["directions_to"] = int(result_to)
+            return [entry]
         return None
     if tool_name == "search_techniques":
         rows = result.get("results")
@@ -386,9 +477,10 @@ def _result_facts(tool_name: str, result: dict[str, Any]) -> dict[str, Any] | No
 
     Only successful calls record facts: pairing tools record the
     requested/queried ingredient plus the top 5 pairing names,
-    ``get_recipe`` records the fetched title, and ``search_techniques``
-    records up to 10 hits (doc/chunk/title). Everything is bounded and
-    JSON-safe.
+    ``get_recipe`` records the fetched title, ``search_web`` records
+    the source count plus up to 5 classifications, titles and hosts,
+    and ``search_techniques`` records up to 10 hits
+    (doc/chunk/title). Everything is bounded and JSON-safe.
     """
     if not result.get("ok"):
         return None
@@ -409,7 +501,41 @@ def _result_facts(tool_name: str, result: dict[str, Any]) -> dict[str, Any] | No
     if tool_name == "get_recipe":
         recipe = result.get("recipe")
         title = recipe.get("title") if isinstance(recipe, dict) else None
-        return {"title": str(title or "")[:120]}
+        if result.get("duplicate_of_session_evidence"):
+            # Repeat-fetch pointer: no recipe body, the title is top level.
+            return {"title": str(result.get("title") or "")[:120], "duplicate": True}
+        facts: dict[str, Any] = {"title": str(title or "")[:120]}
+        # Ranged reads (H3): the covered slice travels in the digest
+        # facts too, so the evidence digest can name what was read.
+        for key in ("directions_from", "directions_to", "directions_total"):
+            value = result.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                facts[key] = int(value)
+        return facts
+    if tool_name == "search_web":
+        sources = result.get("sources")
+        classifications: list[str] = []
+        titles: list[str] = []
+        hosts: list[str] = []
+        if isinstance(sources, list):
+            from urllib.parse import urlparse
+
+            for source in sources[:5]:
+                if not isinstance(source, dict):
+                    continue
+                classifications.append(str(source.get("classification") or "")[:80])
+                title = str(source.get("title") or source.get("citation_title") or "")[:80]
+                titles.append(title)
+                try:
+                    hosts.append(str(urlparse(str(source.get("url") or "")).hostname or "")[:60])
+                except Exception:
+                    hosts.append("")
+        return {
+            "source_count": len(sources) if isinstance(sources, list) else 0,
+            "classifications": classifications,
+            "titles": titles,
+            "hosts": hosts,
+        }
     if tool_name == "search_techniques":
         rows = result.get("results")
         hits: list[dict[str, Any]] = []
@@ -625,9 +751,16 @@ async def run_tool(
             latency_ms=latency_ms,
             cost_class=tool.cost_class,
             result_count=_result_count(tool.name, result),
+            args=dict(validated_args),
         )
         return result
     except Exception as exc:
+        # Runner control-flow exceptions (runner_stop) propagate to the
+        # live runner instead of becoming tool errors: campaign stops
+        # (estimate breach, budget refusal) must halt the run, not feed
+        # the agent another tool output.
+        if getattr(exc, "runner_stop", False):
+            raise
         latency_ms = (time.monotonic() - start) * 1000.0
         # An escaping exception is a defect, surfaced as
         # tool_internal_error (never raised, never truncated).
@@ -653,6 +786,7 @@ async def run_tool(
             latency_ms=latency_ms,
             cost_class=tool.cost_class,
             result_count=_result_count(tool.name, result),
+            args=dict(validated_args),
         )
         return result
 
@@ -664,4 +798,5 @@ __all__ = [
     "ToolDefinition",
     "args_digest",
     "run_tool",
+    "tool_timeout_s",
 ]

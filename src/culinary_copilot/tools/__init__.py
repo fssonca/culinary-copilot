@@ -92,6 +92,9 @@ def build_tool_context(
         epicure_chem=epicure_chem,
         bound_session_id=bound_session_id,
         search_provider=search_provider,
+        # Bounded, minimized args in tool_call events only when full
+        # trajectory recording is on (default stays digest-only).
+        record_tool_args=bool(getattr(settings, "agent_record_trajectory", False)),
     )
 
 

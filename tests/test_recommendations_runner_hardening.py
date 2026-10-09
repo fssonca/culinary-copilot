@@ -23,6 +23,27 @@ from culinary_copilot.llm.client import FakeApplicationProvider  # noqa: E402
 CASES = Path(__file__).parent.parent / "evals" / "cases" / "phase3_live_cases.json"
 
 
+def _require_local_recipe_corpus() -> None:
+    """Skip unless the configured database holds the recipe corpus.
+
+    --rehearse retrieves real recipes from the configured database
+    (read-only); a fresh database (CI) has no corpus, so retrieval
+    cases answer 503 and the rehearsal says nothing about the runner.
+    """
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.exc import SQLAlchemyError
+
+    try:
+        engine = create_engine(Settings().database_url.get_secret_value())
+        with engine.connect() as conn:
+            count = conn.execute(text("SELECT count(*) FROM recipes")).scalar_one()
+        engine.dispose()
+    except SQLAlchemyError as exc:
+        pytest.skip(f"local recipe corpus unavailable: {type(exc).__name__}")
+    if not count:
+        pytest.skip("local recipe corpus is empty")
+
+
 def _settings(**overrides: Any) -> Settings:
     base: dict[str, Any] = {
         "llm_enabled": False,
@@ -211,6 +232,7 @@ def test_resume_refuses_submitting_without_flag(tmp_path: Path, monkeypatch: Any
 
 def test_rehearse_success_path(tmp_path: Path, monkeypatch: Any) -> None:
     """Full runner path, zero network: no key required, all 10 cases."""
+    _require_local_recipe_corpus()
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     rc = main(
         [
@@ -251,6 +273,8 @@ def test_rehearse_success_path(tmp_path: Path, monkeypatch: Any) -> None:
 def test_rehearse_failure_envelopes(
     tmp_path: Path, monkeypatch: Any, scenario: str, check_case: str, expected: dict[str, str]
 ) -> None:
+    if check_case != "LIVE-01":  # LIVE-01 runs on a synthetic fixture
+        _require_local_recipe_corpus()
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     rc = main(
         [

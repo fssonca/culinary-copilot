@@ -1,5 +1,7 @@
 """Workstreams 1–2 offline tests: no DB, no downloads, synthetic fixtures only."""
 
+import pytest
+
 from culinary_copilot.recipes.adapters.base import fingerprint, foodie_source_id
 from culinary_copilot.recipes.adapters.foodie import (
     normalize_foodie_text,
@@ -166,6 +168,27 @@ def test_foodie_headings_repeats_and_no_comma_split():
     assert recipe["ingredient_groups"]  # heading detected
     assert len(recipe["ingredients"]) == 2  # comma kept inside one line
     assert recipe["ingredients"][0]["canonical"] == "sugar, divided"
+
+
+def test_foodie_summary_layout_refused():
+    # H5: leading "summary" label with single-line blobs carries no title
+    # evidence, so the parser refuses instead of loading a bogus recipe.
+    texts = (
+        "summary\nA short description of the dish.\n"
+        "ingredients\n2 cups flour1 teaspoon salt\n"
+        "instructions\nMix everything together. Bake until done.\n"
+    )
+    with pytest.raises(ValueError, match="summary_layout_missing_title"):
+        split_sections(texts)
+    with pytest.raises(ValueError, match="summary_layout_missing_title"):
+        normalize_foodie_text(texts, 19350)
+
+
+def test_foodie_summary_title_with_real_lines_still_parses():
+    # The refusal is gated on single-line blobs: a genuinely titled record
+    # with one line per ingredient and step still parses.
+    texts = "Summary\nIngredients\n1 cup beans\n2 cups greens\nDirections\nMix.\nServe.\n"
+    assert normalize_foodie_text(texts, 7)["title"] == "Summary"
 
 
 def test_foodie_identity_and_sampling_deterministic():

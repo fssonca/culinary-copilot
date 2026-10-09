@@ -10,6 +10,7 @@ Skipped when PostgreSQL is unreachable so offline runs stay green.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 from collections import deque
@@ -355,8 +356,14 @@ def test_second_run_after_budget_stop(engine) -> None:
 
 
 def test_tool_budget_batch_excess(engine) -> None:
+    # H4 (2026-10-08): a batch larger than the remaining calls keeps the
+    # affordable prefix, then stops at once when the finishing turn is
+    # unaffordable (here the output-token remainder, checked with the
+    # same code that enforces it). The stop carries the deterministic
+    # results list. See tests/test_h4_budget_recovery.py for the
+    # affordable case where the finishing turn runs and completes.
     store = PostgresSessionStore(engine)
-    state = _session(store, tool_calls_remaining=3)
+    state = _session(store, steps_remaining=8, tool_calls_remaining=3)
     recorded: list[str] = []
     provider = ScriptedProvider(
         [
@@ -372,14 +379,21 @@ def test_tool_budget_batch_excess(engine) -> None:
             )
         ]
     )
+    settings = _settings(agent_output_token_ceiling=600)
     with pytest.raises(AgentLoopError) as excinfo:
-        _run(run_agent(state.id, deps=_deps(store, provider, recorded_calls=recorded)))
+        _run(
+            run_agent(
+                state.id, deps=_deps(store, provider, settings=settings, recorded_calls=recorded)
+            )
+        )
     assert excinfo.value.reason == "agent_tool_budget_exhausted"
     assert excinfo.value.http_status == 422
     assert "new session" in excinfo.value.message
+    assert "Useful results so far" in excinfo.value.message
     # Affordable prefix ran (thread order varies); none of the excess ran.
     assert sorted(recorded) == ["search:a", "search:b", "search:c"]
     assert store.get(state.id).tool_calls_remaining == 0
+    assert provider.seen_inputs is not None and len(provider.seen_inputs) == 1
 
 
 def test_wall_clock_stop(engine) -> None:
@@ -830,6 +844,140 @@ def test_sufficient_evidence_flow(engine) -> None:
     assert finished[0].payload["epicure_lines"]  # one line per suggestion
 
 
+def test_repeat_only_step_gets_a_wrap_up_turn_without_the_repeated_tool(engine) -> None:
+    # 2026-10-06 live session: with enough evidence after step 2 the
+    # model re-ran its searches and pairings until no_progress. A step
+    # that only repeats earlier calls now earns a wrap-up turn, which
+    # withholds the repeated tool (2026-10-07: not every tool).
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    ("c2", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c4",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("tools", [("c5", "find_balanced_pairings", {"ingredient": "chicken"})]),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
+        ]
+    )
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True)))
+    )
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert "find_balanced_pairings" in provider.seen_tools[1]
+    assert provider.seen_tools[2] != []
+    assert "find_balanced_pairings" not in provider.seen_tools[2]
+    assert "get_recipe" in provider.seen_tools[2]
+    framing = str(provider.seen_inputs[2][-1].get("content"))
+    assert "Wrap-up: your last step only repeated calls" in framing
+    assert "find_balanced_pairings is not offered" in framing
+
+
+def test_duplicate_fetch_pointer_counts_as_a_repeat(engine) -> None:
+    # 2026-10-07 live session: full fetch, then pointer, then pointer.
+    # The pointer's summary differs from the full output, so the first
+    # pointer step did not earn the wrap-up and the run could never
+    # reach the stall stop. Now one pointer-only step earns the wrap-up.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    seen: list[tuple[tuple[str, str], str]] = []
+    curry = {"dataset_id": "odunola/foodie", "source_id": "curry-1"}
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    ("c2", "get_recipe", curry),
+                    ("c3", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            ("tools", [("c4", "get_recipe", curry)]),
+            (
+                "parsed",
+                _finish_options([_opt()], epicure_lines=_pork_lines(), note="packet finish"),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"get_recipe": _mirror_get_factory(seen)},
+    )
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert seen == [
+        (("odunola/foodie", "curry-1"), "full"),
+        (("odunola/foodie", "curry-1"), "short"),
+    ]
+    assert "get_recipe" not in provider.seen_tools[2]
+    assert "Wrap-up" in str(provider.seen_inputs[2][-1].get("content"))
+
+
+def test_pointer_refetches_reach_the_stall_stop(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    seen: list[tuple[tuple[str, str], str]] = []
+    curry = {"dataset_id": "odunola/foodie", "source_id": "curry-1"}
+    provider = ScriptedProvider(
+        [
+            ("tools", [("c1", "get_recipe", curry)]),
+            ("tools", [("c2", "get_recipe", curry)]),
+            # Turn 3 is the wrap-up (get_recipe withheld); its search runs.
+            ("tools", [("c3", "search_recipes", {"query": "curry"})]),
+            ("tools", [("c4", "get_recipe", curry)]),
+            # Turn 5 is the stall finishing turn (no tools); calling one
+            # anyway stops the run with the stall.
+            ("tools", [("c5", "get_recipe", curry)]),
+        ]
+    )
+    deps = _deps(store, provider, overrides={"get_recipe": _mirror_get_factory(seen)})
+    with pytest.raises(AgentLoopError) as caught:
+        _run(run_agent(state.id, deps=deps))
+    assert caught.value.reason == "agent_no_progress"
+    assert [mode for _, mode in seen] == ["full", "short", "short"]
+    assert provider.seen_tools[4] == []
+
+
+def test_new_calls_do_not_trigger_wrap_up(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            ("tools", [("c1", "search_recipes", {"query": "curry"})]),
+            ("tools", [("c2", "search_recipes", {"query": "lentil soup"})]),
+            ("parsed", _finish_options(_two_opts_no_quantities())),
+        ]
+    )
+    with contextlib.suppress(AgentLoopError):
+        _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert provider.seen_tools[2] != []
+    assert "Wrap-up" not in str(provider.seen_inputs[2][-1].get("content"))
+
+
 # --- invalid calls and tool errors ---------------------------------------------------
 
 
@@ -1019,18 +1167,41 @@ def test_transient_failures_lead_to_no_progress(engine) -> None:
 
 
 def test_identical_successful_calls_stall(engine) -> None:
+    # The first repeat-only step earns one wrap-up turn without the
+    # repeated tool; a model that keeps repeating gets one tool-less
+    # finishing turn and, calling a tool there too, still stalls out.
     store = PostgresSessionStore(engine)
     state = _session(store)
     provider = ScriptedProvider(
-        [
-            ("tools", [("c1", "search_recipes", {"query": "same"})]),
-            ("tools", [("c2", "search_recipes", {"query": "same"})]),
-            ("tools", [("c3", "search_recipes", {"query": "same"})]),
-        ]
+        [("tools", [(f"c{i}", "search_recipes", {"query": "same"})]) for i in range(5)]
     )
     with pytest.raises(AgentLoopError) as excinfo:
         _run(run_agent(state.id, deps=_deps(store, provider)))
     assert excinfo.value.reason == "agent_no_progress"
+    assert "search_recipes" not in provider.seen_tools[2]
+    assert "search_recipes" in provider.seen_tools[3]
+    assert provider.seen_tools[4] == []
+    # 2026-10-07 live session: the repeat says it returned nothing new.
+    outputs = [str(i) for i in provider.seen_inputs[2] if i.get("type") == "function_call_output"]
+    assert sum("identical to an earlier search" in o for o in outputs) == 1
+
+
+def test_stall_stop_charges_the_final_step(engine) -> None:
+    # 2026-10-06 live session: the stall stop ran before the step
+    # commit, so the stored budgets missed the last step and its call.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [("tools", [(f"c{i}", "search_recipes", {"query": "same"})]) for i in range(5)]
+    )
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(run_agent(state.id, deps=_deps(store, provider)))
+    assert excinfo.value.reason == "agent_no_progress"
+    after = store.get(state.id)
+    # Four tool steps plus the stall finishing turn; its unoffered call
+    # never runs, so three calls are charged (the wrap-up's is withheld).
+    assert after.steps_remaining == 8 - 5
+    assert after.tool_calls_remaining == 12 - 3
 
 
 # --- search_web filtering ------------------------------------------------------------
@@ -1526,7 +1697,8 @@ def test_plan_finish_after_select(engine) -> None:
     plan = {
         "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
         "mise_en_place": ["chop chicken"],
-        "steps": ["cook curry", "serve"],
+        "steps": ["brown the chicken", "stir in yogurt", "serve"],
+        "step_sources": [0, 1, 2],
         "plating": "in a bowl",
     }
     provider2 = ScriptedProvider(
@@ -1566,6 +1738,163 @@ def test_plan_finish_after_select(engine) -> None:
     assert store.get(state.id).cooking_plan["plating"] == "in a bowl"
     assert result2.final is not None
     assert result2.final["plan"]["steps_source"] == "source"
+    # 2026-10-07 live session: the food-safety citation is stated before
+    # the plan is drafted, then named once a safety chunk is returned.
+    first = str(provider2.seen_inputs[0][-1].get("content"))
+    second = str(provider2.seen_inputs[1][-1].get("content"))
+    assert "Plan requirement: the selected recipe has raw chicken" in first
+    assert "Plan requirement met: food-safety chunks tech-fda-safe-32#0" in second
+    assert "scale_recipe" in provider2.seen_tools[0]  # the source lists servings
+    # 2026-10-07 live session: after "Choose this" the model redid
+    # discovery. Before the plan, recipe search and pairings are not
+    # offered and the turn names the selected dish.
+    assert "search_recipes" not in provider2.seen_tools[0]
+    assert "find_balanced_pairings" not in provider2.seen_tools[0]
+    assert "get_recipe" in provider2.seen_tools[0]
+    assert "Selected dish: 'Creamy Chicken Curry'" in first
+
+    # 2026-10-07 live session: a technique question after the plan was
+    # rejected twice ("plan -> recommend" is not allowed), and the
+    # plan-requirement line made the model redo the safety search.
+    provider3 = ScriptedProvider(
+        [
+            ("tools", [("c20", "search_techniques", {"query": "crispy chicken skin"})]),
+            (
+                "parsed",
+                _tech_answer(
+                    "Pat the chicken dry before browning it.",
+                    [{"doc_id": "tech-egg-1", "chunk_id": 0}],
+                    move_to=None,
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+        ]
+    )
+    deps3 = _deps(
+        store,
+        provider3,
+        overrides={"search_techniques": _tech_search([_tech_row()])},
+        request_text="How do I get the chicken skin crispy?",
+    )
+    deps3.technique_resolver = lambda doc_id, chunk_id: dict(_tech_row(doc_id, chunk_id))
+    result3 = _run(run_agent(state.id, deps=deps3))
+    assert result3.stop_reason == "agent_sufficient_evidence"
+    assert result3.phase == "plan"
+    assert result3.final is not None and result3.final.get("technique_answer")
+    assert "Plan requirement" not in str(provider3.seen_inputs[0][-1].get("content"))
+    # The plan already given travels with follow-up questions.
+    assert '"cooking_plan_steps": ["brown the chicken"' in str(
+        provider3.seen_inputs[0][-1].get("content")
+    )
+    # H8 attempt 2: follow-ups get a technique answer, not a re-issued plan.
+    followup_framing = str(provider3.seen_inputs[0][-1].get("content"))
+    assert "Follow-up after the plan: answer the user's latest question" in followup_framing
+    assert "Re-issue the plan only when the user asks to change it." in followup_framing
+    assert "Follow-up after the plan" not in str(provider2.seen_inputs[0][-1].get("content"))
+    assert store.get(state.id).cooking_plan["plating"] == "in a bowl"
+
+
+def test_plan_without_admission_is_labelled_by_the_app(engine) -> None:
+    # 2026-10-06 live sessions: faithful plans failed only because the
+    # model did not write the admission for a label the code computes.
+    # With directions in the source, the app now writes the label.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    ("c3", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt()],
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
+        ]
+    )
+    _run(run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True))))
+    mid = store.get(state.id)
+    assert mid is not None
+    selected = record_select(
+        store,
+        state.id,
+        expected_revision=mid.revision,
+        dataset_id="odunola/foodie",
+        source_id="curry-1",
+    )
+    assert selected.current_phase == "select"
+
+    plan = {
+        "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+        "mise_en_place": ["chop chicken"],
+        "steps": ["brown the chicken", "stir in yogurt and check it reaches a simmer", "serve"],
+        "step_sources": [0, 1, 2],
+        "plating": "in a bowl",
+    }
+    provider2 = ScriptedProvider(
+        [
+            (
+                "tools",
+                [("c9", "search_techniques", {"query": "safe internal temperatures"})],
+            ),
+            (
+                "parsed",
+                {
+                    "decision": "finish",
+                    "move_to": "plan",
+                    "result": {
+                        "plan": {
+                            **plan,
+                            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                        }
+                    },
+                    "constraints_honored": [],
+                    "note": "plan from selected source",
+                },
+            ),
+        ]
+    )
+    deps2 = _deps(
+        store,
+        provider2,
+        overrides={"search_techniques": _tech_search([_safety_row()])},
+    )
+    deps2.technique_resolver = lambda doc_id, chunk_id: (
+        dict(_safety_row()) if (doc_id, chunk_id) == ("tech-fda-safe-32", 0) else None
+    )
+    # 2026-10-07 live session: an unrequested scale of a source without
+    # servings was refused twice. Such a source is not offered scaling.
+    from unittest.mock import patch
+
+    no_servings = {**CURRY_DOC, "servings": None}
+    with patch.dict(DOCS, {("odunola/foodie", "curry-1"): no_servings}):
+        result2 = _run(run_agent(state.id, deps=deps2))
+    assert "scale_recipe" not in provider2.seen_tools[0]
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert result2.phase == "plan"
+    assert store.get(state.id).cooking_plan["plating"] == "in a bowl"
+    assert result2.final is not None
+    assert result2.final["plan"]["steps_source"] == "model_adaptation"
+    notes = [a["description"] for a in result2.final["plan"]["adaptations"]]
+    assert len(notes) == 1 and notes[0].startswith("Labelled by the app")
+    assert "'check'" in notes[0] and "'reaches'" in notes[0]
+    stored_notes = [a["description"] for a in store.get(state.id).cooking_plan["adaptations"]]
+    assert stored_notes == notes
+    events = store.list_events(state.id)
+    assert not [e for e in events if e.event_type == "agent_validation_reject"]
 
 
 def test_direct_dish_single_option_with_epicure(engine) -> None:
@@ -1631,6 +1960,43 @@ def test_offered_tools_pure() -> None:
     assert "search_web" in {d.name for d in offered_tools(state=on, excluded=set(), timeout_s=10.0)}
     excluded = offered_tools(state=on, excluded={"search_recipes"}, timeout_s=10.0)
     assert "search_recipes" not in {d.name for d in excluded}
+
+
+def test_offered_search_modes_follow_embeddings_setting() -> None:
+    # Phase 7 live fix: vector is absent from the offered enum without
+    # embeddings, present with them; requesting it anyway fails closed.
+    import json as _json
+
+    from culinary_copilot.config import Settings
+    from culinary_copilot.tools.registry import strict_parameters_schema
+
+    state = SessionState(id="ses-m")
+    off = {
+        d.name: d
+        for d in offered_tools(
+            state=state,
+            excluded=set(),
+            timeout_s=10.0,
+            settings=Settings(_env_file=None, embeddings_enabled=False),
+        )
+    }
+    off_mode = strict_parameters_schema(off["search_recipes"].args_model)["properties"]["mode"]
+    assert "vector" not in _json.dumps(off_mode)
+    with pytest.raises(Exception):
+        off["search_recipes"].args_model.model_validate({"query": "soup", "mode": "vector"})
+    on = {
+        d.name: d
+        for d in offered_tools(
+            state=state,
+            excluded=set(),
+            timeout_s=10.0,
+            settings=Settings(_env_file=None, embeddings_enabled=True),
+        )
+    }
+    assert (
+        on["search_recipes"].args_model.model_validate({"query": "soup", "mode": "vector"}).mode
+        == "vector"
+    )
 
 
 def test_next_actions_for_loop_reasons() -> None:
@@ -2023,7 +2389,7 @@ def test_cap_history_never_pins_first_item() -> None:
     from culinary_copilot.agent.loop import _cap_history, history_pairing_violations
 
     history: list[dict[str, Any]] = []
-    for turn in range(12):
+    for turn in range(20):
         history.append(
             {
                 "type": "function_call",
@@ -2033,12 +2399,32 @@ def test_cap_history_never_pins_first_item() -> None:
             }
         )
         history.append({"type": "function_call_output", "call_id": f"old-{turn}", "output": "{}"})
-    assert len(history) == 24  # over the cap: oldest whole groups must drop
+    assert len(history) == 40  # over the item ceiling: oldest whole groups must drop
     capped = _cap_history(history)
     assert history_pairing_violations(capped) == []
     kept_ids = [i.get("call_id") for i in capped if i.get("type") == "function_call"]
     assert "old-0" not in kept_ids  # the old pin-everything-first bug
-    assert "old-11" in kept_ids  # the newest group survives whole
+    assert "old-19" in kept_ids  # the newest group survives whole
+
+
+def test_cap_history_keeps_small_older_groups_within_the_char_budget() -> None:
+    # 2026-10-07 live session: a 3-recipe step pushed the small first
+    # step (pairings) out of the 13-item window and the model re-ran it.
+    from culinary_copilot.agent.loop import _HISTORY_CHAR_BUDGET, _cap_history
+
+    def _group(call_id: str, output: str) -> list[dict[str, Any]]:
+        return [
+            {"type": "function_call", "call_id": call_id, "name": "t", "arguments": "{}"},
+            {"type": "function_call_output", "call_id": call_id, "output": output},
+        ]
+
+    small = [item for n in range(7) for item in _group(f"s{n}", "{}")]
+    assert len(small) == 14
+    assert _cap_history(small) == small
+    big = "x" * (_HISTORY_CHAR_BUDGET // 2)
+    heavy = _group("old", "{}") + [i for n in range(7) for i in _group(f"h{n}", big)]
+    kept = [i.get("call_id") for i in _cap_history(heavy) if i.get("type") == "function_call"]
+    assert "old" not in kept and "h6" in kept
 
 
 def test_duplicate_call_id_fails_locally_without_sending(engine) -> None:
@@ -2512,7 +2898,8 @@ def test_options_after_select_rejected_then_plan_accepted(engine) -> None:
     plan = {
         "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
         "mise_en_place": ["chop chicken"],
-        "steps": ["cook curry", "serve"],
+        "steps": ["brown the chicken", "stir in yogurt", "serve"],
+        "step_sources": [0, 1, 2],
         "plating": "in a bowl",
     }
     provider2 = ScriptedProvider(
@@ -2585,7 +2972,7 @@ def test_constraints_honored_rejects_free_text_and_names_missing_key(engine) -> 
     rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
     assert len(rejects) == 1
     errors = rejects[0].payload["errors"]
-    assert any("not a session constraint" in e and "note instead" in e for e in errors)
+    assert any("not a session constraint" in e and "constraint_check" in e for e in errors)
     assert any(
         "dropped hard constraint: dietary_constraints" in e and "every option must satisfy it" in e
         for e in errors
@@ -2744,6 +3131,52 @@ def test_technique_answer_accepted_with_attribution(engine) -> None:
     ]
     assert result.final.get("epicure_skip_reason") == "simple_technique_question"
     assert "options" not in result.final and "plan" not in result.final
+
+
+def test_technique_answer_may_name_the_ingredient_the_user_asked_about(engine) -> None:
+    # 2026-10-07 live session: "how do I keep the lentils from turning
+    # mushy?" had its answer rejected for naming "lentil", which only
+    # the user's question (and the selected recipe) mentioned.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    core = _VocabEpicureCore({"lentil", "saffron", "egg"})
+    provider = ScriptedProvider(
+        [
+            ("tools", [("c1", "search_techniques", {"query": "simmer gently"})]),
+            (
+                "parsed",
+                _tech_answer(
+                    "Simmer the lentils gently; saffron adds color.",
+                    [{"doc_id": "tech-egg-1", "chunk_id": 0}],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+            (
+                "parsed",
+                _tech_answer(
+                    "Simmer the lentils gently and check them early.",
+                    [{"doc_id": "tech-egg-1", "chunk_id": 0}],
+                    epicure_skip_reason="simple_technique_question",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"search_techniques": _tech_search([_tech_row()])},
+        request_text="How do I keep the lentils from turning mushy?",
+        epicure_core=core,
+    )
+    deps.technique_resolver = lambda doc_id, chunk_id: dict(_tech_row(doc_id, chunk_id))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    errors = rejects[0].payload["errors"]
+    assert any("'saffron'" in e for e in errors)
+    assert not any("'lentil'" in e for e in errors)
 
 
 def test_technique_answer_unreturned_chunk_rejected(engine) -> None:
@@ -3141,6 +3574,118 @@ def test_unknown_dietary_value_not_checked(engine) -> None:
 # --- P3-L-08 minimum claim grounding ------------------------------------------
 
 
+def test_note_exclusions_are_not_pairing_claims() -> None:
+    # 2026-10-07 live session: "contain no meat" and "omitting the
+    # recipes with chicken broth or bouillon" were rejected as naming
+    # unsupported pairings.
+    from culinary_copilot.agent.loop import _negated_mention
+
+    note = (
+        "Its listed ingredients contain no meat or meat-derived item. "
+        "I'm omitting the recipes with chicken broth or bouillon."
+    )
+    assert _negated_mention(note, "meat")
+    assert _negated_mention(note, "chicken broth")
+    assert _negated_mention(note, "bouillon")
+    # A positive mention anywhere still counts as a claim.
+    assert not _negated_mention("Serve with saffron rice and no lemon.", "saffron")
+    assert not _negated_mention("No butter here. Add butter at the end.", "butter")
+
+
+def test_note_rejection_names_a_silently_dropped_option(engine) -> None:
+    # 2026-10-07 live session: a vegetarian session dropped one option
+    # for chicken broth (one survivor is allowed, so silently). The note
+    # still described it, failed as "unsupported pairing", and the model,
+    # never told about the drop, searched again until the stall stop.
+    store = PostgresSessionStore(engine)
+    state = _session(store, constraints={"dietary_constraints": ["vegetarian"]})
+    core = _VocabEpicureCore({"yogurt", "lentil", "onion", "chicken"})
+    turns: list[tuple[str, Any]] = [
+        (
+            "tools",
+            [
+                ("c1", "search_recipes", {"query": "lentil soup"}),
+                ("c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                ("c4", "find_balanced_pairings", {"ingredient": "lentil"}),
+            ],
+        ),
+        (
+            "parsed",
+            _finish_options(
+                _two_opts_no_quantities(),
+                epicure_lines=[{"ingredient": "pork", "decision": "rejected", "reason": "meat"}],
+                constraints_honored=["dietary_constraints"],
+                note="The curry is rich with yogurt; the soup is lighter.",
+            ),
+        ),
+        (
+            "parsed",
+            _finish_options(
+                _two_opts_no_quantities(),
+                epicure_lines=[{"ingredient": "pork", "decision": "rejected", "reason": "meat"}],
+                constraints_honored=["dietary_constraints"],
+                note="A simple red lentil soup.",
+            ),
+        ),
+    ]
+    provider = ScriptedProvider(turns)
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True), epicure_core=core)
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    errors = rejects[0].payload["errors"]
+    assert any("unsupported pairing" in e and "yogurt" in e for e in errors)
+    assert any(
+        "was dropped" in e and "Creamy Chicken Curry" in e and "vegetarian" in e for e in errors
+    )
+
+
+def test_rejected_wrap_up_is_retried_without_the_repeated_tool(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "curry"}),
+                    ("c2", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                ],
+            ),
+            ("tools", [("c5", "find_balanced_pairings", {"ingredient": "chicken"})]),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "saffron", "decision": "used", "reason": "not returned"}
+                    ],
+                ),
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "crisp contrast"}
+                    ],
+                ),
+            ),
+        ]
+    )
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=True)))
+    )
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert "find_balanced_pairings" not in provider.seen_tools[2]
+    assert "find_balanced_pairings" not in provider.seen_tools[3]
+    assert "get_recipe" in provider.seen_tools[3]
+
+
 def test_note_unsupported_pairing_rejected_then_returned_passes(engine) -> None:
     store = PostgresSessionStore(engine)
     state = _session(store)
@@ -3193,6 +3738,675 @@ def test_note_unsupported_pairing_rejected_then_returned_passes(engine) -> None:
     assert result.final.get("note") == "Two options with pork"
     assert result.final.get("note_source") == "model"
     assert result.final.get("note_claims") == "verified"
+
+
+def test_note_dish_name_from_request_and_titles_supported(engine) -> None:
+    # Phase 7 live fix (plan-safety): "curry" was flagged although the
+    # user asked for it and the option titles named it. Request text
+    # and selected option titles are support sources now.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    core = _VocabEpicureCore({"curry", "saffron", "pork", "chicken"})
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "creamy chicken curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                    note="creamy chicken curry for tonight",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        epicure_core=core,
+        request_text="Give me the creamy chicken curry recipe.",
+    )
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert rejects == []
+    assert result.final is not None
+    assert result.final.get("note_claims") == "verified"
+
+
+def test_note_genuinely_unsupported_pairing_still_rejected(engine) -> None:
+    # Same support sources, but "saffron" and "curry powder" appear in
+    # neither pairings, ingredients, request nor titles: still rejected.
+    # Phrase matching stays narrow: "curry" in the request does not
+    # cover "curry powder".
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    core = _VocabEpicureCore({"curry", "curry powder", "saffron", "pork", "chicken"})
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "creamy chicken curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                    note="creamy chicken curry with saffron and curry powder",
+                ),
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                    note="creamy chicken curry with pork",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        epicure_core=core,
+        request_text="Give me the creamy chicken curry recipe.",
+    )
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    errors = rejects[0].payload["errors"]
+    assert any("unsupported pairing" in e and "saffron" in e for e in errors)
+    assert any("unsupported pairing" in e and "curry powder" in e for e in errors)
+    assert not any("'curry'" in e for e in errors)
+
+
+def _saffron_title_run(engine, *, stored_request: str | None) -> tuple[Any, list[Any]]:
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    if stored_request is not None:
+        record_user_message(store, state.id, text=stored_request)
+    core = _VocabEpicureCore({"curry", "saffron", "pork", "chicken"})
+    titled = [
+        _opt(title="Creamy Chicken Curry with Saffron", quantities=[]),
+        _opt(source_id="lentil-2", title="Red Lentil Soup", quantities=[]),
+    ]
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "creamy chicken curry"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    titled,
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                    note="creamy chicken curry with saffron",
+                ),
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=[
+                        {"ingredient": "pork", "decision": "used", "reason": "roast match"}
+                    ],
+                    note="creamy chicken curry for tonight",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True), epicure_core=core)
+    result = _run(run_agent(state.id, deps=deps))
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    return result, rejects
+
+
+def test_note_pairing_not_supported_by_model_written_title(engine) -> None:
+    # Option titles are model-supplied and unvalidated: a title naming
+    # "saffron" must not vouch for a saffron pairing. Only the resolved
+    # source document's title counts.
+    result, rejects = _saffron_title_run(engine, stored_request="creamy chicken curry")
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert len(rejects) == 1
+    errors = rejects[0].payload["errors"]
+    assert any("unsupported pairing" in e and "saffron" in e for e in errors)
+    assert not any("'curry'" in e for e in errors)
+
+
+def test_note_dish_name_supported_by_stored_user_message(engine) -> None:
+    # API path: no explicit request_text; the latest stored user
+    # message (same text the pairing-cue guard reads) supports "curry".
+    # The model-written saffron title still supports nothing.
+    result, rejects = _saffron_title_run(engine, stored_request="I'd like a curry tonight")
+    assert result.stop_reason == "agent_sufficient_evidence"
+    errors = [e for r in rejects for e in r.payload["errors"]]
+    assert not any("'curry'" in e for e in errors)
+    assert any("saffron" in e for e in errors)
+
+
+def _curry_tools_turn() -> tuple[str, Any]:
+    return (
+        "tools",
+        [
+            ("c1", "search_recipes", {"query": "chicken dinner"}),
+            (
+                "c2",
+                "get_recipe",
+                {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+            ),
+            (
+                "c3",
+                "get_recipe",
+                {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+            ),
+            ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+        ],
+    )
+
+
+def _pork_lines() -> list[dict[str, str]]:
+    return [{"ingredient": "pork", "decision": "used", "reason": "roast match"}]
+
+
+def test_note_time_claim_repeat_rejected_with_actionable_message(engine) -> None:
+    # Phase 7 re-run (chicken): the model repeated "30-minute" after
+    # feedback. The rejection names the claim and says what to do
+    # instead; repeating it still fails.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    bad = _finish_options(
+        _two_opts_no_quantities(), epicure_lines=_pork_lines(), note="30-minute chicken dinner"
+    )
+    provider = ScriptedProvider([_curry_tools_turn(), ("parsed", bad), ("parsed", bad)])
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True))
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(run_agent(state.id, deps=deps))
+    assert "validation rejected" in str(excinfo.value)
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert rejects
+    assert any("remove the time" in e for r in rejects for e in r.payload["errors"])
+    assert any("30-minute" in e for r in rejects for e in r.payload["errors"])
+
+
+def test_note_time_claim_dropped_accepted(engine) -> None:
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            _curry_tools_turn(),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=_pork_lines(),
+                    note="30-minute chicken dinner",
+                ),
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(),
+                    epicure_lines=_pork_lines(),
+                    note="chicken dinner, time not given",
+                ),
+            ),
+        ]
+    )
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    assert result.final.get("note") == "chicken dinner, time not given"
+
+
+def test_note_time_supported_by_stored_title(engine) -> None:
+    # Phase 7 re-run: the stored title "20-Minute Chicken Parmesan"
+    # states 20 minutes, so the note may claim it for that recipe.
+    quick_doc = {
+        "dataset_id": "odunola/foodie",
+        "source_id": "quick-9",
+        "title": "20-Minute Chicken Parmesan",
+        "servings": 4.0,
+        "ingredients": [
+            {"canonical": "chicken", "amount": "500", "unit": "g", "quantity_text": "500 g"},
+        ],
+        "instructions": ["Coat the chicken.", "Bake until done.", "Serve hot."],
+    }
+
+    def _quick_search(args: Any, context: Any) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "mode_ran": "fulltext",
+            "cost_class": "free",
+            "results": [
+                {
+                    "dataset_id": "odunola/foodie",
+                    "source_id": "quick-9",
+                    "title": "20-Minute Chicken Parmesan",
+                },
+            ],
+        }
+
+    from unittest.mock import patch
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "quick chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "quick-9"},
+                    ),
+                    ("c3", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    [_opt(source_id="quick-9", title="20-Minute Chicken Parmesan")],
+                    epicure_lines=_pork_lines(),
+                    note="ready in 20 minutes",
+                ),
+            ),
+        ]
+    )
+    with patch.dict(DOCS, {("odunola/foodie", "quick-9"): quick_doc}):
+        deps = _deps(
+            store,
+            provider,
+            settings=_settings(epicure_enabled=True),
+            overrides={"search_recipes": _quick_search},
+        )
+        result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert rejects == []
+
+
+def test_note_time_model_written_title_supports_nothing(engine) -> None:
+    # A model-written option title naming a time is unvalidated: only
+    # the resolved document title counts.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    bad = _finish_options(
+        [_opt(title="30-Minute Miracle Curry")],
+        epicure_lines=_pork_lines(),
+        note="ready in 30 minutes",
+    )
+    good = _finish_options(
+        [_opt()],
+        epicure_lines=_pork_lines(),
+        note="chicken dinner, time not given",
+    )
+    provider = ScriptedProvider([_curry_tools_turn(), ("parsed", bad), ("parsed", good)])
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert any("30 minutes" in e for e in rejects[0].payload["errors"])
+    assert result.final is not None
+    assert result.final.get("note") == "chicken dinner, time not given"
+
+
+def test_constraints_honored_allergy_answer_needs_no_claim(engine) -> None:
+    # Phase 7 re-run (peanut): the session has no constraint keys, so
+    # claiming "dietary_constraints" is rejected with what to do
+    # instead — leave it empty, since the confirmed allergy answer is
+    # checked automatically and reported in constraint_check.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    bad = _finish_options(
+        _two_opts_no_quantities(),
+        epicure_lines=_pork_lines(),
+        constraints_honored=["dietary_constraints"],
+    )
+    good = _finish_options(_two_opts_no_quantities(), epicure_lines=_pork_lines())
+    provider = ScriptedProvider([_curry_tools_turn(), ("parsed", bad), ("parsed", good)])
+    deps = _deps(store, provider, settings=_settings(epicure_enabled=True))
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    errors = rejects[0].payload["errors"]
+    assert any("leave" in e and "constraint_check" in e for e in errors)
+    assert result.final is not None
+    assert result.final.get("constraints_honored") == []
+
+
+def _mirror_get_factory(seen: list[tuple[tuple[str, str], str]]) -> Any:
+    """get_recipe override mirroring the production duplicate rule.
+
+    Returns the short pointer only when the pair is both returned full
+    in this session and still visible in the run's capped history
+    (``context.visible_full_recipes``, set per turn by the real loop);
+    otherwise the full document. Records (pair, "full" | "short").
+    """
+
+    def _impl(args: Any, context: Any) -> dict[str, Any]:
+        from culinary_copilot.agent.loop import recipe_session_evidence
+
+        pair = (args.dataset_id, args.source_id)
+        store = getattr(context, "session_store", None)
+        sid = getattr(context, "bound_session_id", None)
+        visible = getattr(context, "visible_full_recipes", None)
+        in_session = False
+        if store is not None and sid:
+            _, full_pairs = recipe_session_evidence(store=store, session_id=str(sid))
+            in_session = pair in set(full_pairs)
+        if in_session and visible is not None and pair in set(visible):
+            seen.append((pair, "short"))
+            doc = DOCS.get(pair) or {}
+            return {
+                "ok": True,
+                "duplicate_of_session_evidence": True,
+                "dataset_id": pair[0],
+                "source_id": pair[1],
+                "title": str(doc.get("title") or ""),
+            }
+        seen.append((pair, "full"))
+        doc = DOCS.get(pair)
+        if doc is None:
+            return {
+                "ok": False,
+                "error_type": "invalid_arguments",
+                "reason": "tool_invalid_arguments",
+                "message": "not found",
+                "next_action": "change_request",
+            }
+        return {"ok": True, "recipe": dict(doc)}
+
+    return _impl
+
+
+def test_plan_run_refetch_after_select_gets_full_document(engine) -> None:
+    # Close-out regression (a): the plan run starts with an empty
+    # history; since H8 attempt 3 (2026-10-08) its input carries the
+    # selected recipe's get_recipe output, so a re-fetch returns the
+    # short pointer and the plan with source quantities is accepted.
+    from culinary_copilot.agent.loop import record_select
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    seen: list[tuple[tuple[str, str], str]] = []
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "hearty"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "lentils"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options(
+                    _two_opts_no_quantities(), epicure_lines=_pork_lines(), note="two options"
+                ),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"get_recipe": _mirror_get_factory(seen)},
+    )
+    _run(run_agent(state.id, deps=deps))
+    mid = store.get(state.id)
+    assert mid is not None
+    record_select(
+        store,
+        state.id,
+        expected_revision=mid.revision,
+        dataset_id="odunola/foodie",
+        source_id="lentil-2",
+    )
+    seen.clear()
+    provider2 = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    (
+                        "c9",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            (
+                "parsed",
+                {
+                    "decision": "finish",
+                    "move_to": "plan",
+                    "result": {
+                        "plan": {
+                            "source": {
+                                "dataset_id": "odunola/foodie",
+                                "source_id": "lentil-2",
+                            },
+                            "mise_en_place": ["chop onion"],
+                            "steps": ["simmer lentils", "serve"],
+                            "step_sources": [0, 1],
+                            "plating": "in a bowl",
+                            "quantities": [
+                                {"ingredient": "red lentils", "amount": "200", "unit": "g"}
+                            ],
+                            "adaptations": [],
+                        }
+                    },
+                    "constraints_honored": [],
+                    "note": "packet plan",
+                },
+            ),
+        ]
+    )
+    deps2 = _deps(store, provider2, overrides={"get_recipe": _mirror_get_factory(seen)})
+    result2 = _run(run_agent(state.id, deps=deps2))
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert result2.phase == "plan"
+    assert seen == [(("odunola/foodie", "lentil-2"), "short")]
+    first_turn = str(provider2.seen_inputs[0][-1].get("content"))
+    assert "Selected recipe: " in first_turn
+    assert '"source_id": "lentil-2"' in first_turn
+    assert "do not fetch it again" in first_turn
+
+
+def test_same_pair_twice_in_one_run_gets_pointer(engine) -> None:
+    # Close-out regression (b): the second fetch in the same run, with
+    # the original still in history, returns the short pointer.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    seen: list[tuple[tuple[str, str], str]] = []
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                ],
+            ),
+            (
+                "tools",
+                [
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options([_opt()], epicure_lines=_pork_lines(), note="packet finish"),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"get_recipe": _mirror_get_factory(seen)},
+    )
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert seen == [
+        (("odunola/foodie", "curry-1"), "full"),
+        (("odunola/foodie", "curry-1"), "short"),
+    ]
+
+
+def test_refetch_after_history_capping_gets_full_document(engine) -> None:
+    # Close-out regression (c): once capping drops the original
+    # outputs, a re-fetch comes back full again.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    seen: list[tuple[tuple[str, str], str]] = []
+
+    # Fillers use distinct calls: re-fetching one pair three times in a
+    # run is a no-progress stall (pointers count as repeats).
+    def _filler(n: int) -> tuple[str, Any]:
+        return (
+            "tools",
+            [
+                (f"s{n}", "search_recipes", {"query": f"filler {n}"}),
+                (f"t{n}", "search_recipes", {"query": f"padding {n}"}),
+            ],
+        )
+
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            _filler(1),
+            _filler(2),
+            _filler(3),
+            (
+                "tools",
+                [
+                    (
+                        "c9",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    ("c10", "find_balanced_pairings", {"ingredient": "chicken"}),
+                ],
+            ),
+            (
+                "parsed",
+                _finish_options([_opt()], epicure_lines=_pork_lines(), note="packet finish"),
+            ),
+        ]
+    )
+    deps = _deps(
+        store,
+        provider,
+        settings=_settings(epicure_enabled=True),
+        overrides={"get_recipe": _mirror_get_factory(seen)},
+    )
+    # Small fixture outputs fit the character budget, so pin the cap to
+    # the 13-item window to exercise capping.
+    from unittest.mock import patch
+
+    with patch("culinary_copilot.agent.loop._HISTORY_CHAR_BUDGET", 0):
+        result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    curry_modes = [mode for pair, mode in seen if pair[1] == "curry-1"]
+    assert curry_modes == ["full", "full"]
 
 
 def test_technique_time_claim_needs_cited_chunk(engine) -> None:
@@ -3410,6 +4624,115 @@ def test_ingredient_only_plan_needs_admission_then_accepted(engine) -> None:
     assert any("model_adaptation" in e for e in rejects[0].payload["errors"])
 
 
+def test_plan_fidelity_claim_rejected_then_retry_succeeds(engine) -> None:
+    # H3 part 2 (2026-10-08): a model_adaptation plan whose note claims
+    # fidelity is rejected with a removable-claim message; the retry
+    # without the claim succeeds and the final carries the model note
+    # with the validated steps_source label.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    _select_curry(store, state.id)
+
+    def _adaptation_plan() -> dict[str, Any]:
+        return {
+            "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+            "mise_en_place": ["chop chicken"],
+            "steps": [
+                "brown the chicken with extra garlic",
+                "stir in yogurt",
+                "serve",
+            ],
+            "step_sources": [0, 1, 2],
+            "plating": "in a bowl",
+            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+        }
+
+    def _parsed(note: str) -> dict[str, Any]:
+        return {
+            "decision": "finish",
+            "move_to": "plan",
+            "result": {"plan": _adaptation_plan()},
+            "constraints_honored": [],
+            "note": note,
+        }
+
+    provider2 = ScriptedProvider(
+        [
+            (
+                "tools",
+                [("c9", "search_techniques", {"query": "safe internal temperatures"})],
+            ),
+            ("parsed", _parsed("This follows the original recipe exactly.")),
+            ("parsed", _parsed("An adaptation with extra garlic.")),
+        ]
+    )
+    deps2 = _deps(
+        store,
+        provider2,
+        overrides={"search_techniques": _tech_search([_safety_row()])},
+    )
+    deps2.technique_resolver = lambda doc_id, chunk_id: (
+        dict(_safety_row()) if (doc_id, chunk_id) == ("tech-fda-safe-32", 0) else None
+    )
+    result2 = _run(run_agent(state.id, deps=deps2))
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert result2.final is not None
+    assert result2.final["plan"]["steps_source"] == "model_adaptation"
+    assert result2.final.get("note") == "An adaptation with extra garlic."
+    assert result2.final.get("note_source") == "model"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert len(rejects) == 1
+    assert any("claims fidelity" in e for e in rejects[0].payload["errors"])
+    assert any("remove the claim" in e for e in rejects[0].payload["errors"])
+
+
+def test_plan_fidelity_source_plan_with_fidelity_wording_passes(engine) -> None:
+    # H3 part 2: a source-labelled plan is not affected by fidelity
+    # wording in the note.
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    _select_curry(store, state.id)
+    plan = {
+        "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+        "mise_en_place": ["chop chicken"],
+        "steps": ["brown the chicken", "stir in yogurt", "serve"],
+        "step_sources": [0, 1, 2],
+        "plating": "in a bowl",
+        "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+    }
+    provider2 = ScriptedProvider(
+        [
+            (
+                "tools",
+                [("c9", "search_techniques", {"query": "safe internal temperatures"})],
+            ),
+            (
+                "parsed",
+                {
+                    "decision": "finish",
+                    "move_to": "plan",
+                    "result": {"plan": plan},
+                    "constraints_honored": [],
+                    "note": "This follows the source.",
+                },
+            ),
+        ]
+    )
+    deps2 = _deps(
+        store,
+        provider2,
+        overrides={"search_techniques": _tech_search([_safety_row()])},
+    )
+    deps2.technique_resolver = lambda doc_id, chunk_id: (
+        dict(_safety_row()) if (doc_id, chunk_id) == ("tech-fda-safe-32", 0) else None
+    )
+    result2 = _run(run_agent(state.id, deps=deps2))
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert result2.final is not None
+    assert result2.final["plan"]["steps_source"] == "source"
+    assert result2.final.get("note") == "This follows the source."
+
+
 # --- P3-L-10 truncation controls ------------------------------------------------
 
 
@@ -3535,3 +4858,764 @@ def test_spaced_degree_answer_passes_against_tight_chunk(engine) -> None:
     assert result.stop_reason == "agent_sufficient_evidence"
     assert result.final is not None
     assert result.final.get("note_claims") == "verified"
+
+
+# --- unnamed allergy restriction (P3-L-13) ---------------------------------------
+
+
+def _ask_allergy() -> dict[str, Any]:
+    return {
+        "decision": "ask_user",
+        "question": {
+            "question_id": "q-allergy",
+            "question_text": "What is your friend allergic to?",
+            "options": ["peanuts", "dairy", "other"],
+        },
+        "note": "need the named allergen before recommending",
+    }
+
+
+def _two_safe_opts() -> list[dict[str, Any]]:
+    return [
+        _opt(),
+        _opt(
+            source_id="lentil-2",
+            title="Red Lentil Soup",
+            quantities=[{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+        ),
+    ]
+
+
+def test_unnamed_allergy_blocks_finish_until_named_answer(engine) -> None:
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    record_user_message(
+        store,
+        state.id,
+        text=(
+            "I'm cooking dinner for a friend who has a food allergy. "
+            "Suggest something with chicken."
+        ),
+    )
+    finish = _finish_options(_two_safe_opts())
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", finish),
+            ("parsed", _ask_allergy()),
+        ]
+    )
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False)))
+    )
+    assert result.stop_reason == "agent_needs_user_input"
+    rejects = [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+    assert any(
+        "unnamed allergy or restriction" in " ".join(str(e) for e in r.payload.get("errors", []))
+        for r in rejects
+    ), "options finish rejected with the ask-first feedback"
+
+    mid = store.get(state.id)
+    assert mid is not None
+    answered = record_answer(
+        store,
+        state.id,
+        expected_revision=mid.revision,
+        question_id="q-allergy",
+        answer="She is allergic to peanuts.",
+    )
+    assert answered is not None
+    provider2 = ScriptedProvider([("parsed", finish)])
+    result2 = _run(
+        run_agent(state.id, deps=_deps(store, provider2, settings=_settings(epicure_enabled=False)))
+    )
+    assert result2.stop_reason == "agent_sufficient_evidence"
+    assert result2.final is not None
+    checks = result2.final.get("constraint_check", [])
+    assert [
+        c
+        for c in checks
+        if c.get("value") == "peanut" and c.get("status") == "no_listed_terms_found"
+    ]
+
+
+def test_named_allergy_request_finishes_without_asking(engine) -> None:
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    record_user_message(
+        store, state.id, text="My friend has a peanut allergy. Suggest something with chicken."
+    )
+    finish = _finish_options(_two_safe_opts())
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", finish),
+        ]
+    )
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False)))
+    )
+    assert result.stop_reason == "agent_sufficient_evidence"
+
+
+# --- dish-choice answers are not allergies (2026-10-05 demo finding) ---------------
+
+
+def _ask_dish_choice() -> dict[str, Any]:
+    return {
+        "decision": "ask_user",
+        "question": {
+            "question_id": "choose_dish",
+            "question_text": "Would you like the creamy yogurt curry or the lentil soup?",
+            "options": ["Creamy yogurt curry", "Red lentil soup"],
+        },
+        "note": "two directions found; asking which one",
+    }
+
+
+def _dish_choice_session(engine, *, request: str, answer: str):  # type: ignore[no-untyped-def]
+    """Ask a dish-choice question, record the answer, resume to options."""
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    record_user_message(store, state.id, text=request)
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "dinner"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", _ask_dish_choice()),
+        ]
+    )
+    first = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False)))
+    )
+    assert first.stop_reason == "agent_needs_user_input"
+    mid = store.get(state.id)
+    assert mid is not None
+    record_answer(
+        store, state.id, expected_revision=mid.revision, question_id="choose_dish", answer=answer
+    )
+    provider2 = ScriptedProvider([("parsed", _finish_options(_two_safe_opts()))])
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider2, settings=_settings(epicure_enabled=False)))
+    )
+    return store, state, result
+
+
+def test_dish_choice_answer_is_not_an_allergy(engine) -> None:
+    """Choosing "Creamy yogurt curry" is a choice, not a dairy allergy.
+
+    Live demo regression: "Creamy mushroom pasta" was read as a
+    wheat/gluten allergy and every pasta option was rejected.
+    """
+    _store, _state, result = _dish_choice_session(
+        engine, request="Something creamy for dinner.", answer="Creamy yogurt curry"
+    )
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    ids = [o.get("source_id") for o in result.final.get("options", [])]
+    assert "curry-1" in ids, "the chosen dish is not dropped as an allergen"
+    assert not [
+        c for c in result.final.get("constraint_check", []) if c.get("value") == "milk/dairy"
+    ]
+
+
+def test_avoidance_answer_still_checked(engine) -> None:
+    """An answer that states an avoidance ("No dairy please") still counts."""
+    _store, _state, result = _dish_choice_session(
+        engine, request="Something creamy for dinner.", answer="No dairy please"
+    )
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.final is not None
+    ids = [o.get("source_id") for o in result.final.get("options", [])]
+    assert "curry-1" not in ids, "the yogurt curry is dropped for the dairy avoidance"
+    assert "lentil-2" in ids
+
+
+def test_allergy_session_counts_every_answer(engine) -> None:
+    """With an allergy in the request, a dish-choice answer still counts.
+
+    Conservative by design: in a session that mentions an allergy, every
+    answer is allergy evidence, exactly as before.
+    """
+    _store, _state, result = _dish_choice_session(
+        engine,
+        request="My friend has a dairy allergy; something creamy for dinner.",
+        answer="Creamy yogurt curry",
+    )
+    assert result.final is not None
+    ids = [o.get("source_id") for o in result.final.get("options", [])]
+    assert "curry-1" not in ids
+
+
+def test_allergy_answer_texts_rule() -> None:
+    from culinary_copilot.agent.validate import allergy_answer_texts
+
+    answers = [
+        {"question_id": "choose_pasta", "answer": "Creamy mushroom pasta"},
+        {"question_id": "q-allergy", "answer": "peanuts"},
+        {"question_id": "q-extra", "answer": "gluten-free please"},
+    ]
+    questions = {
+        "choose_pasta": "Would you like baked ziti or creamy mushroom pasta?",
+        "q-allergy": "What is your friend allergic to? peanuts dairy",
+        "q-extra": "Anything else?",
+    }
+    assert allergy_answer_texts(answers, questions, ["I need a vegetarian pasta"]) == [
+        "peanuts",
+        "gluten-free please",
+    ]
+    assert allergy_answer_texts(answers, questions, ["She has a food allergy"]) == [
+        "Creamy mushroom pasta",
+        "peanuts",
+        "gluten-free please",
+    ]
+    assert allergy_answer_texts(
+        [{"question_id": "q", "answer": "nuts"}], {"q": "Which foods do you avoid?"}, []
+    ) == ["nuts"]
+    # Avoidance wording in the request makes every answer count.
+    assert allergy_answer_texts(answers, questions, ["Dinner with chicken, no peanuts please."])[
+        0
+    ] == ("Creamy mushroom pasta")
+    # An answer to a question this session never recorded always counts.
+    assert allergy_answer_texts([{"question_id": "q-seeded", "answer": "pasta"}], {}, []) == [
+        "pasta"
+    ]
+
+
+# --- token-growth final turn (P3-L-13 run 1) --------------------------------------
+
+
+def test_token_growth_final_turn_rule() -> None:
+    from culinary_copilot.agent.loop import token_growth_final_turn
+
+    # Run-1 shape: after turn 6 the remainder cannot cover two more
+    # turns of the current size -> final.
+    assert (
+        token_growth_final_turn(
+            in_ceiling=30000,
+            used_in=18363,
+            est_in=6000,
+            out_ceiling=12000,
+            used_out=200,
+            turn_cap=6500,
+            last_turn_in=4790,
+            last_turn_out=35,
+        )
+        is True
+    )
+    # Earlier: plenty of room -> not final.
+    assert (
+        token_growth_final_turn(
+            in_ceiling=30000,
+            used_in=13573,
+            est_in=5500,
+            out_ceiling=12000,
+            used_out=150,
+            turn_cap=6500,
+            last_turn_in=4025,
+            last_turn_out=35,
+        )
+        is False
+    )
+    # First turn: no current size yet -> never final on growth.
+    assert (
+        token_growth_final_turn(
+            in_ceiling=30000,
+            used_in=0,
+            est_in=12000,
+            out_ceiling=12000,
+            used_out=0,
+            turn_cap=6500,
+            last_turn_in=None,
+            last_turn_out=None,
+        )
+        is False
+    )
+    # Output near exhaustion with a tiny typical turn -> final.
+    assert (
+        token_growth_final_turn(
+            in_ceiling=30000,
+            used_in=5000,
+            est_in=2000,
+            out_ceiling=12000,
+            used_out=11900,
+            turn_cap=100,
+            last_turn_in=2000,
+            last_turn_out=30,
+        )
+        is True
+    )
+
+
+def test_growing_turns_reach_toolless_final_before_budget_stop(engine) -> None:
+    from culinary_copilot.llm.client import NativeTurnResult
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    sizes = iter([3000, 3500, 4000, 4500, 5000, 5000, 5000, 5000])
+    tool_turns = iter(
+        [
+            # All finish evidence in turn 1, so a growth flip on any
+            # later turn still validates.
+            [
+                ("c1", "search_recipes", {"query": "chicken"}),
+                (
+                    "c2",
+                    "get_recipe",
+                    {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                ),
+                (
+                    "c3",
+                    "get_recipe",
+                    {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                ),
+                ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+            ],
+            [("c5", "search_recipes", {"query": "chicken curry"})],
+            [("c6", "search_recipes", {"query": "lentil soup"})],
+            [("c7", "search_recipes", {"query": "roast chicken"})],
+            [("c8", "search_recipes", {"query": "grilled chicken"})],
+        ]
+    )
+
+    class _GrowingProvider:
+        def __init__(self) -> None:
+            self.seen_tools: list[list[str]] = []
+
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+            tools = kwargs.get("tools") or []
+            self.seen_tools.append([t["name"] for t in tools])
+            size = next(sizes)
+            if tools:
+                batch = next(tool_turns)
+                calls = [
+                    NativeToolCall(call_id=cid, name=name, arguments=json.dumps(args))
+                    for cid, name, args in batch
+                ]
+                chain = [
+                    {
+                        "type": "function_call",
+                        "call_id": cid,
+                        "name": name,
+                        "arguments": json.dumps(args),
+                    }
+                    for cid, name, args in batch
+                ]
+                return NativeTurnResult(
+                    tool_calls=calls,
+                    parsed=None,
+                    chain_items=chain,
+                    input_tokens=size,
+                    output_tokens=30,
+                )
+            return NativeTurnResult(
+                tool_calls=[],
+                parsed=_finish_options(_two_safe_opts()),
+                chain_items=[],
+                input_tokens=size,
+                output_tokens=40,
+            )
+
+    provider = _GrowingProvider()
+    # Pinned explicitly: the scripted turn sizes are calibrated to a 30k
+    # input ceiling (the default was raised to 60k on 2026-10-04).
+    deps = _deps(store, provider, settings=_settings(agent_input_token_ceiling=30000))
+    assert deps.settings.agent_input_token_ceiling == 30000
+    assert deps.settings.agent_output_token_ceiling == 12000
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert any(tools == [] for tools in provider.seen_tools), (
+        "a tool-less final turn ran before the input budget stopped the session"
+    )
+    assert len(provider.seen_tools) <= 8
+    # Budgets themselves are unchanged by the run.
+    assert deps.settings.agent_input_token_ceiling == 30000
+    assert deps.settings.agent_output_token_ceiling == 12000
+
+
+# --- allergen-free claim rule (P3-L-13 review) -------------------------------------
+
+
+def _answered_peanut_session(engine: Any) -> Any:
+    """Session with tools done, allergy asked and peanuts answered."""
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    record_user_message(
+        store,
+        state.id,
+        text=(
+            "I'm cooking dinner for a friend who has a food allergy. "
+            "Suggest something with chicken."
+        ),
+    )
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", _ask_allergy()),
+        ]
+    )
+    result = _run(
+        run_agent(state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False)))
+    )
+    assert result.stop_reason == "agent_needs_user_input"
+    mid = store.get(state.id)
+    assert mid is not None
+    answered = record_answer(
+        store,
+        state.id,
+        expected_revision=mid.revision,
+        question_id="q-allergy",
+        answer="She is allergic to peanuts.",
+    )
+    assert answered is not None
+    return store, state
+
+
+def _reject_texts(store: Any, session_id: str) -> list[str]:
+    return [
+        " ".join(str(e) for e in r.payload.get("errors", []))
+        for r in store.list_events(session_id)
+        if r.event_type == "agent_validation_reject"
+    ]
+
+
+def test_allergen_free_note_rejected(engine) -> None:
+    store, state = _answered_peanut_session(engine)
+    bad = _finish_options(_two_safe_opts(), note="These options are peanut-free.")
+    provider = ScriptedProvider([("parsed", bad), ("parsed", bad)])
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(
+            run_agent(
+                state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False))
+            )
+        )
+    assert excinfo.value.reason == "agent_validation_failed"
+    assert any("allergen-free" in text for text in _reject_texts(store, state.id)), (
+        "peanut-free note rejected with the claim feedback"
+    )
+
+
+def test_safe_for_allergy_note_rejected(engine) -> None:
+    store, state = _answered_peanut_session(engine)
+    bad = _finish_options(_two_safe_opts(), note="Safe for her allergy, enjoy.")
+    provider = ScriptedProvider([("parsed", bad), ("parsed", bad)])
+    with pytest.raises(AgentLoopError) as excinfo:
+        _run(
+            run_agent(
+                state.id, deps=_deps(store, provider, settings=_settings(epicure_enabled=False))
+            )
+        )
+    assert excinfo.value.reason == "agent_validation_failed"
+    assert any("allergen-free" in text for text in _reject_texts(store, state.id)), (
+        "safe-for-allergy note rejected with the claim feedback"
+    )
+
+
+def test_evidence_digest_lists_web_searches(engine) -> None:
+    """Step-2 diagnosis: the model could not see its own web searches
+    and searched again instead of answering."""
+    from culinary_copilot.agent.loop import session_evidence_digest
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    store.append_event(
+        state.id,
+        "tool_call",
+        {
+            "call_id": "call_web1",
+            "tool": "search_web",
+            "outcome": "ok",
+            "args": '{"query": "okonomiyaki recipe"}',
+            "result_facts": {
+                "source_count": 3,
+                "classifications": ["unclassified", "unclassified", "unclassified"],
+                "titles": ["Gastronomy", "Washoku", "Recipes"],
+                "hosts": ["osaka-info.jp", "maff.go.jp", "otafukusauce.com"],
+            },
+        },
+    )
+    digest = session_evidence_digest(store, state.id)
+    assert "web query='okonomiyaki recipe' sources=3" in digest
+    assert "titles=[Gastronomy, Washoku, Recipes]" in digest
+    assert "hosts=[osaka-info.jp, maff.go.jp, otafukusauce.com]" in digest
+
+
+# --- full trajectory recording (AGENT_RECORD_TRAJECTORY) ----------------------------
+
+
+def _trajectory_run(engine, *, record: bool):  # type: ignore[no-untyped-def]
+    from culinary_copilot.agent.loop import record_user_message
+
+    store = PostgresSessionStore(engine)
+    state = _session(store)
+    record_user_message(store, state.id, text="Something with chicken, email me at a@b.com")
+    provider = ScriptedProvider(
+        [
+            (
+                "tools",
+                [
+                    ("c1", "search_recipes", {"query": "chicken"}),
+                    (
+                        "c2",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                    ),
+                    (
+                        "c3",
+                        "get_recipe",
+                        {"dataset_id": "odunola/foodie", "source_id": "lentil-2"},
+                    ),
+                ],
+            ),
+            ("parsed", _finish_options(_two_safe_opts(), note="see a@b.com")),
+        ]
+    )
+    settings = _settings(epicure_enabled=False, agent_record_trajectory=record)
+    result = _run(run_agent(state.id, deps=_deps(store, provider, settings=settings)))
+    return [e for e in store.list_events(state.id)], result
+
+
+def test_trajectory_recorded_when_enabled(engine) -> None:
+    events, result = _trajectory_run(engine, record=True)
+    assert result.stop_reason == "agent_sufficient_evidence"
+    by_type = {e.event_type: e.payload for e in events}
+    outputs = by_type["trajectory_tool_outputs"]["outputs"]
+    assert [o["tool"] for o in outputs] == ["search_recipes", "get_recipe", "get_recipe"]
+    assert "Creamy Chicken Curry" in outputs[1]["output"]["text"]
+    directive = by_type["trajectory_model_directive"]["directive"]["text"]
+    assert "curry-1" in directive
+    assert "a@b.com" not in directive, "trajectory text is scrubbed"
+    run_result = by_type["trajectory_run_result"]
+    assert run_result["stop_reason"] == "agent_sufficient_evidence"
+    assert "curry-1" in run_result["final"]["text"]
+
+
+def test_trajectory_not_recorded_by_default(engine) -> None:
+    events, result = _trajectory_run(engine, record=False)
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert not [e for e in events if e.event_type.startswith("trajectory_")]
+
+
+def test_build_tool_context_records_args_only_with_trajectory() -> None:
+    from culinary_copilot.tools import build_tool_context
+
+    on = build_tool_context(settings=_settings(agent_record_trajectory=True), engine=None)
+    off = build_tool_context(settings=_settings(), engine=None)
+    assert on.record_tool_args is True
+    assert off.record_tool_args is False
+
+
+def test_duplicate_recipe_pointer_summary_names_the_earlier_output() -> None:
+    # 2026-10-06 live session: the pointer summarized as an empty recipe
+    # and the model claimed the selected recipe had no directions.
+    from culinary_copilot.agent.loop import _summarize_result, visible_full_recipe_pairs
+
+    summary = _summarize_result(
+        "get_recipe",
+        {
+            "ok": True,
+            "duplicate_of_session_evidence": True,
+            "dataset_id": "odunola/foodie",
+            "source_id": "foodie-007008",
+            "title": "Adobo Chicken with Ginger",
+            "message": "already returned in this session",
+        },
+    )
+    assert "recipe" not in summary
+    assert summary["recipe_ref"] == {
+        "dataset_id": "odunola/foodie",
+        "source_id": "foodie-007008",
+        "title": "Adobo Chicken with Ginger",
+    }
+    assert "ingredients and directions" in summary["message"]
+    item = {"type": "function_call_output", "call_id": "c1", "output": json.dumps(summary)}
+    assert visible_full_recipe_pairs([item]) == set()
+
+
+def test_recipe_summary_shows_amounts_in_the_sources_own_notation() -> None:
+    # 2026-10-07 live session: "11/2 lb" (an exact 5 1/2) was read as
+    # "1 1/2 lb" in the plan's mise en place.
+    from culinary_copilot.agent.loop import readable_amount
+
+    assert readable_amount({"amount": "11/2", "amount_text": "5 1/2"}) == "5 1/2"
+    assert readable_amount({"amount": "3/2", "amount_text": "1 1/2"}) == "1 1/2"
+    assert readable_amount({"amount": "2", "amount_text": None}) == "2"
+    # Text that does not parse to the stored value never replaces it.
+    assert readable_amount({"amount": "11/2", "amount_text": "5-6"}) == "11/2"
+    assert readable_amount({"amount": "2", "amount_text": "3"}) == "2"
+
+
+def test_pointer_result_facts_keep_the_title() -> None:
+    # 2026-10-07 live session: pointer calls were logged with title "".
+    from culinary_copilot.tools.registry import _result_facts
+
+    facts = _result_facts(
+        "get_recipe",
+        {
+            "ok": True,
+            "duplicate_of_session_evidence": True,
+            "dataset_id": "odunola/foodie",
+            "source_id": "foodie-007015",
+            "title": "Filipino Chicken Adobo",
+        },
+    )
+    assert facts == {"title": "Filipino Chicken Adobo", "duplicate": True}
+
+
+def test_recipe_summary_shows_long_directions_and_marks_clipped_ones() -> None:
+    # 2026-10-07 live session: a 200-char cut per direction hid a simmer
+    # time, two ingredients and the source's own thermometer check, while
+    # directions_truncated said False.
+    from culinary_copilot.agent.loop import _summarize_result
+
+    long_direction = ("Bring to a boil. " + "Add bay leaves and simmer. " * 14).strip()
+    huge_direction = "z" * 700
+    summary = _summarize_result(
+        "get_recipe",
+        {
+            "ok": True,
+            "recipe": {
+                "dataset_id": "odunola/foodie",
+                "source_id": "foodie-007015",
+                "title": "Filipino Chicken Adobo",
+                "ingredients": [{"canonical": "chicken wings", "amount": "1", "unit": "lb"}],
+                "instructions": [long_direction, huge_direction, "Serve hot."],
+            },
+        },
+    )
+    recipe = summary["recipe"]
+    assert 200 < len(long_direction) <= 600
+    assert recipe["directions"][0] == long_direction
+    assert recipe["directions"][1] == "z" * 600 + "…"
+    assert recipe["directions"][2] == "Serve hot."
+    assert recipe["directions_clipped"] == [1]
+    assert recipe["directions_truncated"] is False
+
+
+def test_technique_summary_keeps_full_excerpts_within_tool_limit() -> None:
+    # 2026-10-06 live session: a 300-char cut hid the poultry row of the
+    # FDA temperature table and the model searched for it in a loop.
+    from culinary_copilot.agent.loop import (
+        _summarize_result,
+        tool_output_limit,
+        truncate_tool_output,
+    )
+
+    hits = [
+        {
+            "doc_id": f"tech-doc-{i}",
+            "chunk_id": i,
+            "section": "Safe Minimum Internal Temperatures",
+            "title": "Safe Food Handling",
+            "url": "https://www.fda.gov/food/buy-store-serve-safe-food/safe-food-handling",
+            "licence": "US-PD",
+            "licence_url": "https://www.fda.gov/about-fda/about-website/website-policies",
+            "attribution_text": (
+                "Safe Food Handling — U.S. Food and Drug Administration, public domain, via "
+                "https://www.fda.gov/food/buy-store-serve-safe-food/safe-food-handling "
+                "(retrieved 2026-09-28T23:49:55Z)."
+            ),
+            "excerpt": ("x" * 320) + " Poultry | 165 °F " + ("y" * 262),
+        }
+        for i in range(5)
+    ]
+    summary = _summarize_result("search_techniques", {"ok": True, "results": hits})
+    out = truncate_tool_output(summary, tool_output_limit("search_techniques"))
+    assert "truncated" not in out
+    assert len(out["results"]) == 5
+    assert all("165 °F" in r["excerpt"] for r in out["results"])
+    assert all(r["attribution_text"] for r in out["results"])
+    assert tool_output_limit("search_recipes") == 4000
+
+
+def test_turn_input_says_the_app_checks_a_named_allergy() -> None:
+    from types import SimpleNamespace
+
+    from culinary_copilot.agent.loop import build_turn_input
+
+    state = SimpleNamespace(
+        current_phase="clarify",
+        constraints={},
+        confirmed_answers=[{"question_id": "allergy", "answer": "Tree nuts"}],
+        unresolved_questions=[],
+        steps_remaining=10,
+        tool_calls_remaining=10,
+        internet_search_allowed=False,
+        epicure_outcome=None,
+        epicure_skip_reason=None,
+        suggestions=[],
+        selected_dish=None,
+        cooking_plan={},
+    )
+    text = str(build_turn_input(state=state, history=[], last_outcome=None)[-1]["content"])
+    assert "Allergy check: the app checks each option's listed ingredients for tree nuts" in text
+    state.confirmed_answers = [{"question_id": "size", "answer": "About 20 people"}]
+    text = str(build_turn_input(state=state, history=[], last_outcome=None)[-1]["content"])
+    assert "Allergy check" not in text

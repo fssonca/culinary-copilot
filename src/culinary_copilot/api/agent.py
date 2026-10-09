@@ -126,6 +126,11 @@ def build_router(
             engine=engine,
             session_store=session_store,
             embed_provider=embed_provider,
+            # Real web search only when the operator enables it; the
+            # per-session toggle and slot cap still gate every call.
+            search_provider=(
+                provider if bool(getattr(settings, "web_search_enabled", False)) else None
+            ),
         )
     )
 

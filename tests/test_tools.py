@@ -8,6 +8,7 @@ Disposable-DB permission flow lives in tests/test_tools_pg.py.
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import pytest
@@ -254,6 +255,69 @@ def test_search_recipes_vector_without_embeddings_is_not_configured_no_fallback(
     assert result["reason"] == REASON_TOOL_NOT_CONFIGURED
     assert next_action_for(result["reason"]) == "contact_operator"
     assert called["n"] == 0
+
+
+def test_search_recipes_vector_offer_and_error_point_to_fulltext() -> None:
+    # Phase 7 live fix (vegan run): the offered mode enum and
+    # description come from settings, so vector is absent without
+    # embeddings; a vector request that still reaches the impl keeps
+    # the typed error but points back at fulltext.
+    from culinary_copilot.tools.registry import strict_parameters_schema
+    from culinary_copilot.tools.search_tools import (
+        search_modes,
+        with_configured_search_modes,
+    )
+
+    assert search_modes(_settings()) == ("fulltext",)
+    assert search_modes(_settings(embeddings_enabled=True)) == ("fulltext", "vector")
+    defs = {d.name: d for d in all_tool_definitions(timeout_s=10.0)}
+    off = {d.name: d for d in with_configured_search_modes(list(defs.values()), _settings())}
+    schema = strict_parameters_schema(off["search_recipes"].args_model)
+    mode_node = schema["properties"]["mode"]
+    assert "fulltext" in json.dumps(mode_node)
+    assert "vector" not in json.dumps(mode_node)
+    assert "fulltext" in off["search_recipes"].description
+    on = {
+        d.name: d
+        for d in with_configured_search_modes(
+            list(defs.values()), _settings(embeddings_enabled=True)
+        )
+    }
+    assert "vector" in json.dumps(
+        strict_parameters_schema(on["search_recipes"].args_model)["properties"]["mode"]
+    )
+    ctx = _ctx(engine=object(), embed_provider=None)
+    result = _call("search_recipes", {"query": "soup", "mode": "vector"}, ctx)
+    assert result["ok"] is False
+    assert result["reason"] == REASON_TOOL_NOT_CONFIGURED
+    assert 'mode "fulltext"' in result["message"]
+    assert result["next_action"] == "retry"
+
+
+def test_search_techniques_vector_offer_and_error_point_to_fulltext() -> None:
+    from culinary_copilot.tools.registry import strict_parameters_schema
+    from culinary_copilot.tools.technique_tools import with_configured_technique_modes
+
+    defs = {d.name: d for d in all_tool_definitions(timeout_s=10.0)}
+    off = {d.name: d for d in with_configured_technique_modes(list(defs.values()), _settings())}
+    mode_node = strict_parameters_schema(off["search_techniques"].args_model)["properties"]["mode"]
+    assert "vector" not in json.dumps(mode_node)
+    assert "fulltext" in off["search_techniques"].description
+    on = {
+        d.name: d
+        for d in with_configured_technique_modes(
+            list(defs.values()), _settings(embeddings_enabled=True)
+        )
+    }
+    assert "vector" in json.dumps(
+        strict_parameters_schema(on["search_techniques"].args_model)["properties"]["mode"]
+    )
+    ctx = _ctx(engine=object(), embed_provider=None)
+    result = _call("search_techniques", {"query": "braise", "mode": "vector"}, ctx)
+    assert result["ok"] is False
+    assert result["reason"] == REASON_TOOL_NOT_CONFIGURED
+    assert 'mode "fulltext"' in result["message"]
+    assert result["next_action"] == "retry"
 
 
 def test_search_recipes_disabled_provider_vector_is_not_configured() -> None:

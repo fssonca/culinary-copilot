@@ -1,0 +1,1896 @@
+{
+  "cases_file": "cases.json",
+  "cases_version": "phase7-cases-v13-2026-10-08",
+  "cases_sha256": "0bf78cf946dc52bfae3046ab8f6e26296edcd59cdcb332f82fd6ebe40117e67a",
+  "history_v1": {
+    "cases_version": "phase7-cases-v1-2026-10-04",
+    "cases_sha256": "5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b",
+    "aggregate": {
+      "total": 28,
+      "scored": 27,
+      "completed": 27,
+      "task_completion_rate": 1.0,
+      "expected_fail_total": 1,
+      "expected_fail_completed": 0,
+      "stop_reason_distribution": {
+        "agent_sufficient_evidence": 18,
+        "agent_validation_failed": 3,
+        "agent_needs_user_input": 3,
+        "agent_max_steps": 1,
+        "agent_tool_budget_exhausted": 1,
+        "agent_token_budget_exhausted": 1,
+        "agent_wall_clock_exceeded": 1
+      },
+      "invalid_transitions_total": 1,
+      "tool_argument_validity_mean": 0.9928571428571429,
+      "unnecessary_call_rate_mean": 0.0,
+      "epicure_compliance_rate": 0.9642857142857143,
+      "source_reference_correctness_rate": 1.0,
+      "unsupported_claim_cases": 0,
+      "adversarial_total": 4,
+      "adversarial_caught": 4,
+      "adversarial_catch_rate": 1.0,
+      "latency_tokens_cost": "not measured offline (scripted provider)"
+    },
+    "note": "v1 scored dietary/adversarial cases on the stop reason alone"
+  },
+  "history_v8": {
+    "cases_version": "phase7-cases-v8-2026-10-05",
+    "cases_sha256": "2713af2655a058ae799a5bed6d8c9711b19b0e94ae759f4b1205a01d57c421b8",
+    "aggregate": {
+      "total": 43,
+      "scored": 43,
+      "completed": 43,
+      "task_completion_rate": 1.0,
+      "expected_fail_total": 0,
+      "expected_fail_completed": 0,
+      "stop_reason_distribution": {
+        "agent_sufficient_evidence": 32,
+        "agent_validation_failed": 4,
+        "agent_needs_user_input": 3,
+        "agent_max_steps": 1,
+        "agent_tool_budget_exhausted": 1,
+        "agent_token_budget_exhausted": 1,
+        "agent_wall_clock_exceeded": 1
+      },
+      "invalid_transitions_total": 1,
+      "tool_argument_validity_mean": 0.9906976744186047,
+      "unnecessary_call_rate_mean": 0.0,
+      "epicure_compliance_rate": 0.9767441860465116,
+      "source_reference_correctness_rate": 1.0,
+      "unsupported_claim_cases": 3,
+      "adversarial_total": 4,
+      "adversarial_caught": 4,
+      "adversarial_catch_rate": 1.0,
+      "latency_tokens_cost": "not measured offline (scripted provider)"
+    },
+    "note": "pre-H4: p7-budget-tools stopped at the excess batch (agent_tool_budget_exhausted) with no finishing turn"
+  },
+  "history_v9": {
+    "cases_version": "phase7-cases-v9-2026-10-08",
+    "cases_sha256": "808cc23c7ad04025854e25c8f2893bbdd088b31a5a806fd169cb8ee494f987ee",
+    "aggregate": {
+      "total": 44,
+      "scored": 44,
+      "completed": 44,
+      "task_completion_rate": 1.0,
+      "expected_fail_total": 0,
+      "expected_fail_completed": 0,
+      "stop_reason_distribution": {
+        "agent_sufficient_evidence": 32,
+        "agent_validation_failed": 4,
+        "agent_needs_user_input": 4,
+        "agent_max_steps": 1,
+        "agent_tool_budget_exhausted": 1,
+        "agent_token_budget_exhausted": 1,
+        "agent_wall_clock_exceeded": 1
+      },
+      "invalid_transitions_total": 1,
+      "tool_argument_validity_mean": 0.990909090909091,
+      "unnecessary_call_rate_mean": 0.0,
+      "epicure_compliance_rate": 0.9772727272727273,
+      "source_reference_correctness_rate": 1.0,
+      "unsupported_claim_cases": 3,
+      "adversarial_total": 4,
+      "adversarial_caught": 4,
+      "adversarial_catch_rate": 1.0,
+      "latency_tokens_cost": "not measured offline (scripted provider)"
+    },
+    "note": "pre-H7: 44 cases, no per-turn decision log, no H7 recovery-path cases"
+  },
+  "history_v10": {
+    "cases_version": "phase7-cases-v10-2026-10-08",
+    "cases_sha256": "198ef720520d7ead03fff420bea5360ad6fbaea47be2b117c2759df1335820d8",
+    "aggregate": {
+      "total": 55,
+      "scored": 55,
+      "completed": 55,
+      "task_completion_rate": 1.0,
+      "expected_fail_total": 0,
+      "expected_fail_completed": 0,
+      "stop_reason_distribution": {
+        "agent_sufficient_evidence": 43,
+        "agent_validation_failed": 4,
+        "agent_needs_user_input": 4,
+        "agent_max_steps": 1,
+        "agent_tool_budget_exhausted": 1,
+        "agent_token_budget_exhausted": 1,
+        "agent_wall_clock_exceeded": 1
+      },
+      "invalid_transitions_total": 1,
+      "tool_argument_validity_mean": 0.9927272727272728,
+      "unnecessary_call_rate_mean": 0.0,
+      "epicure_compliance_rate": 0.9818181818181818,
+      "source_reference_correctness_rate": 1.0,
+      "unsupported_claim_cases": 5,
+      "adversarial_total": 4,
+      "adversarial_caught": 4,
+      "adversarial_catch_rate": 1.0,
+      "latency_tokens_cost": "not measured offline (scripted provider)"
+    },
+    "note": "pre-stall-recovery: the third identical call stopped the run at once"
+  },
+  "history_v11": {
+    "cases_version": "phase7-cases-v11-2026-10-08",
+    "cases_sha256": "a91c1d9e3c220e3835a695d037013de98a1bfc195985af5a3bc082a45edbd720",
+    "aggregate": {
+      "total": 58,
+      "scored": 58,
+      "completed": 58,
+      "task_completion_rate": 1.0,
+      "expected_fail_total": 0,
+      "expected_fail_completed": 0,
+      "stop_reason_distribution": {
+        "agent_sufficient_evidence": 45,
+        "agent_validation_failed": 4,
+        "agent_needs_user_input": 4,
+        "agent_max_steps": 1,
+        "agent_tool_budget_exhausted": 1,
+        "agent_token_budget_exhausted": 1,
+        "agent_wall_clock_exceeded": 1,
+        "agent_no_progress": 1
+      },
+      "invalid_transitions_total": 1,
+      "tool_argument_validity_mean": 0.993103448275862,
+      "unnecessary_call_rate_mean": 0.0,
+      "epicure_compliance_rate": 0.9827586206896551,
+      "source_reference_correctness_rate": 1.0,
+      "unsupported_claim_cases": 5,
+      "adversarial_total": 4,
+      "adversarial_caught": 4,
+      "adversarial_catch_rate": 1.0,
+      "latency_tokens_cost": "not measured offline (scripted provider)"
+    },
+    "note": "pre-v12: 58 cases; an answer-named allergen in a note was not tested"
+  },
+  "history_v12": {
+    "cases_version": "phase7-cases-v12-2026-10-08",
+    "cases_sha256": "749e1bb76c9161ee45a9dd1d00d5a456ad3044ccf2e64f086f88008bf079d62e",
+    "aggregate": {
+      "total": 59,
+      "scored": 59,
+      "completed": 59,
+      "task_completion_rate": 1.0,
+      "expected_fail_total": 0,
+      "expected_fail_completed": 0,
+      "stop_reason_distribution": {
+        "agent_sufficient_evidence": 46,
+        "agent_validation_failed": 4,
+        "agent_needs_user_input": 4,
+        "agent_max_steps": 1,
+        "agent_tool_budget_exhausted": 1,
+        "agent_token_budget_exhausted": 1,
+        "agent_wall_clock_exceeded": 1,
+        "agent_no_progress": 1
+      },
+      "invalid_transitions_total": 1,
+      "tool_argument_validity_mean": 0.9932203389830508,
+      "unnecessary_call_rate_mean": 0.0,
+      "epicure_compliance_rate": 0.9830508474576272,
+      "source_reference_correctness_rate": 1.0,
+      "unsupported_claim_cases": 5,
+      "adversarial_total": 4,
+      "adversarial_caught": 4,
+      "adversarial_catch_rate": 1.0,
+      "latency_tokens_cost": "not measured offline (scripted provider)"
+    },
+    "note": "pre-v13: no selected recipe in the plan run's input; a re-fetch came back full"
+  },
+  "note": "offline system results (loop control, tools, validators), not model judgement; latency/tokens/cost not measured offline",
+  "aggregate": {
+    "total": 59,
+    "scored": 59,
+    "completed": 59,
+    "task_completion_rate": 1.0,
+    "expected_fail_total": 0,
+    "expected_fail_completed": 0,
+    "stop_reason_distribution": {
+      "agent_sufficient_evidence": 46,
+      "agent_validation_failed": 4,
+      "agent_needs_user_input": 4,
+      "agent_max_steps": 1,
+      "agent_tool_budget_exhausted": 1,
+      "agent_token_budget_exhausted": 1,
+      "agent_wall_clock_exceeded": 1,
+      "agent_no_progress": 1
+    },
+    "invalid_transitions_total": 1,
+    "tool_argument_validity_mean": 0.9932203389830508,
+    "unnecessary_call_rate_mean": 0.0,
+    "epicure_compliance_rate": 0.9830508474576272,
+    "source_reference_correctness_rate": 1.0,
+    "unsupported_claim_cases": 5,
+    "adversarial_total": 4,
+    "adversarial_caught": 4,
+    "adversarial_catch_rate": 1.0,
+    "latency_tokens_cost": "not measured offline (scripted provider)"
+  },
+  "budget_evidence_e2e": [
+    {
+      "id": "p7-epicure-default",
+      "steps": 2,
+      "tool_calls": 4,
+      "stop": "agent_sufficient_evidence"
+    },
+    {
+      "id": "p7-ask-missing-ingredient",
+      "steps": 4,
+      "tool_calls": 4,
+      "stop": "agent_sufficient_evidence"
+    },
+    {
+      "id": "p7-select-plan-cited",
+      "steps": 4,
+      "tool_calls": 6,
+      "stop": "agent_sufficient_evidence"
+    },
+    {
+      "id": "p7-plan-raw-protein-safety",
+      "steps": 4,
+      "tool_calls": 5,
+      "stop": "agent_sufficient_evidence"
+    },
+    {
+      "id": "p7-restart-survives",
+      "steps": 4,
+      "tool_calls": 4,
+      "stop": "agent_sufficient_evidence"
+    }
+  ],
+  "technique_miss_record": [
+    {
+      "id": "p7-tq04-chicken-temp",
+      "retrieval_miss": true,
+      "stop": "agent_needs_user_input",
+      "completed": true
+    },
+    {
+      "id": "p7-tq15-pink-chicken",
+      "retrieval_miss": true,
+      "stop": "agent_needs_user_input",
+      "completed": true
+    }
+  ],
+  "epicure_comparison": {
+    "status": "compared-offline-cache-only-no-download",
+    "default_unchanged": true
+  },
+  "results": [
+    {
+      "id": "p7-epicure-default",
+      "criteria": [
+        "epicure-default",
+        "completion-criterion-epicure"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-epicure-skip-justified",
+      "criteria": [
+        "epicure-skip-justified",
+        "technique-answer"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "technique_answer"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "technique_answer",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 1,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-epicure-skip-unjustified",
+      "criteria": [
+        "epicure-skip-caught",
+        "adversarial"
+      ],
+      "adversarial": true,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_validation_failed",
+        "shape": "error",
+        "expected_rejection": "needs Epicure consulted"
+      },
+      "stop_reason": "agent_validation_failed",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 1,
+      "tool_calls": 2,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": false,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-epicure-degraded",
+      "criteria": [
+        "epicure-degraded",
+        "epicure-unavailable"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "epicure": "degraded"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 3,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-ask-missing-ingredient",
+      "criteria": [
+        "ask-resume",
+        "completion-criterion-ask"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-ask-allergy-peanuts",
+      "criteria": [
+        "ask-resume-allergy",
+        "phase3-closure-allergen-checked"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "allergen_checked": "peanut"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-select-plan-cited",
+      "criteria": [
+        "select-plan",
+        "completion-criterion-options-plan"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 6,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-raw-protein-safety",
+      "criteria": [
+        "plan-raw-protein",
+        "food-safety-refs"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "needs_safety_ref": true
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-search-off-refused",
+      "criteria": [
+        "search-permission-off",
+        "completion-criterion-search-gate"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "search_refused": "tool_permission_denied"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-search-on-cited",
+      "criteria": [
+        "search-permission-on",
+        "web-answer-cited"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "web_answer"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "web_answer",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 2,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-search-invented-url",
+      "criteria": [
+        "search-invented-url",
+        "adversarial"
+      ],
+      "adversarial": true,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_validation_failed",
+        "shape": "error",
+        "expected_rejection": "was not returned in this session"
+      },
+      "stop_reason": "agent_validation_failed",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 1,
+      "tool_calls": 1,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-search-limit-reached",
+      "criteria": [
+        "search-limit",
+        "per-session-search-limit"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "web_answer",
+        "search_refused": "search_budget_exhausted"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "web_answer",
+      "task_completion": true,
+      "steps": 3,
+      "tool_calls": 2,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-vegan-conflict",
+      "criteria": [
+        "hard-dietary-vegan",
+        "no-silent-relaxation"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1,
+        "forbidden_option_ids": [
+          "curry-1"
+        ],
+        "first_rejection_contains": "vegan"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-allergen-conflict",
+      "criteria": [
+        "hard-allergen",
+        "no-silent-relaxation"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1,
+        "forbidden_option_ids": [
+          "peanut-3"
+        ],
+        "constraint_status": {
+          "peanut-3": "violated"
+        },
+        "constraint_value": {
+          "peanut-3": "peanut"
+        },
+        "dropped_with_reason": {
+          "source_id": "peanut-3",
+          "reason_contains": "peanut"
+        }
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-oat-milk-gluten-gap",
+      "criteria": [
+        "oat-milk-gluten-unverified",
+        "allergen-unverified"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "constraint_status": {
+          "oat-5": "unverified"
+        },
+        "constraint_value": {
+          "oat-5": "wheat/gluten"
+        }
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-mixed-fraction-gap",
+      "criteria": [
+        "mixed-fraction-grounding-fixed",
+        "quantity-grounding"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 3,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-empty-honest",
+      "criteria": [
+        "empty-retrieval",
+        "completion-criterion-honest-no-result"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_needs_user_input",
+        "shape": "question"
+      },
+      "stop_reason": "agent_needs_user_input",
+      "shape": "question",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 1,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-tool-timeout",
+      "criteria": [
+        "tool-failure-timeout"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "saw_error": "tool_timeout"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 3,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-tool-invalid-args",
+      "criteria": [
+        "tool-failure-invalid-args",
+        "adversarial"
+      ],
+      "adversarial": true,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "saw_error": "tool_invalid_arguments"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 3,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 0.8,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-tool-unavailable",
+      "criteria": [
+        "tool-failure-unavailable"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "saw_error": "tool_unavailable"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 3,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-budget-steps",
+      "criteria": [
+        "budget-steps",
+        "completion-criterion-budgets"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_max_steps",
+        "shape": "error"
+      },
+      "stop_reason": "agent_max_steps",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 1,
+      "tool_calls": 0,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-budget-tools",
+      "criteria": [
+        "budget-tool-calls"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_needs_user_input",
+        "shape": "question"
+      },
+      "stop_reason": "agent_needs_user_input",
+      "shape": "question",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 2,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-budget-tools-no-finish",
+      "criteria": [
+        "budget-tool-calls"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_tool_budget_exhausted",
+        "shape": "error"
+      },
+      "stop_reason": "agent_tool_budget_exhausted",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 1,
+      "tool_calls": 2,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-budget-tokens",
+      "criteria": [
+        "budget-tokens"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_token_budget_exhausted",
+        "shape": "error"
+      },
+      "stop_reason": "agent_token_budget_exhausted",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 0,
+      "tool_calls": 0,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-budget-wallclock",
+      "criteria": [
+        "budget-wall-clock"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_wall_clock_exceeded",
+        "shape": "error"
+      },
+      "stop_reason": "agent_wall_clock_exceeded",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 1,
+      "tool_calls": 1,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-restart-survives",
+      "criteria": [
+        "restart-survival",
+        "completion-criterion-restart"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "restart": true
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-tq04-chicken-temp",
+      "criteria": [
+        "technique-regression-tq04",
+        "fulltext-mode"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_needs_user_input",
+        "shape": "question",
+        "retrieval_miss": true
+      },
+      "stop_reason": "agent_needs_user_input",
+      "shape": "question",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 1,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-tq15-pink-chicken",
+      "criteria": [
+        "technique-regression-tq15",
+        "fulltext-mode"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_needs_user_input",
+        "shape": "question",
+        "retrieval_miss": true
+      },
+      "stop_reason": "agent_needs_user_input",
+      "shape": "question",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 1,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-vector-unconfigured",
+      "criteria": [
+        "vector-unconfigured",
+        "regression-live-vegan"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "saw_error": "tool_invalid_arguments"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 0.8,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-resume-uses-evidence",
+      "criteria": [
+        "resume-evidence",
+        "regression-live-peanut"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 3,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-time-repeat",
+      "criteria": [
+        "time-claim-repeat",
+        "regression-live-chicken-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_validation_failed",
+        "shape": "error",
+        "expected_rejection": "remove the time"
+      },
+      "stop_reason": "agent_validation_failed",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 1,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 2
+    },
+    {
+      "id": "p7-time-dropped",
+      "criteria": [
+        "time-claim-dropped",
+        "regression-live-chicken-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 1
+    },
+    {
+      "id": "p7-time-stored-title",
+      "criteria": [
+        "time-stored-title",
+        "regression-live-chicken-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 3,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-time-model-title",
+      "criteria": [
+        "time-model-title",
+        "regression-live-chicken-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "first_rejection_contains": "remove the time"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 1
+    },
+    {
+      "id": "p7-honored-misuse",
+      "criteria": [
+        "honored-misuse",
+        "regression-live-peanut-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1,
+        "forbidden_option_ids": [
+          "peanut-3"
+        ],
+        "first_rejection_contains": "checked automatically"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-refetch-duplicate",
+      "criteria": [
+        "refetch-duplicate",
+        "regression-live-peanut-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1,
+        "expect_fetch": [
+          {
+            "dataset_id": "odunola/foodie",
+            "source_id": "curry-1",
+            "duplicate": false
+          }
+        ]
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-refetch-full",
+      "criteria": [
+        "plan-refetch-full",
+        "regression-duplicate-visibility"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "needs_safety_ref": true,
+        "expect_fetch": [
+          {
+            "dataset_id": "odunola/foodie",
+            "source_id": "curry-1",
+            "duplicate": true
+          }
+        ]
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 6,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-double-fetch-pointer",
+      "criteria": [
+        "double-fetch-pointer",
+        "regression-duplicate-visibility"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_fetch": [
+          {
+            "dataset_id": "odunola/foodie",
+            "source_id": "curry-1",
+            "duplicate": true
+          },
+          {
+            "dataset_id": "odunola/foodie",
+            "source_id": "lentil-2",
+            "duplicate": false
+          }
+        ]
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 3,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-invalid-transition-caught",
+      "criteria": [
+        "invalid-transition",
+        "adversarial"
+      ],
+      "adversarial": true,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "saw_invalid_transition": true
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 1,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-false-absence",
+      "criteria": [
+        "plan-false-absence",
+        "regression-live-plan-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_validation_failed",
+        "shape": "error",
+        "expected_rejection": "no directions"
+      },
+      "stop_reason": "agent_validation_failed",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 3,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-faithful-source",
+      "criteria": [
+        "plan-faithful-source",
+        "regression-live-plan-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "needs_safety_ref": true,
+        "steps_source": "source"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-partial-coverage",
+      "criteria": [
+        "plan-partial-coverage",
+        "regression-close-out-review"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "needs_safety_ref": true,
+        "steps_source": "model_adaptation"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-changed-method",
+      "criteria": [
+        "plan-changed-method",
+        "regression-live-plan-rerun"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "needs_safety_ref": true,
+        "steps_source": "model_adaptation"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-web-answer-method",
+      "criteria": [
+        "web-discovery-only",
+        "regression-live-search-once"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "web_answer"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "web_answer",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 2,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-technique-after-plan",
+      "criteria": [
+        "technique-after-plan-keeps-phase",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "technique_answer",
+        "expect_phase": "plan"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "technique_answer",
+      "task_completion": true,
+      "steps": 6,
+      "tool_calls": 7,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-dropped-named",
+      "criteria": [
+        "dropped-option-named",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 1,
+        "forbidden_option_ids": [
+          "curry-1"
+        ],
+        "first_rejection_contains": "was dropped"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 1
+    },
+    {
+      "id": "p7-negated-pairing",
+      "criteria": [
+        "negated-mention-not-claim",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "first_rejection_contains": "unsupported pairing"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 2,
+      "tool_calls": 4,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 1
+    },
+    {
+      "id": "p7-wrapup-withholds-only-repeated",
+      "criteria": [
+        "wrapup-withholds-only-repeated",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_wrapup": {
+          "withheld": [
+            "search_recipes"
+          ],
+          "offered_contains": [
+            "get_recipe"
+          ]
+        }
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-repeat-search-marked",
+      "criteria": [
+        "repeat-search-marked",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_repeat_noted": true
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 3,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-select-withholds-search",
+      "criteria": [
+        "select-withholds-search-pairings",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "expect_turn_withheld": [
+          {
+            "tool": "search_recipes",
+            "reason": "select_phase_plan_only"
+          },
+          {
+            "tool": "find_balanced_pairings",
+            "reason": "select_phase_plan_only"
+          }
+        ]
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 5,
+      "tool_calls": 7,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-allergy-tree-nuts",
+      "criteria": [
+        "ask-resume-allergy",
+        "phase3-closure-allergen-checked"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "allergen_checked": "tree nuts"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-allergy-honored-empty",
+      "criteria": [
+        "allergy-honored-empty",
+        "phase3-closure-allergen-checked"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "allergen_checked": "tree nuts",
+        "first_rejection_contains": "checked automatically"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-h2-swapped-quantities",
+      "criteria": [
+        "h2-swapped-quantities",
+        "plan-quantities"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "first_rejection_contains": "but the source states"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-h3-clipped-directions",
+      "criteria": [
+        "h3-clipped-directions",
+        "plan-omitted-directions"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "first_rejection_contains": "directions [1]"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 5,
+      "tool_calls": 6,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-h3-fidelity-claim",
+      "criteria": [
+        "h3-fidelity-claim",
+        "plan-fidelity"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "first_rejection_contains": "claims fidelity"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-stall-finish-options",
+      "criteria": [
+        "stall-finishing-turn",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "expect_stall_recovery": true
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 5,
+      "tool_calls": 6,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-stall-finish-plan",
+      "criteria": [
+        "stall-finishing-turn",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "expect_stall_recovery": true,
+        "expect_wrapup": {
+          "withheld": [
+            "get_recipe"
+          ],
+          "offered_contains": [
+            "search_techniques"
+          ]
+        }
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
+      "task_completion": true,
+      "steps": 7,
+      "tool_calls": 8,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-stall-finish-tool-call",
+      "criteria": [
+        "stall-finishing-turn",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_no_progress",
+        "shape": "error",
+        "expect_stall_recovery": true,
+        "stop_message_contains": "repeated identical search_recipes calls without new information"
+      },
+      "stop_reason": "agent_no_progress",
+      "shape": "error",
+      "task_completion": true,
+      "steps": 5,
+      "tool_calls": 6,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-allergy-note-names-allergen",
+      "criteria": [
+        "allergy-note-names-allergen",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "min_options": 2,
+        "allergen_checked": "peanut"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    }
+  ]
+}

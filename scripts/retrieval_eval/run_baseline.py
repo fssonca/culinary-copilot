@@ -8,10 +8,17 @@ as irrelevant. Writes ``baseline_fulltext_post_rebuild.json``.
 
 Usage (from repo root):
     uv run python scripts/retrieval_eval/run_baseline.py
+    uv run python scripts/retrieval_eval/run_baseline.py --out /tmp/baseline.json
+
+The default output path is the frozen historical artifact
+``evals/results/phase1/baseline_fulltext_post_rebuild.json``. Pass ``--out``
+to redirect experiment outputs elsewhere (H6, 2026-10-08: phase-6 ranking
+experiments must never overwrite the frozen file).
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import platform
 import statistics
@@ -90,6 +97,17 @@ def _search_once(
     return [dict(r) for r in rows], "retrieval_only_text", case.query_text or ""
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--out",
+        default=str(OUT),
+        help="Output JSON path (default: the frozen historical artifact; "
+        "H6 experiments must pass a path outside evals/results/phase1).",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
     from sqlalchemy import create_engine, text
 
@@ -98,6 +116,8 @@ def main() -> int:
     from culinary_copilot.retrieval.query import MATCH_DISH, map_request_to_query
     from culinary_copilot.services.answers import init_state
 
+    args = _parse_args()
+    out = Path(args.out)
     data = load_case_file(str(REPO / "evals/cases/phase1_retrieval.json"))
     corrections = json.loads((PHASE1 / "checkpoint1_corrections.json").read_text())
     recorded = {
@@ -283,7 +303,7 @@ def main() -> int:
         }
     finally:
         engine.dispose()
-    OUT.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(
         f"scored={denominators['cases_scored']}/{denominators['cases_total']} "
         f"recall5={report['recall_at_5']:.3f} mrr5={report['mrr_at_5']:.3f} "

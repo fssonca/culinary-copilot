@@ -13,6 +13,16 @@ marker, one ingredient per line, ``Introduction`` marker (ends ingredients,
 starts a prose paragraph), ``Directions``/``directions`` marker (malformed
 variants like ``</adirections`` occur), then one step per line.
 
+Known variant (H5, 2026-10-08): the trailing source block (CSV rows
+19349-19566) uses a leading ``summary`` label where the title belongs,
+lowercase ``ingredients``/``instructions`` markers, and single-line blobs
+for both blocks (no newline separators inside ingredients or
+instructions). The literal word "summary" is a section label, not a dish
+title, so these records have no usable title field (a few descriptions
+name the dish, which needs human review); the parser refuses them
+with ``summary_layout_missing_title`` and routing quarantines them (paid
+extraction cannot invent the missing title either).
+
 Conservative rules: never split ingredient lines on commas, never infer a
 quantity from instructions, never convert volume<->mass, never assume a
 regional cup, never collapse ranges to midpoints, never sum step durations,
@@ -40,7 +50,7 @@ from culinary_copilot.recipes.normalize import canonical
 from culinary_copilot.recipes.quality import capabilities_for, issue
 from culinary_copilot.recipes.search import SEARCH_DOCUMENT_VERSION
 
-FOODIE_ADAPTER_VERSION = "4"
+FOODIE_ADAPTER_VERSION = "5"
 FOODIE_DATASET = "odunola/foodie"
 FOODIE_REVISION = "20a451c2a8f22e9161a13346f08e0d7cdd555727"
 FOODIE_FILE = "recipes.csv"
@@ -563,6 +573,21 @@ def split_sections(text: str) -> dict[str, Any]:
         re.sub(r"(?i)</?[a-z]+>?", "", line).strip()
         for line in block(idx_directions if idx_directions is not None else idx_intro, None)
     ]
+    # H5 (2026-10-08): the "summary" layout has no usable title field — the
+    # first line is a section label, not a dish name — and both content
+    # blocks are single-line blobs. Accepting it loads bogus "summary"
+    # recipes into search, so refuse with a dedicated code. Everything here
+    # is gated on the literal "summary" first line, so genuinely titled
+    # records (including multi-line ones) parse exactly as before; the
+    # full-corpus regression pins that only this layout changes. A
+    # duplicated marker line ("...ingredients.ingredients" split in two, as
+    # in row 19408) is a scrape artifact, never an ingredient, and is
+    # dropped before the single-blob check.
+    if title.casefold() == "summary":
+        while ingredient_lines and ingredient_lines[0].casefold() == "ingredients":
+            ingredient_lines = ingredient_lines[1:]
+        if len(ingredient_lines) == 1 and len(raw_steps) == 1:
+            raise ValueError("summary_layout_missing_title")
     instruction_lines, notes_text, attribution = split_steps_notes(
         [line for line in raw_steps if line]
     )

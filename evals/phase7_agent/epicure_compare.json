@@ -1,0 +1,237 @@
+{
+  "ingredients": [
+    "chicken",
+    "garlic",
+    "lemon",
+    "rice",
+    "tomato"
+  ],
+  "variants": {
+    "balanced": {
+      "chicken": [
+        {
+          "ingredient": "pork",
+          "score": 0.5807677507400513
+        },
+        {
+          "ingredient": "beef",
+          "score": 0.5712239742279053
+        },
+        {
+          "ingredient": "chicken_broth",
+          "score": 0.5498522520065308
+        },
+        {
+          "ingredient": "peanut",
+          "score": 0.5233361721038818
+        },
+        {
+          "ingredient": "cream_of_chicken_soup",
+          "score": 0.5217205286026001
+        }
+      ],
+      "garlic": [
+        {
+          "ingredient": "shallot",
+          "score": 0.7502759099006653
+        },
+        {
+          "ingredient": "leek",
+          "score": 0.742904782295227
+        },
+        {
+          "ingredient": "chive",
+          "score": 0.7409092783927917
+        },
+        {
+          "ingredient": "onion",
+          "score": 0.7256373167037964
+        },
+        {
+          "ingredient": "chili_pepper",
+          "score": 0.7240573167800903
+        }
+      ],
+      "lemon": [
+        {
+          "ingredient": "lime",
+          "score": 0.6529883146286011
+        },
+        {
+          "ingredient": "orange",
+          "score": 0.6170868277549744
+        },
+        {
+          "ingredient": "thyme",
+          "score": 0.5755693912506104
+        },
+        {
+          "ingredient": "fennel",
+          "score": 0.5713264346122742
+        },
+        {
+          "ingredient": "olive_oil",
+          "score": 0.5712065696716309
+        }
+      ],
+      "rice": [
+        {
+          "ingredient": "shiitake_mushroom",
+          "score": 0.5958726406097412
+        },
+        {
+          "ingredient": "nori",
+          "score": 0.5943454504013062
+        },
+        {
+          "ingredient": "bok_choy",
+          "score": 0.5838682055473328
+        },
+        {
+          "ingredient": "brown_rice",
+          "score": 0.5754870772361755
+        },
+        {
+          "ingredient": "sesame_seed",
+          "score": 0.5717679262161255
+        }
+      ],
+      "tomato": [
+        {
+          "ingredient": "bell_pepper",
+          "score": 0.6114166975021362
+        },
+        {
+          "ingredient": "red_pepper",
+          "score": 0.6007310748100281
+        },
+        {
+          "ingredient": "olive_oil",
+          "score": 0.5883774161338806
+        },
+        {
+          "ingredient": "onion",
+          "score": 0.5856162905693054
+        },
+        {
+          "ingredient": "red_onion",
+          "score": 0.584646463394165
+        }
+      ]
+    },
+    "cooc": {
+      "chicken": [
+        {
+          "ingredient": "garlic",
+          "score": 0.39338767528533936
+        },
+        {
+          "ingredient": "onion",
+          "score": 0.36616456508636475
+        },
+        {
+          "ingredient": "black_pepper",
+          "score": 0.3581123650074005
+        },
+        {
+          "ingredient": "turkey",
+          "score": 0.34798356890678406
+        },
+        {
+          "ingredient": "carrot",
+          "score": 0.3425118029117584
+        }
+      ],
+      "garlic": [
+        {
+          "ingredient": "chili_pepper",
+          "score": 0.5492146015167236
+        },
+        {
+          "ingredient": "salt",
+          "score": 0.5158542394638062
+        },
+        {
+          "ingredient": "tomato",
+          "score": 0.4610697329044342
+        },
+        {
+          "ingredient": "onion",
+          "score": 0.4497590661048889
+        },
+        {
+          "ingredient": "oil",
+          "score": 0.4436835050582886
+        }
+      ],
+      "lemon": [
+        {
+          "ingredient": "orange",
+          "score": 0.42157822847366333
+        },
+        {
+          "ingredient": "mint",
+          "score": 0.40789830684661865
+        },
+        {
+          "ingredient": "rosemary",
+          "score": 0.4021879732608795
+        },
+        {
+          "ingredient": "cherry",
+          "score": 0.3996545374393463
+        },
+        {
+          "ingredient": "mustard",
+          "score": 0.37603604793548584
+        }
+      ],
+      "rice": [
+        {
+          "ingredient": "carrot",
+          "score": 0.335043728351593
+        },
+        {
+          "ingredient": "okra",
+          "score": 0.33160388469696045
+        },
+        {
+          "ingredient": "vegetable_oil",
+          "score": 0.3257172405719757
+        },
+        {
+          "ingredient": "pea",
+          "score": 0.31169790029525757
+        },
+        {
+          "ingredient": "dashi",
+          "score": 0.30752286314964294
+        }
+      ],
+      "tomato": [
+        {
+          "ingredient": "onion",
+          "score": 0.482816219329834
+        },
+        {
+          "ingredient": "parsley",
+          "score": 0.47209224104881287
+        },
+        {
+          "ingredient": "garlic",
+          "score": 0.4610697329044342
+        },
+        {
+          "ingredient": "olive_oil",
+          "score": 0.4551081359386444
+        },
+        {
+          "ingredient": "bell_pepper",
+          "score": 0.44170135259628296
+        }
+      ]
+    }
+  },
+  "status": "compared-offline-cache-only-no-download",
+  "default_unchanged": true
+}

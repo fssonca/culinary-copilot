@@ -7,6 +7,7 @@ saved raw response — a stale merged defect (e.g. 19380's inherited 'lb'
 units) can never reach ready storage through the cache.
 """
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -63,12 +64,28 @@ def test_bumped_merge_version_invalidates():
 
 
 def _run_dir_for_19380(run_dir: Path) -> str:
-    """Minimal finalize-ready run dir around the verbatim 19380 artifacts."""
-    texts = (FIX / "19380-source.txt").read_text()
-    parsed = json.loads((FIX / "19380-parsed.json").read_text())
+    """Minimal finalize-ready run dir around the 19380 blob carrier.
+
+    H5 (2026-10-08) quarantines the verbatim 19380 source (summary layout),
+    so the vehicle is the same blob lines under a genuine title (L2-L6
+    byte-identical, L-ids unchanged) with the saved response re-pointed at
+    the carrier's content hash. The pinned behaviour — cache freshness and
+    the merge unit-leak guard — is unchanged.
+    """
+    verbatim = (FIX / "19380-source.txt").read_text()
+    lines = verbatim.splitlines(keepends=True)
+    for pos, line in enumerate(lines):
+        if line.strip():
+            assert line.strip().casefold() == "summary"
+            lines[pos] = "Doro wat\n"
+            break
+    texts = "".join(lines)
+    parsed = copy.deepcopy(json.loads((FIX / "19380-parsed.json").read_text()))
+    # The fixtures stay a verbatim pair: the saved response is for the real source.
+    assert parsed["content_hash"] == hashlib.sha256(verbatim.encode()).hexdigest()
     _, line_map = numbered_source(texts)
     content_hash = hashlib.sha256(texts.encode()).hexdigest()
-    assert parsed["content_hash"] == content_hash
+    parsed["content_hash"] = content_hash
     key = cache_key(
         dataset_id="odunola/foodie",
         revision="test-rev",

@@ -121,3 +121,173 @@ def test_search_web_permission_gate_and_tool_event_log(engine) -> None:
         assert payload["tool"] == "search_web"
         assert "args_digest" in payload and "latency_ms" in payload
         assert "ramen broth" not in str(payload)  # digest only, never raw args
+
+
+def _seed_recipe(engine: object) -> None:
+    import json as _json
+
+    doc = {
+        "title": "Chicken Curry",
+        "provenance": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+        "ingredients": [{"canonical": "chicken", "amount": "500", "unit": "g"}],
+        "instructions": ["Cook it."],
+    }
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO recipe_imports (id, dataset_id, revision, checksum, "
+                "normalizer_version, vocabulary_checksum, dataset_url, report) "
+                "VALUES (:id, :dataset_id, :revision, :checksum, :normalizer_version, "
+                ":vocabulary_checksum, :dataset_url, CAST(:report AS jsonb)) ON CONFLICT DO NOTHING"
+            ),
+            {
+                "id": "test-dedupe-1",
+                "dataset_id": "odunola/foodie",
+                "revision": "test-rev",
+                "checksum": "test-checksum",
+                "normalizer_version": "3",
+                "vocabulary_checksum": "test-vocab",
+                "dataset_url": "https://example.invalid/test",
+                "report": _json.dumps({"counts": {}}),
+            },
+        )
+        conn.execute(
+            text(
+                "INSERT INTO recipes (dataset_id, source_id, import_id, title, "
+                "total_minutes, servings, ingredient_names, document, search_text) "
+                "VALUES (:d, :s, :i, :t, 20, 2, CAST(:n AS text[]), "
+                "CAST(:doc AS jsonb), :st) ON CONFLICT DO NOTHING"
+            ),
+            {
+                "d": "odunola/foodie",
+                "s": "curry-1",
+                "i": "test-dedupe-1",
+                "t": "Chicken Curry",
+                "n": ["chicken"],
+                "doc": _json.dumps(doc),
+                "st": "chicken curry dinner",
+            },
+        )
+
+
+def test_get_recipe_repeat_returns_short_typed_result(engine) -> None:
+    # Phase 7 re-run (peanut): the same get_recipe ran two or three
+    # times. A repeat of an identical pair already returned in this
+    # session, still visible in the run's history, comes back short,
+    # pointing at the earlier evidence — and still counts against the
+    # tool budget.
+    _seed_recipe(engine)
+    settings = Settings(_env_file=None)
+    store = PostgresSessionStore(engine)
+    session_id = f"ses-{uuid.uuid4().hex[:10]}"
+    store.create(SessionState(id=session_id))
+    defs = {d.name: d for d in all_tool_definitions(timeout_s=10.0)}
+    impls = all_tool_impls()
+    ctx = ToolContext(settings=settings, engine=engine, session_store=store)
+    ctx.bound_session_id = session_id
+    args = {"dataset_id": "odunola/foodie", "source_id": "curry-1"}
+    first = _run(
+        run_tool(
+            defs["get_recipe"],
+            impls["get_recipe"],
+            args,
+            ctx,
+            session_id=session_id,
+            call_id="call-1",
+        )
+    )
+    assert first["ok"] is True
+    assert first["recipe"]["title"] == "Chicken Curry"
+    ctx.visible_full_recipes = {("odunola/foodie", "curry-1")}
+    second = _run(
+        run_tool(
+            defs["get_recipe"],
+            impls["get_recipe"],
+            args,
+            ctx,
+            session_id=session_id,
+            call_id="call-2",
+        )
+    )
+    assert second["ok"] is True
+    assert second.get("duplicate_of_session_evidence") is True
+    assert "recipe" not in second
+    assert second["title"] == "Chicken Curry"
+    assert "evidence digest" in second.get("message", "")
+    events = [e for e in store.list_events(session_id) if e.event_type == "tool_call"]
+    assert len(events) == 2  # the repeat still counts against the budget
+
+
+def test_get_recipe_pointer_needs_visible_history(engine) -> None:
+    # Close-out regression: the short pointer returns only when the
+    # pair's full output is still visible in the run's capped history.
+    # A repeat the model can no longer see (new run, capped out, or an
+    # unknown context) comes back full.
+    from culinary_copilot.tools.search_tools import GetRecipeArgs, get_recipe_impl
+
+    _seed_recipe(engine)
+    settings = Settings(_env_file=None)
+    store = PostgresSessionStore(engine)
+    session_id = f"ses-{uuid.uuid4().hex[:10]}"
+    store.create(SessionState(id=session_id))
+    defs = {d.name: d for d in all_tool_definitions(timeout_s=10.0)}
+    impls = all_tool_impls()
+    ctx = ToolContext(settings=settings, engine=engine, session_store=store)
+    ctx.bound_session_id = session_id
+    args = {"dataset_id": "odunola/foodie", "source_id": "curry-1"}
+    first = _run(
+        run_tool(
+            defs["get_recipe"],
+            impls["get_recipe"],
+            args,
+            ctx,
+            session_id=session_id,
+            call_id="call-1",
+        )
+    )
+    assert first["ok"] is True and "recipe" in first
+    parsed = GetRecipeArgs(dataset_id="odunola/foodie", source_id="curry-1")
+    pair = ("odunola/foodie", "curry-1")
+
+    async def _call(visible):  # type: ignore[no-untyped-def]
+        ctx.visible_full_recipes = visible
+        return await get_recipe_impl(parsed, ctx)
+
+    # Visible: short pointer.
+    short = _run(_call({pair}))
+    assert short["ok"] is True
+    assert short.get("duplicate_of_session_evidence") is True
+    assert "recipe" not in short
+    # New run (empty history): full document again.
+    assert "recipe" in _run(_call(set()))
+    # Capped out (visible, but not this pair): full document again.
+    assert "recipe" in _run(_call({("odunola/foodie", "lentil-2")}))
+    # Unknown context (direct callers): full document again.
+    assert "recipe" in _run(_call(None))
+
+
+def test_get_recipe_malformed_id_shows_expected_format(engine) -> None:
+    # Phase 7 re-run (chicken): source_id "odunola/foodie-004186"
+    # carried the dataset prefix. The message shows the expected shape.
+    settings = Settings(_env_file=None)
+    store = PostgresSessionStore(engine)
+    session_id = f"ses-{uuid.uuid4().hex[:10]}"
+    store.create(SessionState(id=session_id))
+    defs = {d.name: d for d in all_tool_definitions(timeout_s=10.0)}
+    impls = all_tool_impls()
+    ctx = ToolContext(settings=settings, engine=engine, session_store=store)
+    ctx.bound_session_id = session_id
+    bad = _run(
+        run_tool(
+            defs["get_recipe"],
+            impls["get_recipe"],
+            {"dataset_id": "odunola/foodie", "source_id": "odunola/foodie-004186"},
+            ctx,
+            session_id=session_id,
+            call_id="call-bad",
+        )
+    )
+    assert bad["ok"] is False
+    assert bad["reason"] == "tool_invalid_arguments"
+    assert "separately" in bad["message"]
+    assert "foodie-004186" in bad["message"]

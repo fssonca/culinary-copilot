@@ -110,10 +110,26 @@ ORDER BY rank DESC, c.doc_id, c.chunk_id
 LIMIT :limit
 """
 
-_TSQUERY_ALL = "plainto_tsquery('english', :query)"
+#: Poultry species stems that also match the corpus word "poultry"
+#: (2026-10-06 live fix): the food-safety documents say "poultry", so
+#: "chicken safe internal temperature" missed them under AND matching
+#: and the plan's required food-safety citation was never found. The
+#: expansion only adds an alternative; it never drops a query term.
+POULTRY_STEMS = ("chicken", "turkey", "duck", "goos", "gees", "hen")
+
+
+def _with_poultry_synonyms(tsquery_text_sql: str) -> str:
+    expr = tsquery_text_sql
+    for stem in POULTRY_STEMS:
+        expr = f"replace({expr}, '''{stem}''', '( ''{stem}'' | ''poultri'' )')"
+    return expr
+
+
+_PARSED_TEXT = _with_poultry_synonyms("plainto_tsquery('english', :query)::text")
+_TSQUERY_ALL = f"({_PARSED_TEXT})::tsquery"
 # OR fallback: same lexemes, any-term match. Built by rewriting the
 # parsed AND tsquery text so lexing/stemming stay identical.
-_TSQUERY_ANY = "replace(plainto_tsquery('english', :query)::text, ' & ', ' | ')::tsquery"
+_TSQUERY_ANY = f"replace({_PARSED_TEXT}, ' & ', ' | ')::tsquery"
 
 
 def _run_fulltext(conn: Any, query: str, limit: int, tsquery: str) -> list[dict[str, Any]]:

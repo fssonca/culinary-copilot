@@ -20,7 +20,12 @@ Part of the [current architecture](README.md). These are the current code paths.
 | `POST /api/v1/recommendations/stream` | Same body as above, `text/event-stream`: versioned `stage` / single `final` / single `error` events sharing the same service via a stage hook (Phase 4; see `docs/recommendations.md` + `docs/phase4-streaming-walkthrough.md`) |
 | `POST /api/v1/sessions` | Create a Postgres-backed agent session (Phase 1; see `docs/sessions.md`) |
 | `GET /api/v1/sessions/{session_id}` | Read a session + its append-only events |
-| `POST /api/v1/sessions/{session_id}/permission` | Revision-pinned internet-search permission update (off by default) |
+| `POST /api/v1/sessions/{session_id}/permission` | Revision-pinned internet-search permission update (off by default; backend-enforced in `search_web`) |
+| `POST /api/v1/sessions/{session_id}/agent:run` | Start or continue the bounded agent loop for one user message (see `docs/agent.md`) |
+| `POST /api/v1/sessions/{session_id}/agent:stream` | Same loop over SSE: stage events per step, one final or error (same stops as above) |
+| `POST /api/v1/sessions/{session_id}/answers` | Answer the agent's pending question (`expected_revision`, then resume) |
+| `POST /api/v1/sessions/{session_id}/select` | Select one suggested dish (`expected_revision`, phase `recommend -> plan`) |
+| `GET /ui` | Minimal static page (no build): message box, streamed stages, options/plan/technique/web cards, questions, toggle off by default (see `docs/ui-walkthrough.md`) |
 
 Retrieval returns ranked bounded summaries. Recommendations fetch
 complete documents by exact identity and server-render the selected
@@ -81,7 +86,8 @@ sequenceDiagram
 The rule-only path operates on structured information. It cannot interpret arbitrary
 free text as an LLM would. Provider failure degrades to rules with error metadata;
 unknown information must remain unknown. Group size defaults to six, with a maximum
-of twelve. The future UI may present those questions serially; no UI exists yet.
+of twelve. The `/ui` page drives the agent endpoints, not this
+clarification API.
 
 The evidence helper currently selects search-result titles and dataset/source IDs,
 with empty snippets. It does not fetch full recipes or pass the request's time
@@ -325,7 +331,37 @@ Bounds: `REC_STREAM_MAX_EVENTS`, `REC_STREAM_MAX_DURATION_S`,
 `REC_STREAM_KEEPALIVE_S`; overflow cancels and emits one terminal
 error. Telemetry (`obs/recommendations.py`) records both transports.
 
-## 8. Source checks and review decisions
+## 8. Agent loop, search_web and /ui (as implemented)
+
+```mermaid
+flowchart TD
+    UI["/ui page (static, no build)"] -->|message / select / answers / toggle| AgentAPI["Agent endpoints (run, stream, answers, select, permission)"]
+    AgentAPI --> Loop["Bounded agent loop (12 steps / 12 calls / 60k in / 90 s)"]
+    Loop -->|"each turn: framing + snapshot + evidence digest + capped history"| Model["Model (native function calling)"]
+    Loop -->|"native function calling, parallel in call order"| Tools["Typed registry"]
+    Tools --> Recipes["search_recipes / get_recipe (full-text default)"]
+    Tools --> Epicure["Epicure pairings/substitutions (local, CPU)"]
+    Tools --> Measure["scale_recipe / convert_units"]
+    Tools --> Tech["search_techniques (full-text default)"]
+    Tools --> Web["search_web (server-bound session, slot claim max 3)"]
+    Web --> Hosted["Hosted search sub-request (bounded excerpts, no source text)"]
+    Loop --> Validate["Deterministic validators (last gate)"]
+    Validate --> Events[("sessions + session_events")]
+    Loop -->|question / final| UI
+```
+
+`search_web` is offered only when `internet_search_allowed` is true
+(toggle off by default) and re-checks inside the atomic slot claim on
+every call; a spoofed session id is impossible (args model has no
+session field). Web pages stay external discovery evidence: accepted
+refs come from provider citation metadata, numeric claims fail closed,
+and procedural cooking method is rejected (discovery only). The
+step-by-step run, context management and guardrails are explained in
+[the agent system](agent-system.md). The `/ui` page streams stages, renders options/plan/technique/web
+cards and follow-up answers, and answers questions through the same
+endpoints (see `docs/ui-walkthrough.md`).
+
+## 9. Source checks and review decisions
 
 ```mermaid
 flowchart TD

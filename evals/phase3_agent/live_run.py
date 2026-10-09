@@ -46,12 +46,18 @@ import json
 import os
 import sys
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from culinary_copilot.search.accounting import (  # noqa: E402
+    SEARCH_CALL_FEE_USD,
+    SearchEstimateExceeded,
+)
 
 EVALS_DIR = REPO_ROOT / "evals" / "phase3_agent"
 DEFAULT_SCENARIOS = EVALS_DIR / "live_scenarios_v2.json"
@@ -79,6 +85,10 @@ def recorded_entry_usd(entry: dict[str, Any]) -> float:
         return float(entry.get("used_usd") or entry.get("reserved_usd") or 0.0)
     if decision == "kept-ambiguous":
         return float(entry.get("reserved_usd") or entry.get("usd") or 0.0)
+    if decision == "search_estimate_exceeded":
+        # The search was billed above its estimate: the reconciled
+        # used amount is what was spent, conservatively.
+        return float(entry.get("used_usd") or entry.get("reserved_usd") or 0.0)
     return 0.0
 
 
@@ -115,7 +125,18 @@ def append_spend_history(
     ``attempt`` (the live attempt number) is stored when given;
     otherwise it defaults to one past the highest stored attempt, so
     new runs keep a monotonic attempt sequence.
+
+    Fail-closed on unsettled entries: a "reserved" decision must never
+    reach the history (it would record $0 for a possibly-billed
+    request). Run the ledger's ``sweep_reserved`` first; anything
+    still reserved here raises instead of being written.
     """
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("decision") == "reserved":
+            raise ValueError(
+                f"refusing to record unsettled entry {entry.get('label')!r}: "
+                "sweep_reserved first (kept-ambiguous), never $0"
+            )
     try:
         body = json.loads(Path(path).read_text(encoding="utf-8"))
         if not isinstance(body, dict):
@@ -142,6 +163,7 @@ def append_spend_history(
                     "label": e.get("label"),
                     "decision": e.get("decision"),
                     "usd": recorded_entry_usd(e),
+                    **({"kind": e.get("kind")} if e.get("kind") else {}),
                 }
                 for e in entries
                 if isinstance(e, dict)
@@ -155,20 +177,74 @@ def append_spend_history(
 
 LIVE_CAP_USD = 0.15
 MAX_ATTEMPTS = 2
-#: Phase 5 campaign ledger cap (owner item 9, prepare-only): $0.10 of the
-#: $1.00 M3 ceiling. Covers agent turns, search sub-requests, tool fees,
-#: embeddings and retries in one ledger.
-PHASE5_CAP_USD = 0.10
-#: Per-search planning estimate status (owner decision 4): provisional,
-#: not an established upper bound. Live mode requires the owner flag
-#: --acknowledge-provisional-reservation (decision 4) until a supported
-#: bound exists.
+#: Phase 5 campaign ledger cap: $0.10 of the $1.00 M3 ceiling (decision
+#: 5), raised to $0.13 by the owner on 2026-10-03 for one more web_answer
+#: attempt (docs/phase5-owner-decisions.md). Covers agent turns, search
+#: sub-requests, tool fees, embeddings and retries in one ledger.
+PHASE5_CAP_USD = 0.13
+#: Per-search accounting status (owner follow-up 2026-10-02, option A):
+#: an estimate with acknowledged overrun risk. Agent turns and
+#: embeddings keep their hard reservations; search sub-requests do not.
 SEARCH_RESERVATION_STATUS = (
-    "provisional: not an established upper bound; the live check needs an owner decision"
+    "estimate with acknowledged overrun risk "
+    "(phase5-decision-4-2026-10-02); agent turns and embeddings keep "
+    "hard reservations"
 )
+#: Exact owner-acknowledgment value for search estimates (decision 4,
+#: option A). Preflight checks this exact string and records it.
+SEARCH_ACK_VALUE = "phase5-decision-4-2026-10-02"
+#: Provisional per-search planning estimate (not a bound).
+SEARCH_ESTIMATE_USD = 0.025
+#: Campaign search cap: paid searches across all Phase 5 runs. 4 under
+#: decision 4 (2026-10-02); raised to 5, 6, then 7 by the owner on
+#: 2026-10-03, one search per web_answer attempt
+#: (docs/phase5-owner-decisions.md).
+PHASE5_CAMPAIGN_SEARCH_CAP = 7
+#: Persisted Phase 5 campaign history (same format as the Phase 3 one).
+PHASE5_HISTORY = REPO_ROOT / "data" / "phase5-live" / "spend-history.json"
+#: Budget pools: the P3-L-13 ask-and-resume run charges Phase 3, the
+#: search campaign charges Phase 5.
+BUDGET_POOLS: dict[str, dict[str, Any]] = {
+    "phase3": {"history": SPEND_HISTORY, "cap_usd": LIVE_CAP_USD},
+    "phase5": {"history": PHASE5_HISTORY, "cap_usd": PHASE5_CAP_USD},
+    "phase7": {
+        "history": REPO_ROOT / "data" / "phase7-live" / "spend-history.json",
+        "cap_usd": 0.50,
+    },
+    "h8": {
+        "history": REPO_ROOT / "data" / "h8-live" / "spend-history.json",
+        "cap_usd": 1.00,  # = H8_CAP_USD below (owner, 2026-10-08)
+    },
+}
 #: Live-check search slots per session (owner item 3): at most 2, inside
 #: the code limit of 3.
 PHASE5_MAX_SEARCHES_PER_SESSION = 2
+#: Phase 7 live pool (part 2, prepared only): $0.50 of the $1.00 M3
+#: ceiling. Covers agent turns, search sub-requests, embeddings and
+#: retries in one ledger. Runs only with explicit owner acknowledgement.
+PHASE7_CAP_USD = 0.50
+PHASE7_HISTORY = REPO_ROOT / "data" / "phase7-live" / "spend-history.json"
+PHASE7_MAX_SEARCHES_PER_SESSION = 2
+PHASE7_CAMPAIGN_SEARCH_CAP = 5
+#: Exact owner-acknowledgment value for the Phase 7 live run
+#: (checkpoint C). Preflight checks this exact string.
+PHASE7_ACK_VALUE = "phase7-checkpoint-c-2026-10-04"
+#: H8 frozen-build live check (Checkpoint D, 2026-10-08): one cap shared
+#: by every session and every paid call (model turns, embeddings,
+#: retries) through this ledger, prior H8 spend included. Web search is
+#: off for H8: preflight refuses any scenario or setting that enables it.
+#: $0.15 for the first attempt; the owner set $1.00 for the H8 pool on
+#: 2026-10-08 before the second attempt (the first attempt's $0.0143
+#: still counts against it).
+H8_CAP_USD = 1.00
+H8_HISTORY = REPO_ROOT / "data" / "h8-live" / "spend-history.json"
+#: Exact owner-acknowledgment value for a live H8 run. Preflight checks
+#: this exact string; the owner gives it with the go-ahead. Attempts 1
+#: to 3 ran with "h8-checkpoint-d-2026-10-08", "h8-attempt-2-2026-10-08"
+#: and "h8-attempt-3-2026-10-08", attempt 4 with
+#: "h8-attempt-4-2026-10-08"; each attempt gets its own value so a
+#: run cannot reuse an earlier go-ahead.
+H8_ACK_VALUE = "h8-demo-check-2026-10-09"
 
 
 # --- input bound ---------------------------------------------------------------
@@ -269,7 +345,12 @@ class BudgetExhausted(RuntimeError):
     run_scenario_live detects it through the exception chain and marks
     the scenario "not_completed: budget" (never counted as an agent or
     provider failure in the grades).
+
+    Carries ``runner_stop = True`` so the tool layer re-raises it
+    instead of converting it to a tool error.
     """
+
+    runner_stop = True
 
 
 class ReservationBreach(RuntimeError):
@@ -329,6 +410,104 @@ def find_unacknowledged_breach(path: Path | str) -> dict[str, Any] | None:
         run_utc = str(run.get("run_utc") or "")
         for entry in run.get("entries", []) or []:
             if isinstance(entry, dict) and entry.get("decision") == "reservation_breach":
+                key = (run_utc, str(entry.get("label") or ""))
+                if key not in acked_set:
+                    return {"run_utc": run_utc, "label": str(entry.get("label") or "")}
+    return None
+
+
+#: Ledger/history decisions that count as a dispatched paid search
+#: (ambiguous dispatches count; unaffordable refusals do not).
+SEARCH_DISPATCHED_DECISIONS = frozenset(
+    {"reconciled", "kept-ambiguous", "reservation_breach", "search_estimate_exceeded"}
+)
+
+
+@dataclass
+class SearchRunLimits:
+    """In-run search limits for one runner invocation (2026-10-03 overrun fix).
+
+    Preflight alone cannot bound spending: the per-session slot max and
+    the campaign/run dispatch bounds must be enforced during the run,
+    inside ``search_web`` after the slot claim and before the provider
+    call. ``dispatched_this_run`` is the in-run authority: it counts at
+    dispatch time (synchronously, so parallel calls cannot double
+    dispatch), and ambiguous dispatches stay counted — matching
+    :meth:`SpendLedger.count_search_dispatches` and
+    :func:`count_campaign_searches`, which the USD ledger and the
+    history file reconcile afterwards.
+    """
+
+    max_per_session: int | None = None
+    max_this_run: int | None = None
+    campaign_cap: int = PHASE5_CAMPAIGN_SEARCH_CAP
+    prior_campaign_searches: int = 0
+    dispatched_this_run: int = 0
+
+    def check_and_claim(self) -> tuple[bool, str]:
+        """Allow one more dispatch, counting it at once. False with the
+        reason when the run limit or the campaign cap is reached."""
+        if self.max_this_run is not None and self.dispatched_this_run >= int(self.max_this_run):
+            return (
+                False,
+                f"run limit reached: {self.dispatched_this_run}/{self.max_this_run} "
+                "searches dispatched this run",
+            )
+        if int(self.prior_campaign_searches) + self.dispatched_this_run >= int(self.campaign_cap):
+            return (
+                False,
+                f"campaign cap reached: {self.prior_campaign_searches} prior + "
+                f"{self.dispatched_this_run} this run (cap {self.campaign_cap})",
+            )
+        self.dispatched_this_run += 1
+        return True, ""
+
+
+def count_campaign_searches(path: Path | str) -> int:
+    """Paid search dispatches in a campaign history (0 when absent)."""
+    total = 0
+    for run in load_spend_history(Path(path)):
+        if not isinstance(run, dict):
+            continue
+        for entry in run.get("entries", []) or []:
+            if (
+                isinstance(entry, dict)
+                and entry.get("kind") == "search"
+                and entry.get("decision") in SEARCH_DISPATCHED_DECISIONS
+            ):
+                total += 1
+    return total
+
+
+def find_unacknowledged_estimate_breach(path: Path | str) -> dict[str, Any] | None:
+    """First unacknowledged ``search_estimate_exceeded`` entry, if any.
+
+    Acknowledging is a manual owner step: an object with the run's
+    ``run_utc`` and the entry's ``label`` under the history file's
+    top-level ``estimate_acknowledgments`` list (documented in
+    LIVE_PLAN.md). Returns ``{"run_utc": ..., "label": ...}`` or None.
+    """
+    try:
+        body = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    acked = body.get("estimate_acknowledgments")
+    acked_set = set()
+    if isinstance(acked, list):
+        for item in acked:
+            if isinstance(item, dict):
+                acked_set.add((str(item.get("run_utc") or ""), str(item.get("label") or "")))
+    runs = body.get("runs")
+    if not isinstance(runs, list):
+        return None
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        run_utc = str(run.get("run_utc") or "")
+        for entry in run.get("entries", []) or []:
+            if isinstance(entry, dict) and entry.get("decision") == "search_estimate_exceeded":
                 key = (run_utc, str(entry.get("label") or ""))
                 if key not in acked_set:
                     return {"run_utc": run_utc, "label": str(entry.get("label") or "")}
@@ -514,12 +693,150 @@ class SpendLedger:
                 return
         raise ValueError(f"no open reservation for {label!r}")
 
+    def sweep_reserved(self, *, note: str = "") -> int:
+        """Run-end backstop: any entry still "reserved" becomes
+        kept-ambiguous at its reservation.
+
+        Dispatch-then-lost paths keep at once, but a missed path must
+        never report $0 for a request that may have been billed. The
+        run summary flags the swept count.
+        """
+        swept = 0
+        for entry in self.entries:
+            if isinstance(entry, dict) and entry.get("decision") == "reserved":
+                entry["decision"] = "kept-ambiguous"
+                entry["swept"] = True
+                if note:
+                    entry["sweep_note"] = str(note)
+                self.spent_usd += float(entry.get("reserved_usd") or 0.0)
+                swept += 1
+        return swept
+
+    def reserve_search(self, label: str, *, estimate_usd: float) -> bool:
+        """Reserve a search estimate (decision 4, option A: estimate, not bound).
+
+        False (no state change beyond a refused record) when the
+        estimate does not fit the remainder.
+        """
+        if float(estimate_usd) > self.remaining_usd:
+            self.entries.append(
+                {
+                    "label": label,
+                    "decision": "refused",
+                    "reserved_usd": float(estimate_usd),
+                    "kind": "search",
+                    "estimate_usd": float(estimate_usd),
+                }
+            )
+            return False
+        self.remaining_usd -= float(estimate_usd)
+        self.entries.append(
+            {
+                "label": label,
+                "decision": "reserved",
+                "reserved_usd": float(estimate_usd),
+                "kind": "search",
+                "estimate_usd": float(estimate_usd),
+            }
+        )
+        return True
+
+    def reconcile_search(
+        self,
+        label: str,
+        *,
+        reported_in: int | None,
+        reported_out: int | None,
+        call_fee_usd: float = SEARCH_CALL_FEE_USD,
+        model: str | None = None,
+        pricing_version: str | None = None,
+        raw_usage: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Settle a search dispatch against its estimate.
+
+        Returns the per-search summary report. Ambiguous usage
+        (``None``) keeps the estimate spent and counts toward the
+        campaign cap. A reconciled cost above the estimate marks
+        ``search_estimate_exceeded`` and raises
+        :class:`SearchEstimateExceeded` so the campaign stops at once.
+        """
+        from culinary_copilot.recommendations.pricing import estimate_cost_usd
+
+        for entry in reversed(self.entries):
+            if entry.get("label") == label and entry.get("decision") == "reserved":
+                estimate = float(entry.get("estimate_usd") or 0.0)
+                if reported_in is None or reported_out is None:
+                    entry["decision"] = "kept-ambiguous"
+                    self.spent_usd += float(entry["reserved_usd"])
+                    return {
+                        "label": label,
+                        "status": "kept-ambiguous",
+                        "estimate_usd": estimate,
+                        "reconciled_usd": float(entry["reserved_usd"]),
+                        "within_estimate": True,
+                        "raw_usage": dict(raw_usage or {}),
+                    }
+                turn_cost = estimate_cost_usd(
+                    int(reported_in), int(reported_out), model or self.model
+                )
+                actual = float(call_fee_usd) + float(turn_cost or 0.0)
+                report = {
+                    "label": label,
+                    "status": "reconciled",
+                    "reported_input_tokens": int(reported_in),
+                    "reported_output_tokens": int(reported_out),
+                    "call_fee_usd": float(call_fee_usd),
+                    "estimate_usd": estimate,
+                    "reconciled_usd": actual,
+                    "within_estimate": actual <= estimate,
+                    "raw_usage": dict(raw_usage or {}),
+                }
+                if actual > estimate:
+                    entry["decision"] = "search_estimate_exceeded"
+                    entry["used_in"] = int(reported_in)
+                    entry["used_out"] = int(reported_out)
+                    entry["used_usd"] = actual
+                    entry["model"] = model or self.model
+                    if pricing_version:
+                        entry["pricing_version"] = pricing_version
+                    self.remaining_usd += float(entry["reserved_usd"]) - actual
+                    self.spent_usd += actual
+                    raise SearchEstimateExceeded(
+                        f"search estimate exceeded on {label}: "
+                        f"${actual:.6f} > ${estimate:.6f} estimate "
+                        "(campaign stops; owner acknowledgment required)",
+                        label=label,
+                        report=report,
+                    )
+                entry["decision"] = "reconciled"
+                entry["used_in"] = int(reported_in)
+                entry["used_out"] = int(reported_out)
+                entry["used_usd"] = actual
+                entry["model"] = model or self.model
+                if pricing_version:
+                    entry["pricing_version"] = pricing_version
+                self.remaining_usd += float(entry["reserved_usd"]) - actual
+                self.spent_usd += actual
+                return report
+        raise ValueError(f"no open search reservation for {label!r}")
+
+    def count_search_dispatches(self) -> int:
+        """Search dispatches in this ledger (ambiguous ones count)."""
+        return sum(
+            1
+            for entry in self.entries
+            if isinstance(entry, dict)
+            and entry.get("kind") == "search"
+            and entry.get("decision") in SEARCH_DISPATCHED_DECISIONS
+        )
+
     def summary(self) -> dict[str, Any]:
         return {
             "model": self.model,
             "ceiling_usd": self.ceiling_usd,
             "spent_usd": self.spent_usd,
             "remaining_usd": self.remaining_usd,
+            "search_dispatches": self.count_search_dispatches(),
             "entries": list(self.entries),
         }
 
@@ -636,10 +953,12 @@ class LedgerModelProvider:
             )
         try:
             result = await self._inner.complete_native_tool_turn(**kwargs)
-        except Exception as exc:
+        except (Exception, asyncio.CancelledError) as exc:
             # Conservative on ambiguous failures: the reservation stays
             # spent (keep), unless nothing was sent (release). Either way
             # the HTTP status is recorded when the failure carries one.
+            # CancelledError (tool timeout) is BaseException: without
+            # naming it a cancelled turn would stay "reserved" at $0.
             status: int | None = None
             for det in list(getattr(exc, "attempt_details", None) or []):
                 if isinstance(det, dict) and isinstance(det.get("http_status"), int):
@@ -703,7 +1022,9 @@ class LedgerEmbedProvider:
             )
         try:
             result = await self._inner.embed_texts(texts)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
+            # Dispatched then lost: kept as spent (see the search
+            # provider above; CancelledError is BaseException).
             self._ledger.keep(label)
             raise
         self._ledger.reconcile(
@@ -779,6 +1100,30 @@ def _effective_settings(settings: Any) -> Any:
     )
 
 
+def count_recipe_embeddings(db_url: str) -> int | None:
+    """Read-only recipe-embedding count (None when unverifiable).
+
+    A missing ``recipe_embeddings`` table means zero rows. Any other
+    failure (unreachable database) is None: the run fails later at the
+    isolation snapshot, never silently.
+    """
+    from sqlalchemy import create_engine, text
+
+    try:
+        engine = create_engine(db_url)
+        with engine.connect() as conn:
+            total = conn.execute(text("SELECT count(*) FROM recipe_embeddings")).scalar()
+        engine.dispose()
+        return int(total or 0)
+    except Exception as exc:
+        message = str(exc)
+        if "recipe_embeddings" in message and (
+            "does not exist" in message or "no such table" in message.lower()
+        ):
+            return 0
+        return None
+
+
 def preflight(
     args: Any,
     settings: Any,
@@ -786,6 +1131,7 @@ def preflight(
     history_path: Path | str | None = None,
     *,
     probe: Any | None = None,
+    recipe_embeddings: int | None = None,
 ) -> tuple[bool, list[str], dict[str, Any]]:
     """Refuse (False) on any failed check; records versions and corpus state.
 
@@ -795,6 +1141,8 @@ def preflight(
     per-scenario Epicure check (every scenario except
     ``live-epicure-unavailable`` must inherit an enabled Epicure);
     ``probe`` overrides the cache-only Epicure probe (tests only).
+    ``recipe_embeddings`` overrides the live recipe-embedding count
+    (tests only; None queries the database when the check applies).
     """
     problems: list[str] = []
     record: dict[str, Any] = {}
@@ -880,16 +1228,56 @@ def preflight(
                     else "unknown probe failure"
                 )
                 problems.append(f"Epicure cache probe failed for {name}: {error}")
-    if float(args.ceiling_usd) > LIVE_CAP_USD:
-        problems.append(f"ceiling ${float(args.ceiling_usd):.2f} exceeds ${LIVE_CAP_USD:.2f} cap")
+    pool = str(getattr(args, "budget_pool", "phase3") or "phase3")
+    if pool not in BUDGET_POOLS:
+        problems.append(f"unknown --budget-pool {pool!r} (phase3 | phase5 | phase7 | h8)")
+        pool = "phase3"
+    pool_cap = float(BUDGET_POOLS[pool]["cap_usd"])
+    record["budget_pool"] = pool
+    record["pool_cap_usd"] = pool_cap
+    record["pool_history"] = str(BUDGET_POOLS[pool]["history"])
+    if float(args.ceiling_usd) > pool_cap:
+        problems.append(
+            f"ceiling ${float(args.ceiling_usd):.2f} exceeds ${pool_cap:.2f} {pool} pool cap"
+        )
     record["search_reservation_status"] = SEARCH_RESERVATION_STATUS
     live_mode = bool(getattr(args, "live", False))
-    acknowledged = bool(getattr(args, "acknowledge_provisional_reservation", False))
-    if live_mode and not acknowledged:
+    # Checkpoint 0 lets the agent choose vector mode, and every earlier
+    # live run enabled it: refuse a live run with embeddings off while
+    # the database already has recipe embeddings (Phase 7 live fix).
+    embeddings_on = bool(getattr(settings, "embeddings_enabled", False))
+    record["embeddings_enabled"] = embeddings_on
+    if live_mode and not embeddings_on:
+        known = recipe_embeddings
+        if known is None:
+            try:
+                db_url = args.database_url or settings.database_url.get_secret_value()
+            except Exception:
+                db_url = ""
+            known = count_recipe_embeddings(db_url) if db_url else None
+        record["recipe_embeddings"] = known
+        if known is None:
+            problems.append(
+                "recipe embedding state unverifiable: set EMBEDDINGS_ENABLED=true "
+                "or point --database-url at the run database"
+            )
+        elif known > 0:
+            problems.append(
+                f"EMBEDDINGS_ENABLED is false but the database has {known} recipe "
+                "embeddings: enable embeddings or run against a database without them"
+            )
+    selected = list((scenarios or {}).get("scenarios", []) or [])
+    search_selected = any(
+        bool((s.get("session", {}) or {}).get("internet_search_allowed")) for s in selected
+    )
+    record["search_selected"] = search_selected
+    ack = str(getattr(args, "acknowledge_search_estimate", "") or "")
+    record["acknowledge_search_estimate"] = ack
+    if live_mode and search_selected and ack != SEARCH_ACK_VALUE:
         problems.append(
-            "search reservation is provisional: live mode refused without "
-            "--acknowledge-provisional-reservation (owner decision 4: a supported "
-            "bound, or an explicit change to an estimate with overrun risk)"
+            "search accounting is an estimate with acknowledged overrun risk: "
+            "live mode with search selected refused without "
+            f"--acknowledge-search-estimate {SEARCH_ACK_VALUE} (decision 4, option A)"
         )
     per_live = int(getattr(args, "search_max_per_live_session", PHASE5_MAX_SEARCHES_PER_SESSION))
     if per_live > PHASE5_MAX_SEARCHES_PER_SESSION:
@@ -898,6 +1286,73 @@ def preflight(
             f"{PHASE5_MAX_SEARCHES_PER_SESSION} (owner item 3)"
         )
     record["phase5_campaign_cap_usd"] = PHASE5_CAP_USD
+    # Campaign search caps per pool (ambiguous dispatches count;
+    # unaffordable refusals do not). Phase 7 uses its own history and
+    # cap; every limiting flag is enforced inside the run via ledger
+    # reservations and slot claims, not only at preflight. Use the
+    # module globals (patchable in tests), not the BUDGET_POOLS dict.
+    pool_history = PHASE7_HISTORY if pool == "phase7" else PHASE5_HISTORY
+    pool_search_cap = PHASE7_CAMPAIGN_SEARCH_CAP if pool == "phase7" else PHASE5_CAMPAIGN_SEARCH_CAP
+    prior_searches = (
+        count_campaign_searches(pool_history)
+        if pool in ("phase5", "phase7")
+        else count_campaign_searches(PHASE5_HISTORY)
+    )
+    record["prior_campaign_searches"] = prior_searches
+    record["campaign_search_cap"] = (
+        pool_search_cap if pool in ("phase5", "phase7") else PHASE5_CAMPAIGN_SEARCH_CAP
+    )
+    max_campaign = getattr(args, "max_campaign_searches", None)
+    record["max_campaign_searches"] = max_campaign
+    if live_mode and search_selected:
+        if prior_searches >= pool_search_cap:
+            problems.append(
+                f"campaign search cap reached: {prior_searches} paid searches recorded "
+                f"in {pool_history} (cap {pool_search_cap}); no further searches"
+            )
+        if max_campaign is not None and prior_searches + int(max_campaign) > pool_search_cap:
+            problems.append(
+                f"--max-campaign-searches {max_campaign} does not fit: "
+                f"{prior_searches} already recorded, cap {pool_search_cap}"
+            )
+    # Phase 7 live runs need explicit owner acknowledgement (checkpoint C).
+    live_ack = str(getattr(args, "acknowledge_live_run", "") or "")
+    record["acknowledge_live_run"] = live_ack
+    if pool == "phase7" and live_mode and live_ack != PHASE7_ACK_VALUE:
+        problems.append(
+            "phase7 live run refused without explicit owner acknowledgement: "
+            f"--acknowledge-live-run {PHASE7_ACK_VALUE} (checkpoint C)"
+        )
+    if pool == "h8":
+        # H8 (Checkpoint D): owner go-ahead and web search off, both at
+        # the session toggle and at the operator switch.
+        if live_mode and live_ack != H8_ACK_VALUE:
+            problems.append(
+                "h8 live run refused without explicit owner acknowledgement: "
+                f"--acknowledge-live-run {H8_ACK_VALUE} (checkpoint D)"
+            )
+        web_on = bool(getattr(settings, "web_search_enabled", False)) or any(
+            bool((s.get("settings", {}) or {}).get("web_search_enabled")) for s in selected
+        )
+        if search_selected or web_on:
+            problems.append(
+                "h8 runs keep web search off: no scenario may allow internet search "
+                "and WEB_SEARCH_ENABLED must be false"
+            )
+    if live_mode and search_selected:
+        # Breach check reads the selected pool's history (Phase 7 known
+        # gap, fixed): a Phase 7 breach must block Phase 7 runs. Module
+        # globals stay patchable in tests (not the BUDGET_POOLS dict).
+        breach_history = PHASE7_HISTORY if pool == "phase7" else PHASE5_HISTORY
+        estimate_breach = find_unacknowledged_estimate_breach(breach_history)
+        record["search_estimate_breach"] = estimate_breach
+        if estimate_breach is not None:
+            problems.append(
+                "campaign history records an unacknowledged search estimate breach "
+                f"(run {estimate_breach.get('run_utc')}, {estimate_breach.get('label')}); "
+                "no search run until an owner acknowledges it (LIVE_PLAN.md: add a "
+                f"matching entry to estimate_acknowledgments in {breach_history})"
+            )
     prior_spend = recorded_spend_total(Path(history_path)) if history_path else 0.0
     remaining_budget = float(args.ceiling_usd) - prior_spend
     record["prior_recorded_spend_usd"] = prior_spend
@@ -910,7 +1365,7 @@ def preflight(
                 "spend history records an unacknowledged reservation breach "
                 f"(run {breach.get('run_utc')}, {breach.get('label')}); no paid "
                 "run until an owner acknowledges it (LIVE_PLAN.md: add a "
-                "matching entry to breach_acknowledgments in spend-history.json)"
+                f"matching entry to breach_acknowledgments in {history_path})"
             )
     if history_path and spec is not None:
         from culinary_copilot.recommendations.pricing import estimate_cost_usd
@@ -918,7 +1373,7 @@ def preflight(
         first_turn_floor = estimate_cost_usd(2000, 1000, model)
         if first_turn_floor is not None and remaining_budget < first_turn_floor:
             problems.append(
-                f"remaining budget ${remaining_budget:.4f} cannot fit a first turn "
+                f"remaining {pool} pool budget ${remaining_budget:.4f} cannot fit a first turn "
                 f"(floor ${first_turn_floor:.4f} after ${prior_spend:.4f} prior recorded spend)"
             )
     if os.environ.get("HF_HUB_OFFLINE") != "1":
@@ -1028,8 +1483,14 @@ def grade_attempt(
     expected = scenario.get("expected", {})
     grades: dict[str, Any] = {}
     options = list((final or {}).get("options") or [])
-    if not options and (final or {}).get("plan"):
+    workflow_followup = bool(expected.get("workflow")) and bool(
+        (final or {}).get("technique_answer")
+    )
+    if not options and ((final or {}).get("plan") or workflow_followup):
         # Plan flows finish on the plan; judge the persisted recommendations.
+        # H8 workflows end on a technique follow-up after the plan
+        # (2026-10-08 H8 review: the final-run options were empty, so the
+        # allergy check had nothing to check).
         try:
             committed = store.get(session_id)
             options = list((committed.suggestions if committed else []) or [])
@@ -1060,7 +1521,12 @@ def grade_attempt(
     grades["termination"] = stop_reason == expected.get("stop_reason")
     hard = set((scenario.get("session", {}).get("constraints") or {}).keys())
     honored = set((final or {}).get("constraints_honored") or [])
-    grades["constraint_adherence"] = "n/a" if empty_run else (not hard or hard <= honored)
+    # A question stop that offered nothing (no options, no plan) gets no
+    # adherence verdict: the constraints were never applied to anything.
+    nothing_offered = not options and not plan
+    grades["constraint_adherence"] = (
+        "n/a" if empty_run or nothing_offered else (not hard or hard <= honored)
+    )
     retrieved, _full = recipe_session_evidence(store=store, session_id=session_id)
     grades["evidence_support"] = (
         "n/a"
@@ -1111,6 +1577,24 @@ def grade_attempt(
             and isinstance(refs, list)
             and all(isinstance(r, dict) and r.get("url") and r.get("title") for r in refs)
         )
+    if expected.get("asking_is_fail"):
+        # Discovery scenario: the user already asked how to make the
+        # dish and search permission was on — answering with
+        # web_answer passes, asking fails. Explicit fields (a bare
+        # "false" never has to mean "asked and failed").
+        asked = bool(question)
+        answered_web = bool(web_answer)
+        grades["asked"] = asked
+        grades["web_answer"] = answered_web
+        if answered_web and not asked:
+            grades["scenario_pass"] = True
+            grades["scenario_pass_reason"] = "web answer given, no question asked"
+        elif asked:
+            grades["scenario_pass"] = False
+            grades["scenario_pass_reason"] = "agent asked instead of answering with web_answer"
+        else:
+            grades["scenario_pass"] = False
+            grades["scenario_pass_reason"] = "no web answer given"
     if (
         expected.get("asked")
         or expected.get("answer_recorded")
@@ -1139,6 +1623,80 @@ def grade_attempt(
             grades["answer_recorded"] = recorded_ok
         if expected.get("resumed_used_answer"):
             grades["resumed_used_answer"] = used_ok
+    if expected.get("allergy_check"):
+        # P3-L-13 allergy run (prepare-only): the missing fact
+        # materially changes the answer. "not-exercised" when the model
+        # did not ask — never counted as a pass.
+        from culinary_copilot.recommendations.policy import ingredient_term_hit
+
+        try:
+            all_events = store.list_events(session_id)
+        except Exception:
+            all_events = []
+        question_events = [
+            e for e in all_events or [] if getattr(e, "event_type", "") == "agent_question"
+        ]
+        allergy_answer_events = [
+            e for e in all_events or [] if getattr(e, "event_type", "") == "agent_answer"
+        ]
+        try:
+            allergy_committed = store.get(session_id)
+            allergy_confirmed = list(getattr(allergy_committed, "confirmed_answers", None) or [])
+        except Exception:
+            allergy_confirmed = []
+        scripted = [str(a.get("answer") or "") for a in scenario.get("scripted_answers", [])]
+        allergy_asked = bool(question_events)
+        allergy_recorded = bool(allergy_answer_events) and any(
+            any(text in str(c.get("answer") or "") for text in scripted if text)
+            for c in allergy_confirmed
+            if isinstance(c, dict)
+        )
+        # The scenario names the allergen's ingredient terms; the grade
+        # keeps its own list rather than reusing the app's checker. Older
+        # scenarios (P3-L-13, Phase 5/7) are peanut scenarios and keep
+        # their peanut keys (2026-10-08 H8 review: a tree-nut scenario
+        # was graded for peanuts).
+        allergen_terms = [
+            str(t).strip().lower()
+            for t in (expected.get("allergen_terms") or ["peanut"])
+            if str(t).strip()
+        ]
+        allergen_lines: list[str] = []
+        for option in options:
+            if not isinstance(option, dict):
+                continue
+            for quantity in option.get("quantities", []) or []:
+                line = str((quantity or {}).get("ingredient") or "")
+                if line and any(ingredient_term_hit(line, term) for term in allergen_terms):
+                    allergen_lines.append(f"{option.get('title')}: {line}")
+        allergy_note = str((final or {}).get("note") or "")
+        honored_text = str((final or {}).get("constraints_honored") or "")
+        mention_text = (allergy_note + honored_text).lower()
+        allergy_mentioned = "allerg" in mention_text or any(
+            term in mention_text for term in allergen_terms
+        )
+        if not allergy_asked:
+            grades["allergy"] = "not-exercised: model did not ask"
+        else:
+            grades["allergy"] = {
+                "asked": True,
+                "answer_recorded": allergy_recorded,
+                "resumed_with_options": stop_reason == "agent_sufficient_evidence"
+                and bool(options),
+                "allergen_terms": allergen_terms,
+                "no_allergen_options": not allergen_lines,
+                "allergen_lines": allergen_lines,
+                "allergy_mentioned": allergy_mentioned,
+            }
+            if allergen_terms == ["peanut"]:
+                grades["allergy"]["no_peanut_options"] = not allergen_lines
+                grades["allergy"]["peanut_lines"] = allergen_lines
+            grades["allergy_pass"] = bool(
+                allergy_recorded
+                and stop_reason == "agent_sufficient_evidence"
+                and bool(options)
+                and not allergen_lines
+            )
     return grades
 
 
@@ -1182,9 +1740,12 @@ class FakeRunProvider:
     """Deterministic fake model: retrieval turns then a valid finish (tests only).
 
     Per-flow scripts (calls count turns across resume runs in one attempt):
-    full: tools, options finish, then plan finishes; ask: tools, ask,
-    tools, options finish; direct: tools, single finish; empty: tools,
-    ask; technique: tools, skip finish.
+    full: tools, options finish, then plan finishes; full-requery: as
+    full, but the plan run re-queries techniques first (per-run
+    evidence); full-ask-accept: tools, ask offering the found option,
+    resume to options on the scripted answer, then select and plan;
+    ask: tools, ask, tools, options finish; direct: tools, single
+    finish; empty: tools, ask; technique: tools, skip finish.
     """
 
     def __init__(self, scenario: dict[str, Any]) -> None:
@@ -1252,6 +1813,61 @@ class FakeRunProvider:
         # finishes evaluate it, like a real model would have to.
         return [{"ingredient": "pork", "decision": "used", "reason": "fake roast match"}]
 
+    @staticmethod
+    def _web_url_from_input(kwargs: Any) -> str | None:
+        """First search_web source URL from this turn's input items.
+
+        Honest fakes (2026-10-03 root-cause fix): the fake reads the
+        URL the tool output actually carried — the same summarized
+        function_call_output the real model receives — instead of a
+        hard-coded constant. None when no search output is present
+        (e.g. the summary drops sources, as the old code did).
+        """
+        items = kwargs.get("input_items") if isinstance(kwargs, dict) else None
+        for item in items or []:
+            if not isinstance(item, dict) or item.get("type") != "function_call_output":
+                continue
+            try:
+                output = json.loads(item.get("output") or "")
+            except (ValueError, TypeError):
+                continue
+            if (
+                not isinstance(output, dict)
+                or output.get("tool") != "search_web"
+                or not output.get("ok")
+            ):
+                continue
+            sources = output.get("sources") or []
+            if sources and isinstance(sources[0], dict) and sources[0].get("url"):
+                return str(sources[0]["url"])
+        return None
+
+    def _web_answer_finish(self, url: str | None, note: str) -> Any:
+        """web_answer citing the received URL, or an unmatchable ref.
+
+        With no URL (tool output carried none) the refs cannot match
+        the session sources, so validation rejects — the honest fake
+        fails loudly instead of citing a constant it never saw.
+        """
+        refs = [{"url": url, "title": "Okonomiyaki guide"}] if url else []
+        return self._parsed(
+            {
+                "decision": "finish",
+                "move_to": "recommend",
+                "result": {
+                    "web_answer": {
+                        "text": (
+                            "Okonomiyaki is a savoury Japanese pancake. "
+                            "A full guide is linked below."
+                        ),
+                        "web_refs": refs,
+                    }
+                },
+                "constraints_honored": [],
+                "note": note,
+            }
+        )
+
     async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
         self.calls += 1
         flow = self.scenario.get("fake_flow", "direct")
@@ -1300,6 +1916,218 @@ class FakeRunProvider:
                     "note": "fake plan",
                 }
             )
+        if flow == "full-requery":
+            # Same as "full", but the plan run re-queries techniques
+            # first: technique refs must be returned in the plan run's
+            # own run_agent invocation (per-run evidence), which is what
+            # a real model does after select.
+            if self.calls == 1:
+                return self._tools(
+                    ("c1", "search_recipes", query),
+                    ("c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    ("c5", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            if self.calls == 2:
+                return self._options_finish(
+                    [
+                        self._opt(
+                            "curry-1",
+                            "Creamy Chicken Curry",
+                            [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                        ),
+                        self._opt(
+                            "lentil-2",
+                            "Red Lentil Soup",
+                            [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+                        ),
+                    ],
+                    epicure_lines=self._lines(),
+                )
+            if self.calls == 3:
+                return self._tools(
+                    ("c6", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            return self._parsed(
+                {
+                    "decision": "finish",
+                    "move_to": "plan",
+                    "result": {
+                        "plan": {
+                            "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                            "mise_en_place": ["dice chicken"],
+                            "steps": ["brown chicken", "serve"],
+                            "plating": "in bowls",
+                            "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                            "adaptations": [],
+                            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                        }
+                    },
+                    "constraints_honored": [],
+                    "note": "fake plan",
+                }
+            )
+        if flow == "full-ask-accept":
+            # End-to-end with a follow-up accept: tools, ask offering
+            # the found option, resume to options on the scripted
+            # answer, then select and plan (plan run re-queries
+            # techniques first, as a real model does after select).
+            if self.calls == 1:
+                return self._tools(
+                    ("c1", "search_recipes", query),
+                    ("c2", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                    ("c4", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    ("c5", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            if self.calls == 2:
+                scripted = list(self.scenario.get("scripted_answers", []))
+                question_id = scripted[0]["question_id"] if scripted else "q-fake"
+                return self._parsed(
+                    {
+                        "decision": "ask_user",
+                        "question": {
+                            "question_id": question_id,
+                            "question_text": (
+                                "I found Creamy Chicken Curry; shall I proceed with it?"
+                            ),
+                            "options": ["yes, that option", "no, suggest another"],
+                        },
+                        "note": "fake accept ask",
+                    }
+                )
+            if self.calls == 3:
+                return self._tools(
+                    ("c6", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c7", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                    ("c8", "find_balanced_pairings", {"ingredient": "chicken"}),
+                )
+            if self.calls == 4:
+                return self._options_finish(
+                    [
+                        self._opt(
+                            "curry-1",
+                            "Creamy Chicken Curry",
+                            [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                        ),
+                        self._opt(
+                            "lentil-2",
+                            "Red Lentil Soup",
+                            [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+                        ),
+                    ],
+                    epicure_lines=self._lines(),
+                )
+            if self.calls == 5:
+                return self._tools(
+                    ("c9", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            return self._parsed(
+                {
+                    "decision": "finish",
+                    "move_to": "plan",
+                    "result": {
+                        "plan": {
+                            "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                            "mise_en_place": ["dice chicken"],
+                            "steps": ["brown chicken", "serve"],
+                            "plating": "in bowls",
+                            "quantities": [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                            "adaptations": [],
+                            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                        }
+                    },
+                    "constraints_honored": [],
+                    "note": "fake plan",
+                }
+            )
+        if flow == "h8-full":
+            # H8 flow (tests only): two questions answered in turn,
+            # options, select, plan, then a technique question after
+            # the plan answered from a technique search.
+            if self.calls == 1:
+                return self._tools(("c1", "search_recipes", query))
+            if self.calls in (2, 3):
+                return self._parsed(
+                    {
+                        "decision": "ask_user",
+                        "question": {
+                            "question_id": f"q-h8-{self.calls}",
+                            "question_text": f"Fake question {self.calls - 1}?",
+                            "options": ["yes", "no"],
+                        },
+                        "note": "fake h8 ask",
+                    }
+                )
+            if self.calls == 4:
+                return self._tools(
+                    ("c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c5", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                    ("c6", "find_balanced_pairings", {"ingredient": "chicken"}),
+                    ("c7", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            if self.calls == 5:
+                return self._options_finish(
+                    [
+                        self._opt(
+                            "curry-1",
+                            "Creamy Chicken Curry",
+                            [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                        ),
+                        self._opt(
+                            "lentil-2",
+                            "Red Lentil Soup",
+                            [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+                        ),
+                    ],
+                    epicure_lines=self._lines(),
+                )
+            if self.calls == 6:
+                return self._tools(
+                    ("c8", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            if self.calls == 7:
+                return self._parsed(
+                    {
+                        "decision": "finish",
+                        "move_to": "plan",
+                        "result": {
+                            "plan": {
+                                "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+                                "mise_en_place": ["dice chicken"],
+                                "steps": ["brown chicken", "serve"],
+                                "plating": "in bowls",
+                                "quantities": [
+                                    {"ingredient": "chicken", "amount": "500", "unit": "g"}
+                                ],
+                                "adaptations": [],
+                                "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                            }
+                        },
+                        "constraints_honored": [],
+                        "note": "fake plan",
+                    }
+                )
+            if self.calls == 8:
+                return self._tools(
+                    ("c9", "search_techniques", {"query": "safe internal temperatures"}),
+                )
+            return self._parsed(
+                {
+                    "decision": "finish",
+                    "move_to": None,
+                    "result": {
+                        "technique_answer": {
+                            "text": "Cook poultry to 165 F.",
+                            "technique_refs": [{"doc_id": "tech-fda-safe-32", "chunk_id": 0}],
+                        }
+                    },
+                    "constraints_honored": [],
+                    "epicure_skip_reason": "simple_technique_question",
+                    "note": "fake technique answer",
+                }
+            )
         if flow == "ask":
             if self.calls == 1:
                 return self._tools(("c1", "search_recipes", query))
@@ -1323,6 +2151,45 @@ class FakeRunProvider:
                     ("c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
                     ("c5", "find_substitutions", {"ingredient": "yogurt"}),
                 )
+            return self._options_finish(
+                [
+                    self._opt(
+                        "curry-1",
+                        "Creamy Chicken Curry",
+                        [{"ingredient": "chicken", "amount": "500", "unit": "g"}],
+                    ),
+                    self._opt(
+                        "lentil-2",
+                        "Red Lentil Soup",
+                        [{"ingredient": "red lentils", "amount": "200", "unit": "g"}],
+                    ),
+                ],
+                epicure_lines=self._lines(),
+            )
+        if flow == "ask-allergy":
+            if self.calls == 1:
+                return self._tools(("c1", "search_recipes", query))
+            if self.calls == 2:
+                return self._parsed(
+                    {
+                        "decision": "ask_user",
+                        "question": {
+                            "question_id": "q-allergy",
+                            "question_text": (
+                                "What is your friend allergic to? I need to avoid "
+                                "it in every suggestion."
+                            ),
+                            "options": ["peanuts", "dairy", "gluten", "other"],
+                        },
+                        "note": "fake allergy ask",
+                    }
+                )
+            if self.calls == 3:
+                return self._tools(
+                    ("c3", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "curry-1"}),
+                    ("c4", "get_recipe", {"dataset_id": "odunola/foodie", "source_id": "lentil-2"}),
+                )
+            # Both fake options are peanut-free (chicken; red lentils).
             return self._options_finish(
                 [
                     self._opt(
@@ -1368,6 +2235,28 @@ class FakeRunProvider:
                 ],
                 epicure_skip_reason="simple_technique_question",
             )
+        if flow == "web-discovery":
+            if self.calls == 1:
+                return self._tools(("c1", "search_web", {"query": "okonomiyaki recipe"}))
+            # Discovery-only text (no numbers: numeric claims fail
+            # closed with no source text obtained). The ref URL is
+            # read from the tool output received above, never a
+            # constant: without it the refs cannot validate.
+            return self._web_answer_finish(self._web_url_from_input(kwargs), "fake web discovery")
+        if flow == "web-triple":
+            # Limit-enforcement probe (2026-10-03 overrun fix): the
+            # model requests 3 searches in one session; the in-run
+            # session/campaign limits decide how many dispatch. The
+            # finish answers from whatever sources exist.
+            if self.calls <= 3:
+                return self._tools(
+                    (
+                        f"c{self.calls}",
+                        "search_web",
+                        {"query": f"okonomiyaki recipe part {self.calls}"},
+                    )
+                )
+            return self._web_answer_finish(self._web_url_from_input(kwargs), "fake web triple")
         if flow == "degraded":
             if self.calls == 1:
                 return self._tools(
@@ -1506,6 +2395,26 @@ _TRAJECTORY_ERROR_KEYS = (
     "request_sent",
 )
 
+# Search events projected into reviewable raw trajectories
+# (read-only): minimized as stored — call_id, minimized query, URLs,
+# classifications, outcome, tokens, estimate status.
+_TRAJECTORY_SEARCH_KEYS = {
+    "search_slot_claimed": ("call_id", "slots_used", "slots_max"),
+    "search_requested": ("call_id", "minimized_query", "permission"),
+    "search_results_retrieved": ("call_id", "urls", "web_search_call_ids", "retrieved_at"),
+    "evidence_evaluated": ("call_id", "evaluations"),
+    "search_outcome": ("call_id", "outcome", "reason"),
+    "search_operations": (
+        "call_id",
+        "latency_ms",
+        "model",
+        "input_tokens",
+        "output_tokens",
+        "estimate_status",
+        "error",
+    ),
+}
+
 
 def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[str, Any] | None:
     """One session event, trimmed for review (no prompts or secrets).
@@ -1514,7 +2423,10 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
     ``stop_reason``/``reason`` when present, else None) plus the
     per-turn ``input_tokens``/``output_tokens`` (None when the event
     carries no usage); validation rejects carry their error list
-    bounded to 5 x 300 characters.
+    bounded to 5 x 300 characters; search events carry their minimized
+    stored fields (call_id, query, URLs, classifications, outcome,
+    tokens, estimate status); search_web tool calls carry result
+    facts (source count plus classifications).
     """
     stop = payload.get("stop_reason")
     reason = payload.get("reason")
@@ -1527,6 +2439,10 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
             "type": event_type,
             **{k: payload.get(k) for k in _TRAJECTORY_TOOL_KEYS},
         }
+        if payload.get("tool") == "search_web" and isinstance(payload.get("result_facts"), dict):
+            # search_web carries its result facts (source count plus
+            # classifications), like the pairing tools' names.
+            projected["result_facts"] = payload["result_facts"]
         projected.setdefault("stop", stop)
         projected.update(usage)
         return projected
@@ -1575,6 +2491,14 @@ def _project_trajectory_event(event_type: str, payload: dict[str, Any]) -> dict[
             "plan_source": payload.get("plan_source"),
             "steps_source": payload.get("steps_source"),
             "stop_reason": payload.get("stop_reason"),
+            "stop": stop,
+            "reason": reason,
+            **usage,
+        }
+    if event_type in _TRAJECTORY_SEARCH_KEYS:
+        return {
+            "type": event_type,
+            **{k: payload.get(k) for k in _TRAJECTORY_SEARCH_KEYS[event_type]},
             "stop": stop,
             "reason": reason,
             **usage,
@@ -1687,16 +2611,42 @@ _PROVIDER_ERROR_STOPS = frozenset(
 )
 _CONFIG_ERROR_STOPS = frozenset({"generation_disabled"})
 
+#: Flow steps the runner implements. Anything else (e.g. a
+#: not-implemented "recommend-toggle-off") is refused instead of
+#: silently running as a plain recommend.
+KNOWN_FLOW_STEPS = frozenset(
+    {"recommend", "recommend-ask", "resume", "select-first", "plan", "followup"}
+)
+
 
 def _final_answered(final: dict[str, Any] | None) -> bool:
     """True when the run produced an answer: options, a plan, a
-    technique answer, or an accepted final (a clarifying question the
-    owner can answer)."""
+    technique answer, or a web answer. A stop that only asks the user
+    a question is "asked the user (awaiting input)", never "answered"
+    (checkpoint B condition 6)."""
     if not isinstance(final, dict):
         return False
     if final.get("options") or final.get("plan") or final.get("technique_answer"):
         return True
-    return bool(final.get("question"))
+    if final.get("web_answer"):
+        return True
+    return False
+
+
+def workflow_reached(runs: list[dict[str, Any]]) -> dict[str, bool]:
+    """Which workflow stages one attempt's runs reached (H8 grading).
+
+    ``asked``: a run stopped on a question; ``options``, ``plan`` and
+    ``technique_answer``: a run finished with one. Stages are read from
+    the recorded run finals only.
+    """
+    finals = [r.get("final") or {} for r in runs if isinstance(r, dict)]
+    return {
+        "asked": any(bool(f.get("question")) for f in finals),
+        "options": any(bool(f.get("options")) for f in finals),
+        "plan": any(bool(f.get("plan")) for f in finals),
+        "technique_answer": any(bool(f.get("technique_answer")) for f in finals),
+    }
 
 
 def run_scenario_live(
@@ -1714,6 +2664,7 @@ def run_scenario_live(
     technique_resolver: Any = None,
     manual_review: bool = False,
     fresh_provider_per_run: bool = False,
+    search_limits: SearchRunLimits | None = None,
 ) -> dict[str, Any]:
     from culinary_copilot.agent.loop import (
         AgentDeps,
@@ -1727,6 +2678,27 @@ def run_scenario_live(
     created: list[str] = []
     attempts: list[dict[str, Any]] = []
     flow = list(scenario.get("flow", ["recommend"]))
+    unknown_steps = [step for step in flow if step not in KNOWN_FLOW_STEPS]
+    if unknown_steps:
+        # Refuse unknown flow steps instead of ignoring them: a step
+        # like "recommend-toggle-off" would otherwise run as a plain
+        # recommend and silently test the wrong thing.
+        detail = (
+            f"unknown flow steps: {', '.join(str(s) for s in unknown_steps)} "
+            f"(known: {', '.join(sorted(KNOWN_FLOW_STEPS))}); refusing"
+        )
+        return {
+            "key": scenario["key"],
+            "first_attempt": None,
+            "final_attempt": None,
+            "attempts": 0,
+            "stop_reason": "runner-error",
+            "status": "stopped: runner-error",
+            "run_stop": {"reason": "runner-error", "detail": detail},
+            "grades": {"graded": False, "reason": "unknown-flow-steps", "detail": detail},
+            "sessions": created,
+            "trajectory": [],
+        }
     last_final: dict[str, Any] | None = None
     last_stop = ""
     run_stop: dict[str, str] | None = None
@@ -1780,6 +2752,10 @@ def run_scenario_live(
             # gets its own loop-bound provider via _run_once.
             provider = provider_factory(scenario)
             tool_context = context_factory(store, scenario)
+            # In-run search limits travel on the tool context so
+            # search_web enforces them per dispatch (2026-10-03 fix).
+            if search_limits is not None:
+                tool_context.search_limits = search_limits
             if fresh_provider_per_run:
                 asyncio.run(_aclose_provider(provider))
                 provider = None
@@ -1820,8 +2796,15 @@ def run_scenario_live(
             )
             last_final, last_stop = result.final, result.stop_reason
             if result.stop_reason == "agent_needs_user_input" and "resume" in flow:
+                # Answer each pending question in turn with the next
+                # scripted answer (H8: a vague request can take several
+                # questions). Each answer is used at most once, so a
+                # one-answer scenario behaves exactly as before.
                 answers = list(scenario.get("scripted_answers", []))
-                if answers:
+                answered: list[dict[str, Any]] = []
+                answer_failed = False
+                while answers and last_stop == "agent_needs_user_input":
+                    scripted_answer = answers.pop(0)["answer"]
                     # Answer the actual pending question from the last
                     # final (the model invents its own IDs); the asked
                     # text is recorded for manual review, never graded.
@@ -1833,19 +2816,25 @@ def run_scenario_live(
                             sid,
                             expected_revision=current.revision,
                             question_id=asked.get("question_id"),
-                            answer=answers[0]["answer"],
+                            answer=scripted_answer,
                         )
                     except Exception as exc:
                         last_final, last_stop = None, "runner-error"
                         run_stop = _runner_error(attempt_record, exc, "answer")
                         attempts.append(attempt_record)
+                        answer_failed = True
                         break
-                    attempt_record["answered_question"] = {
-                        "question_id": asked.get("question_id"),
-                        "question_text": asked.get("question_text"),
-                        "question_options": asked.get("options"),
-                        "scripted_answer": answers[0]["answer"],
-                    }
+                    answered.append(
+                        {
+                            "question_id": asked.get("question_id"),
+                            "question_text": asked.get("question_text"),
+                            "question_options": asked.get("options"),
+                            "scripted_answer": scripted_answer,
+                        }
+                    )
+                    attempt_record["answered_question"] = answered[0]
+                    if len(answered) > 1:
+                        attempt_record["answered_questions"] = list(answered)
                     result2 = _run_once(sid, deps, tool_context)
                     attempt_record["runs"].append(
                         {
@@ -1855,6 +2844,8 @@ def run_scenario_live(
                         }
                     )
                     last_final, last_stop = result2.final, result2.stop_reason
+                if answer_failed:
+                    break
             if "select-first" in flow and (last_final or {}).get("options"):
                 first = last_final["options"][0]
                 try:
@@ -1881,6 +2872,21 @@ def run_scenario_live(
                         }
                     )
                     last_final, last_stop = result3.final, result3.stop_reason
+                    followup = str(scenario.get("followup_message") or "")
+                    if "followup" in flow and followup and (last_final or {}).get("plan"):
+                        # H8: a technique question after the plan, in the
+                        # same session (the plan's steps reach it).
+                        record_user_message(store, sid, text=followup)
+                        result4 = _run_once(sid, deps, tool_context)
+                        attempt_record["runs"].append(
+                            {
+                                "stop_reason": result4.stop_reason,
+                                "phase": result4.phase,
+                                "final": result4.final,
+                                "followup": True,
+                            }
+                        )
+                        last_final, last_stop = result4.final, result4.stop_reason
         except AgentLoopError as exc:
             if _caused_by_reservation_breach(exc):
                 # Reservation breach: the bound failed, not the model.
@@ -1934,6 +2940,26 @@ def run_scenario_live(
                 }
                 attempts.append(attempt_record)
                 break
+            if isinstance(exc, SearchEstimateExceeded):
+                # Estimate breach: the search was billed above its
+                # estimate. Stop the campaign at once; the owner must
+                # acknowledge it in the campaign history (LIVE_PLAN.md)
+                # before preflight runs again.
+                attempt_record["runs"].append(
+                    {
+                        "stop_reason": "search-estimate-exceeded",
+                        "search_estimate_exceeded": True,
+                        "search_report": dict(getattr(exc, "report", None) or {}),
+                    }
+                )
+                last_final, last_stop = None, "search-estimate-exceeded"
+                run_stop = {
+                    "reason": "search-estimate-exceeded",
+                    "detail": f"search estimate exceeded: {str(exc)[:200]}",
+                    "search_report": dict(getattr(exc, "report", None) or {}),
+                }
+                attempts.append(attempt_record)
+                break
             # Preflight-class failure mid-run (snapshot, store, driver):
             # stop the run, do not grade the wreckage.
             attempt_record["runs"].append(
@@ -1981,6 +3007,16 @@ def run_scenario_live(
         grades = grade_attempt(
             scenario, last_final, last_stop, store, created[-1], manual_review=manual_review
         )
+        required = list((scenario.get("expected", {}) or {}).get("workflow") or [])
+        if required and attempts:
+            # H8: the session must pass through every required stage
+            # (options, plan, technique answer), not only end well.
+            reached = workflow_reached(attempts[-1].get("runs") or [])
+            grades["workflow"] = reached
+            grades["workflow_complete"] = all(reached.get(step) for step in required)
+            grades["task_completion"] = bool(
+                grades.get("task_completion") and grades["workflow_complete"]
+            )
         # "completed" alone hid runs that ended without an answer:
         # answered means options, a plan, or an accepted final.
         status = (
@@ -2031,9 +3067,42 @@ def _args(argv: list[str] | None = None) -> Any:
         help="live-check searches per session (at most 2, inside code limit 3)",
     )
     parser.add_argument(
-        "--acknowledge-provisional-reservation",
+        "--budget-pool",
+        choices=("phase3", "phase5", "phase7", "h8"),
+        default="phase3",
+        help=(
+            "which cap/history the run charges "
+            "(phase3: $0.15 cap; phase5: $0.13 campaign; "
+            "phase7: $0.50 prepared, not authorized; h8: $1.00, web off)"
+        ),
+    )
+    parser.add_argument(
+        "--acknowledge-live-run",
+        default="",
+        help=(
+            "phase7 checkpoint C: must equal phase7-checkpoint-c-2026-10-04 for live "
+            "phase7 runs; h8: must equal h8-checkpoint-d-2026-10-08 for live h8 runs"
+        ),
+    )
+    parser.add_argument(
+        "--acknowledge-search-estimate",
+        default="",
+        help="owner decision 4 option A: must equal phase5-decision-4-2026-10-02 "
+        "for live runs with search selected",
+    )
+    parser.add_argument(
+        "--max-campaign-searches",
+        type=int,
+        default=None,
+        help=(
+            f"paid searches this run may dispatch (campaign cap "
+            f"{PHASE5_CAMPAIGN_SEARCH_CAP} across all runs; step 1 uses 1)"
+        ),
+    )
+    parser.add_argument(
+        "--stop-after-first-search",
         action="store_true",
-        help="owner decision 4: accept the provisional search estimate with overrun risk",
+        help="step-1 behavior: stop right after the first search's scenario completes",
     )
     return parser.parse_args(argv)
 
@@ -2133,14 +3202,18 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    if float(args.ceiling_usd) > LIVE_CAP_USD:
-        print(f"error: ceiling exceeds ${LIVE_CAP_USD:.2f} cap", file=sys.stderr)
+    pool = str(getattr(args, "budget_pool", "phase3") or "phase3")
+    pool_info = BUDGET_POOLS.get(pool, BUDGET_POOLS["phase3"])
+    pool_history: Path = pool_info["history"]
+    pool_cap = float(pool_info["cap_usd"])
+    if float(args.ceiling_usd) > pool_cap:
+        print(f"error: ceiling exceeds ${pool_cap:.2f} {pool} pool cap", file=sys.stderr)
         return 2
     if not args.expect_db_name or not args.expect_db_host:
         print("error: --expect-db-name and --expect-db-host are required", file=sys.stderr)
         return 2
     settings = _effective_settings(Settings())
-    ok, problems, record = preflight(args, settings, scenarios, history_path=SPEND_HISTORY)
+    ok, problems, record = preflight(args, settings, scenarios, history_path=pool_history)
     record["scenarios_file"] = str(args.scenarios_file)
     if not ok:
         for problem in problems:
@@ -2157,10 +3230,24 @@ def main(argv: list[str] | None = None) -> int:
         raw_dir,
         summary_out,
         fake=False,
-        history_path=SPEND_HISTORY,
+        history_path=pool_history,
     )
     print(json.dumps({"preflight": record}, indent=2))
     return result
+
+
+def _count_session_claims(store: Any, session_ids: list[str] | None) -> int:
+    """search_slot_claimed events across sessions (0 when unreadable)."""
+    total = 0
+    for session_id in session_ids or []:
+        try:
+            events = store.list_events(session_id)
+        except Exception:
+            continue
+        for event in events or []:
+            if getattr(event, "event_type", "") == "search_slot_claimed":
+                total += 1
+    return total
 
 
 def _run_all(
@@ -2182,6 +3269,23 @@ def _run_all(
     store = PostgresSessionStore(engine)
     model = str(args.model or settings.llm_rec_model)
     ledger = SpendLedger(model=model, ceiling_usd=float(args.ceiling_usd or 0.0))
+    # In-run search limits (2026-10-03 overrun fix): preflight checks
+    # are not enough — the session slot max and the campaign/run
+    # dispatch bounds travel with the run and are enforced inside
+    # search_web. Fake runs start at prior 0 and never read the real
+    # campaign history.
+    max_this_run = getattr(args, "max_campaign_searches", None)
+    pool = str(getattr(args, "budget_pool", "phase3") or "phase3")
+    pool_history = PHASE7_HISTORY if pool == "phase7" else PHASE5_HISTORY
+    pool_search_cap = PHASE7_CAMPAIGN_SEARCH_CAP if pool == "phase7" else PHASE5_CAMPAIGN_SEARCH_CAP
+    search_limits = SearchRunLimits(
+        max_per_session=int(
+            getattr(args, "search_max_per_live_session", PHASE5_MAX_SEARCHES_PER_SESSION)
+        ),
+        max_this_run=int(max_this_run) if max_this_run is not None else None,
+        campaign_cap=pool_search_cap,
+        prior_campaign_searches=(count_campaign_searches(pool_history) if not fake else 0),
+    )
     if history_path:
         # The cap covers the whole evaluation: this run may only spend
         # what prior recorded runs left.
@@ -2203,10 +3307,22 @@ def _run_all(
         _context_factory = _live_context_factory(effective, engine, ledger)
 
     for scenario in scenarios["scenarios"]:
+        if not fake and bool(scenario.get("offline_only")):
+            # Offline-only scenarios (e.g. the unimplemented live
+            # toggle) never run live; their coverage is deterministic.
+            scenario_reports.append({"key": scenario["key"], "status": "not_run: offline-only"})
+            continue
         try:
             if fake:
                 report = _run_fake_scenario(
-                    engine, store, effective, scenario, ledger, raw_dir, args.max_attempts
+                    engine,
+                    store,
+                    effective,
+                    scenario,
+                    ledger,
+                    raw_dir,
+                    args.max_attempts,
+                    search_limits=search_limits,
                 )
             else:
                 scenario_settings = _scenario_settings(effective, scenario)
@@ -2223,6 +3339,7 @@ def _run_all(
                     recipe_resolver=None,
                     manual_review=True,
                     fresh_provider_per_run=True,
+                    search_limits=search_limits,
                 )
         except Exception as exc:
             # Never die with a traceback and no summary: record the
@@ -2240,7 +3357,8 @@ def _run_all(
                 "grades": {"graded": False, "reason": "runner-error"},
                 "first_attempt": None,
             }
-        created_all.extend(report["sessions"])
+        created_all.extend(report.get("sessions") or [])
+        report["searches_dispatched"] = _count_session_claims(store, report.get("sessions"))
         scenario_reports.append(report)
         (raw_dir / f"{scenario['key']}.json").write_text(
             json.dumps(report, indent=2) + "\n", encoding="utf-8"
@@ -2252,6 +3370,18 @@ def _run_all(
             }
             if report["run_stop"].get("detail"):
                 stopped_early["detail"] = str(report["run_stop"]["detail"])
+            break
+        if (
+            bool(getattr(args, "stop_after_first_search", False))
+            and (report.get("searches_dispatched", 0) or 0) > 0
+        ):
+            # Step-1 behavior: stop right after the first search's
+            # scenario completes (later steps need their own go-ahead).
+            stopped_early = {
+                "reason": "step-1-complete: first search done",
+                "after_scenario": scenario["key"],
+                "searches_dispatched": int(report["searches_dispatched"]),
+            }
             break
         if report.get("stop_reason") in ("agent_no_progress", "agent_validation_failed"):
             streak += 1
@@ -2288,15 +3418,22 @@ def _run_all(
         expected = expected_by_key.get(str(report.get("key", "")))
         return expected is not None and report.get("stop_reason") == expected
 
+    # Run-end sweep (2026-10-03 ledger fix): a dispatched-then-lost
+    # call keeps at once, but any entry still "reserved" here becomes
+    # kept-ambiguous at its reservation — $0 is never reported for a
+    # request that may have been billed. The summary flags the count.
+    swept_ambiguous = ledger.sweep_reserved(note="run end: unresolved reservation kept as spent")
+
     summary = {
         "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "fake": fake,
+        "budget_pool": str(getattr(args, "budget_pool", "phase3") or "phase3"),
         "scenarios_file": str(getattr(args, "scenarios_file", "") or ""),
         "scenarios_sha256": scenarios["freeze_sha256"],
         "model": model,
         "scenario_keys": [str(r.get("key", "")) for r in scenario_reports],
         "max_attempts": int(getattr(args, "max_attempts", MAX_ATTEMPTS) or MAX_ATTEMPTS),
-        "spend": ledger.summary(),
+        "spend": {**ledger.summary(), "swept_ambiguous": swept_ambiguous},
         "isolation": {"ok": isolated, "problems": isolation_problems},
         "stopped_early": stopped_early,
         "scenarios": [
@@ -2306,6 +3443,7 @@ def _run_all(
                 "attempts": r.get("attempts", 0),
                 "stop_reason": r.get("stop_reason"),
                 "expected_stop_matched": _stop_matched(r),
+                "searches_dispatched": r.get("searches_dispatched", 0),
                 "grades": r.get("grades", {"graded": False, "reason": "not-run"}),
                 "first_attempt_stop": _attempt_stop(r.get("first_attempt")),
             }
@@ -2345,6 +3483,48 @@ def _run_all(
     return 0 if isolated else 1
 
 
+_FAKE_WEB_URL = "https://example.com/okonomiyaki-guide"
+
+
+class _FakeWebSearchProvider:
+    """Offline fake search sub-request (tests only, proves shape only)."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def complete_web_search(
+        self,
+        *,
+        instruction: str,
+        query: str,
+        max_output_tokens: int | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        from culinary_copilot.llm.client import WebSearchResult
+
+        self.calls.append({"instruction": instruction, "query": query})
+        return WebSearchResult(
+            performed=True,
+            parsed={
+                "summary": "Okonomiyaki is a savoury Japanese pancake.",
+                "sources": [
+                    {
+                        "url": _FAKE_WEB_URL,
+                        "title": "Okonomiyaki guide",
+                        "excerpt_model": "a savoury pancake",
+                        "published_at": None,
+                    }
+                ],
+            },
+            web_search_call_ids=["ws_fake_1"],
+            citations=[{"url": _FAKE_WEB_URL, "title": "Okonomiyaki guide"}],
+            action_sources=[{"type": "url", "url": _FAKE_WEB_URL}],
+            model="fake",
+            latency_ms=1,
+            attempts=1,
+        )
+
+
 def _fake_context(current_store: Any, settings: Any, scenario: dict[str, Any] | None) -> Any:
     from culinary_copilot.tools.registry import ToolContext
 
@@ -2363,6 +3543,7 @@ def _fake_context(current_store: Any, settings: Any, scenario: dict[str, Any] | 
         epicure_core=core,
         epicure_cooc=core,
         epicure_chem=core,
+        search_provider=_FakeWebSearchProvider(),
     )
 
 
@@ -2412,19 +3593,109 @@ def _live_context_factory(settings: Any, engine: Any, ledger: SpendLedger) -> An
     """Tool-context factory for live runs (module-level for tests)."""
 
     def _factory(current_store: Any, scenario: dict[str, Any]) -> Any:
+        from culinary_copilot.llm.client import OpenAIApplicationProvider
         from culinary_copilot.tools import build_tool_context
 
         context = build_tool_context(settings=settings, engine=engine, session_store=current_store)
         # Reviewable raw trajectories: the live run opts into bounded
         # args in tool_call events (default stays digest-only).
         context.record_tool_args = True
-        return _wrap_context_embed_provider(
-            context,
-            ledger,
-            settings,
-        )
+        context = _wrap_context_embed_provider(context, ledger, settings)
+        if bool((scenario.get("session", {}) or {}).get("internet_search_allowed")):
+            # Search-on scenarios get the ledgered hosted-search
+            # sub-request (decision 4, option A estimate accounting).
+            context.search_provider = LedgeredSearchProvider(
+                OpenAIApplicationProvider(settings),
+                ledger,
+                model=str(getattr(settings, "llm_rec_model", "") or ""),
+            )
+        return context
 
     return _factory
+
+
+class LedgeredSearchProvider:
+    """Wraps a search sub-request provider: estimate per search, settle after.
+
+    Decision 4, option A: the $0.025 figure is an estimate with
+    acknowledged overrun risk, not a bound. Each dispatch reserves the
+    estimate on the campaign ledger (refusal stops the scenario with
+    budget-exhausted); afterwards the reported usage reconciles it and
+    a reconciled cost above the estimate stops the whole campaign via
+    :class:`SearchEstimateExceeded`.
+    """
+
+    def __init__(
+        self,
+        inner: Any,
+        ledger: SpendLedger,
+        *,
+        estimate_usd: float = SEARCH_ESTIMATE_USD,
+        max_output_tokens: int = 1500,
+        model: str | None = None,
+    ) -> None:
+        self._inner = inner
+        self._ledger = ledger
+        self._estimate_usd = float(estimate_usd)
+        self._max_output_tokens = int(max_output_tokens)
+        self._model = model
+        self._seq = 0
+        self.last_report: dict[str, Any] | None = None
+
+    async def complete_web_search(
+        self,
+        *,
+        instruction: str,
+        query: str,
+        max_output_tokens: int | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        from culinary_copilot.llm.models import PRICING_VERSION
+
+        self._seq += 1
+        label = f"search-{self._seq}"
+        if not self._ledger.reserve_search(label, estimate_usd=self._estimate_usd):
+            raise BudgetExhausted(
+                f"search estimate ${self._estimate_usd:.4f} does not fit the remainder"
+            )
+        try:
+            result = await self._inner.complete_web_search(
+                instruction=instruction,
+                query=query,
+                max_output_tokens=(
+                    max_output_tokens if max_output_tokens is not None else self._max_output_tokens
+                ),
+                timeout=timeout,
+            )
+        except (Exception, asyncio.CancelledError):
+            # Dispatched then lost (timeout, cancellation, provider
+            # error): the tool-timeout path cancels this coroutine
+            # with CancelledError, which is BaseException (not
+            # Exception) — without naming it the reservation would
+            # stay "reserved" at $0. The request was sent and may
+            # have been billed, so the estimate stays spent
+            # (kept-ambiguous), never $0.
+            self._ledger.keep(label)
+            raise
+        reported_in = getattr(result, "input_tokens", None)
+        reported_out = getattr(result, "output_tokens", None)
+        raw_usage = {
+            "input_tokens": reported_in,
+            "output_tokens": reported_out,
+            "model": getattr(result, "model", None),
+            "response_id": getattr(result, "response_id", None),
+            "attempts": getattr(result, "attempts", None),
+        }
+        report = self._ledger.reconcile_search(
+            label,
+            reported_in=reported_in,
+            reported_out=reported_out,
+            model=self._model or getattr(result, "model", None),
+            pricing_version=PRICING_VERSION,
+            raw_usage=raw_usage,
+        )
+        self.last_report = report
+        return result
 
 
 def _run_fake_scenario(
@@ -2435,6 +3706,8 @@ def _run_fake_scenario(
     ledger: SpendLedger,
     raw_dir: Path,
     max_attempts: int,
+    *,
+    search_limits: SearchRunLimits | None = None,
 ) -> dict[str, Any]:
     # The fake path takes Epicure enablement through the same
     # effective-settings code as the live path: a disabled environment
@@ -2464,6 +3737,7 @@ def _run_fake_scenario(
         max_attempts=max_attempts,
         recipe_resolver=_recipe_resolver,
         technique_resolver=_fake_technique_resolver,
+        search_limits=search_limits,
     )
 
 

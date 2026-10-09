@@ -7,6 +7,8 @@ per docs/phase5-owner-decisions.md) for the verified baseline.
 
 from culinary_copilot.search.accounting import (
     PROVISIONAL_WORDING,
+    SEARCH_CALL_FEE_USD,
+    SearchEstimateExceeded,
     estimate_search_usd,
     search_estimate_breakdown,
 )
@@ -36,8 +38,10 @@ from culinary_copilot.search.provenance import (
 __all__ = [
     "PROVISIONAL_WORDING",
     "GAP_KINDS",
+    "SEARCH_CALL_FEE_USD",
     "USDA_FOOD_SAFETY_PATH_RES",
     "GapCandidate",
+    "SearchEstimateExceeded",
     "WebAnswer",
     "WebRef",
     "WebSource",

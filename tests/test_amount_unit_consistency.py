@@ -2,11 +2,16 @@
 
 Regression suite for the foodie-019380 failure, where merge inherited
 unit 'lb' from a chicken occurrence onto lemon, salt and eggs sharing
-one glued source line. Fixtures 19380-source.txt / 19380-parsed.json are
-verbatim evaluation artifacts (real source, real saved model response);
-all other cases are labeled synthetic constructions testing the rule.
+one glued source line. Fixture 19380-source.txt is the verbatim source
+(CSV row 19380) and 19380-parsed.json its verbatim saved model response;
+since H5 (2026-10-08) that verbatim source is a summary-layout record and
+quarantines, so the glued-line rule is pinned through a carrier with the
+same blob lines under a genuine title (L2-L6 byte-identical, L-ids
+unchanged). All other cases are labeled synthetic constructions testing
+the rule.
 """
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -30,6 +35,32 @@ from culinary_copilot.recipes.llm_validate import (
 )
 
 FIX = Path(__file__).parent / "fixtures" / "amount_unit"
+
+
+def _carrier_texts():
+    """Verbatim 19380 blob lines under a genuine title (H5 vehicle).
+
+    The verbatim source's first line is the section label "summary", which
+    H5 refuses; replacing only that line keeps L2-L6 (and their L-ids)
+    byte-identical, so the saved model response still cites the same lines.
+    """
+    lines = (FIX / "19380-source.txt").read_text().splitlines(keepends=True)
+    for pos, line in enumerate(lines):
+        if line.strip():
+            assert line.strip().casefold() == "summary"
+            lines[pos] = "Doro wat\n"
+            break
+    return "".join(lines)
+
+
+def _carrier_parsed(texts):
+    """Verbatim saved response re-pointed at the carrier's content hash."""
+    parsed = copy.deepcopy(json.loads((FIX / "19380-parsed.json").read_text()))
+    # The fixtures stay a verbatim pair: the saved response is for the real source.
+    verbatim = (FIX / "19380-source.txt").read_text()
+    assert parsed["content_hash"] == hashlib.sha256(verbatim.encode()).hexdigest()
+    parsed["content_hash"] = hashlib.sha256(texts.encode()).hexdigest()
+    return parsed
 
 
 def _ctx(texts, row=19380):
@@ -143,14 +174,14 @@ def _response(texts, row, items, title="T", status="resolved"):
 
 
 def test_19380_glued_line_prior_does_not_leak_units():
-    """Verbatim 19380 source + verbatim saved model response.
+    """19380 blob carrier + verbatim saved model response (hash re-pointed).
 
     The deterministic parse degenerately succeeds (one 'lb' occurrence on
     the shared blob line). Merge must not attribute that unit to other
     ingredients on the same line; the model's own 'lb' (chicken) stays.
     """
-    texts = (FIX / "19380-source.txt").read_text()
-    parsed = json.loads((FIX / "19380-parsed.json").read_text())
+    texts = _carrier_texts()
+    parsed = _carrier_parsed(texts)
     ctx, det = _ctx(texts)
     assert det is not None  # degenerate success is the trigger
     report = validate_response(parsed, **ctx)

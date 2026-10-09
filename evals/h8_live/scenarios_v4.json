@@ -1,0 +1,117 @@
+{
+  "version": "h8-live-scenarios-v4-2026-10-08",
+  "note": "H8 third attempt (2026-10-08), written before the run and after the second attempt's fixes (answers support note claims; follow-up answered as a technique answer). Fresh requests, answers and follow-ups for the same two workflows as v1 (party baking, unnamed allergy). Demo limits per session (40 steps, 40 tool calls, 300k/60k tokens, 240 s per run); web search off. Scripted answers are given in order to whatever the model asks, each at most once. Run with --budget-pool h8 --max-attempts 1. Success criteria unchanged from evals/h8_live/PLAN.md; the allergy grade checks expected.allergen_terms.",
+  "scenarios": [
+    {
+      "key": "h8c-office-birthday",
+      "title": "Vague office-birthday bake: questions, options, select, plan, technique question",
+      "request": "It's my coworker's birthday on Friday and I want to bring in something homemade. What should I bake?",
+      "session": {
+        "steps_remaining": 40,
+        "tool_calls_remaining": 40,
+        "internet_search_allowed": false
+      },
+      "settings": {
+        "agent_input_token_ceiling": 300000,
+        "agent_output_token_ceiling": 60000,
+        "agent_wall_clock_s": 240,
+        "agent_record_trajectory": true,
+        "web_search_enabled": false,
+        "epicure_enabled": true,
+        "session_max_steps": 40,
+        "session_max_tool_calls": 40
+      },
+      "scripted_answers": [
+        {
+          "question_id": "q-1",
+          "answer": "Around 15 people at the office. I have an oven and a stand mixer."
+        },
+        {
+          "question_id": "q-2",
+          "answer": "No restrictions. It has to hold up in the fridge until lunchtime."
+        },
+        {
+          "question_id": "q-3",
+          "answer": "Your pick."
+        }
+      ],
+      "followup_message": "How do I know the cake has cooled enough to frost?",
+      "flow": [
+        "recommend-ask",
+        "resume",
+        "select-first",
+        "plan",
+        "followup"
+      ],
+      "fake_flow": "h8-full",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "kind": "technique_answer",
+        "workflow": [
+          "options",
+          "plan",
+          "technique_answer"
+        ],
+        "epicure": "skip:simple_technique_question"
+      }
+    },
+    {
+      "key": "h8c-allergy-sleepover",
+      "title": "Unnamed allergy: question, named answer, checked options, select, plan, technique question",
+      "request": "My daughter's friend is sleeping over this weekend and has a food allergy. What could we bake together?",
+      "session": {
+        "steps_remaining": 40,
+        "tool_calls_remaining": 40,
+        "internet_search_allowed": false
+      },
+      "settings": {
+        "agent_input_token_ceiling": 300000,
+        "agent_output_token_ceiling": 60000,
+        "agent_wall_clock_s": 240,
+        "agent_record_trajectory": true,
+        "web_search_enabled": false,
+        "epicure_enabled": true,
+        "session_max_steps": 40,
+        "session_max_tool_calls": 40
+      },
+      "scripted_answers": [
+        {
+          "question_id": "q-1",
+          "answer": "Eggs."
+        },
+        {
+          "question_id": "q-2",
+          "answer": "Anything without eggs is fine; we have an oven."
+        }
+      ],
+      "followup_message": "How can I tell the cookies are done if they still look soft?",
+      "flow": [
+        "recommend-ask",
+        "resume",
+        "select-first",
+        "plan",
+        "followup"
+      ],
+      "fake_flow": "h8-full",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "kind": "technique_answer",
+        "workflow": [
+          "options",
+          "plan",
+          "technique_answer"
+        ],
+        "epicure": "skip:simple_technique_question",
+        "allergy_check": true,
+        "allergen_terms": [
+          "egg",
+          "mayonnaise",
+          "meringue",
+          "aioli",
+          "albumen"
+        ]
+      }
+    }
+  ],
+  "freeze_sha256": "7d01af3abd5bdb9945fa223145e362c9c1aec5d708a10f5c6e438509575550f5"
+}

@@ -1,9 +1,14 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.datastructures import MutableHeaders
+from starlette.responses import RedirectResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from culinary_copilot.api.clarification import build_router as build_clarification_router
 from culinary_copilot.api.recommendations import build_router as build_recommendations_router
@@ -24,6 +29,52 @@ from culinary_copilot.tools.epicure import (
     Pairing,
     UnknownIngredientError,
 )
+
+_UI_CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; "
+    "img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
+    "frame-ancestors 'none'; form-action 'self'"
+)
+_WEB_DIR = Path(__file__).resolve().parents[1] / "web"
+
+
+class _ui_security_headers:
+    """Security headers for the /ui static responses only (never /api).
+
+    Pure ASGI middleware: it adds no tasks of its own, so streaming
+    disconnect behaviour (cancellation, telemetry reason) is identical
+    with or without it. FastAPI's ``@app.middleware("http")`` wrapper
+    (BaseHTTPMiddleware) is deliberately not used here: its task-group
+    teardown can deliver a bare cancellation that reaches a streaming
+    workflow before the endpoint's own messaged cancel, degrading the
+    telemetry reason to bare ``"cancelled"``.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = str(scope.get("path", ""))
+        if path != "/ui" and not path.startswith("/ui/"):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(raw=message.setdefault("headers", []))
+                headers["Content-Security-Policy"] = _UI_CSP
+                headers["X-Content-Type-Options"] = "nosniff"
+                headers["Referrer-Policy"] = "no-referrer"
+                # Revalidate on every load (2026-10-06): without it the
+                # browser kept heuristically cached ES modules after a
+                # UI change. Unchanged files still come back as a 304.
+                headers["Cache-Control"] = "no-cache"
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 def _checked_dataset_id(dataset_id: str | None) -> str | None:
@@ -134,6 +185,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             epicure=recommendation_epicure,
         )
     )
+
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        return RedirectResponse(url="/ui/", status_code=307)
+
+    app.add_middleware(_ui_security_headers)
+    if _WEB_DIR.is_dir():
+        app.mount("/ui", StaticFiles(directory=str(_WEB_DIR), html=True), name="ui")
 
     @app.get("/health/live", tags=["health"])
     def live() -> dict[str, str]:

@@ -1,0 +1,331 @@
+{
+  "ai_prepared": true,
+  "judgments_version": "h6-additional-v2-2026-10-08",
+  "method": "Each newly surfaced title-first top-5 hit with no recorded label was judged against displayed source evidence (title, ingredient list, reported total) under evals/rubric_v1.md and the checkpoint1 label schema. Reasons paraphrase the evidence; no source text is quoted. Time checks are mechanical from reported TotalTime; equipment preserved unenforced per the DEV-25 pattern. v2: 5 recipes surfaced only by the title boost added (origin h6_title_boost_pool); explanations and DEV-25 equipment evidence corrected after review of the stored recipes.",
+  "owner_review": "Checkpoint D 2026-10-08: the owner accepted the recommended grades (row 3 = 1, all others 2) and the corrected explanations and suitability; recorded by an AI assistant, not a signature.",
+  "replaces": {
+    "version": "h6-additional-v1-2026-10-08",
+    "sha256": "2e79ee34bf7647a9739f499976a91cfa9e762118c72705b2594c840601924c52"
+  },
+  "review_status": "Owner-accepted at Checkpoint D (recorded by an AI assistant; not a signature). Never edit checkpoint1_corrections.json or any frozen benchmark with this file.",
+  "rubric_version": "phase1-rubric-v1",
+  "labels": [
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-08",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-004166",
+      "suitability": "not_applicable",
+      "title": "Chicken Parmesan Pasta Casserole",
+      "topical_grade": 2,
+      "topical_reason": "A pasta casserole answers a generic pasta request; pantry items are hints, not an exclusive shopping list."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-15",
+      "constraint_checks": [
+        {
+          "constraint": "max_minutes<=25",
+          "evidence": "reported total 5 min <= 25",
+          "status": "satisfied_by_reported_value"
+        }
+      ],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_first_pool",
+      "source_id": "002516",
+      "suitability": "supported",
+      "title": "Honey and Garlic Dressing",
+      "topical_grade": 2,
+      "topical_reason": "Garlic is a named feature of the dressing, as with the recorded garlic dressings and sauces; reported time 5 minutes."
+    },
+    {
+      "ai_grade": 1,
+      "case_id": "DEV-18",
+      "constraint_checks": [],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_first_pool",
+      "source_id": "000461",
+      "suitability": "not_applicable",
+      "title": "Couscous Cakes With Tomato-Garlic Ragout",
+      "topical_grade": 1,
+      "topical_reason": "Garlic seasons the accompanying ragout; the dish is couscous cakes. Graded 1 under the recorded ingredient-query convention (garlic as one ingredient), not the literal same-dish-family rule."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-18",
+      "constraint_checks": [],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_first_pool",
+      "source_id": "000556",
+      "suitability": "not_applicable",
+      "title": "Garlic Pizza Crust",
+      "topical_grade": 2,
+      "topical_reason": "Garlic is a named feature of the crust, consistent with the recorded garlic-query convention."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-19",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-012166",
+      "suitability": "not_applicable",
+      "title": "Air Fryer Honey Garlic Chicken Wings",
+      "topical_grade": 2,
+      "topical_reason": "Garlic is a named feature of the wings, consistent with the recorded garlic-query convention."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-20",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-003851",
+      "suitability": "not_applicable",
+      "title": "Mum's Irish Apple Pie",
+      "topical_grade": 2,
+      "topical_reason": "The requested apple pie."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-25",
+      "constraint_checks": [
+        {
+          "constraint": "equipment=[wok] (available, non-exclusive)",
+          "status": "unresolved",
+          "evidence": "directions require a slow cooker; the user lists a wok as available, not as the only equipment"
+        }
+      ],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-017323",
+      "suitability": "unresolved",
+      "title": "Slow Cooker Chicken and Quinoa Dinner",
+      "topical_grade": 2,
+      "topical_reason": "A chicken dinner for a chicken dinner request."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-25",
+      "constraint_checks": [
+        {
+          "constraint": "equipment=[wok] (available, non-exclusive)",
+          "status": "unresolved",
+          "evidence": "directions require an oven and a baking sheet; the user lists a wok as available, not as the only equipment"
+        }
+      ],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-010415",
+      "suitability": "unresolved",
+      "title": "Mediterranean Chicken Sheet Pan Dinner",
+      "topical_grade": 2,
+      "topical_reason": "A chicken dinner for a chicken dinner request."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-27",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-003851",
+      "suitability": "not_applicable",
+      "title": "Mum's Irish Apple Pie",
+      "topical_grade": 2,
+      "topical_reason": "The requested apple pie."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-28",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-009890",
+      "suitability": "not_applicable",
+      "title": "Beef Short Rib French Onion Soup",
+      "topical_grade": 2,
+      "topical_reason": "A soup matches the generic soup request. Missing pantry items do not impose an unstated vegetarian or pantry-only constraint."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-29",
+      "constraint_checks": [
+        {
+          "constraint": "max_minutes<=60",
+          "evidence": "reported total 20 min <= 60",
+          "status": "satisfied_by_reported_value"
+        }
+      ],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_first_pool",
+      "source_id": "000619",
+      "suitability": "supported",
+      "title": "Egg Drop Soup",
+      "topical_grade": 2,
+      "topical_reason": "Egg drop soup matches the soup request; reported 20 minutes is within the limit (reported-time support)."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-09",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-002654",
+      "suitability": "not_applicable",
+      "title": "Chocolate Tres Leches Cake",
+      "topical_grade": 2,
+      "topical_reason": "A named chocolate-cake variant."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-09",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-015380",
+      "suitability": "not_applicable",
+      "title": "German Chocolate Cake",
+      "topical_grade": 2,
+      "topical_reason": "A named chocolate-cake variant."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-09",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-004765",
+      "suitability": "not_applicable",
+      "title": "Swedish Sticky Chocolate Cake (Kladdkaka)",
+      "topical_grade": 2,
+      "topical_reason": "A named chocolate-cake variant."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-14",
+      "constraint_checks": [
+        {
+          "constraint": "max_minutes<=45",
+          "evidence": "reported total 20 min <= 45",
+          "status": "satisfied_by_reported_value"
+        }
+      ],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_first_pool",
+      "source_id": "000619",
+      "suitability": "supported",
+      "title": "Egg Drop Soup",
+      "topical_grade": 2,
+      "topical_reason": "Egg drop soup matches the soup request; reported 20 minutes is within the limit (reported-time support)."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-17",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-006843",
+      "suitability": "not_applicable",
+      "title": "Tofu Vegetable Pot Pie",
+      "topical_grade": 2,
+      "topical_reason": "Tofu and vegetables are substantive components of the dish."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-17",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-011321",
+      "suitability": "not_applicable",
+      "title": "Panang Curry with Tofu and Vegetables",
+      "topical_grade": 2,
+      "topical_reason": "Tofu and vegetables are substantive components of the dish."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-17",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_first_pool",
+      "source_id": "foodie-001553",
+      "suitability": "not_applicable",
+      "title": "Korean Tofu and Vegetable Soup",
+      "topical_grade": 2,
+      "topical_reason": "Tofu and vegetables are substantive components of the dish. It contains beef stock; the request states no vegetarian or vegan constraint."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-03",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_boost_pool",
+      "source_id": "foodie-014725",
+      "suitability": "not_applicable",
+      "title": "Grandma's Canned Corned Beef and Cabbage Soup",
+      "topical_grade": 2,
+      "topical_reason": "A cabbage soup variant; the request states no vegetarian constraint."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-24",
+      "constraint_checks": [
+        {
+          "constraint": "vegan",
+          "status": "violated_by_source",
+          "evidence": "chicken broth in the ingredients and the directions"
+        },
+        {
+          "constraint": "gluten_free",
+          "status": "unresolved",
+          "evidence": "ditalini or other small pasta not specified gluten-free"
+        }
+      ],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_boost_pool",
+      "source_id": "foodie-010409",
+      "suitability": "not_suitable",
+      "title": "Pasta e Fagioli (Pasta and Beans)",
+      "topical_grade": 2,
+      "topical_reason": "A named pasta dish for a pasta request."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "DEV-28",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_boost_pool",
+      "source_id": "foodie-000315",
+      "suitability": "not_applicable",
+      "title": "Traditional Bulgarian Soup (Shopi Style Soup)",
+      "topical_grade": 2,
+      "topical_reason": "A soup matches the generic soup request; meat, eggs and cheese do not violate an unstated diet. Some ingredient lines are mis-parsed (a data-quality issue, recorded separately)."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-07",
+      "constraint_checks": [],
+      "dataset_id": "odunola/foodie",
+      "origin": "h6_title_boost_pool",
+      "source_id": "foodie-015051",
+      "suitability": "not_applicable",
+      "title": "Ashanti Chicken( Whole Deboned Chicken With rice)",
+      "topical_grade": 2,
+      "topical_reason": "The description and directions describe stuffed whole chicken. The stored ingredient list holds only seasonings (no chicken or rice), so topical relevance does not mean a complete sourced plan is possible."
+    },
+    {
+      "ai_grade": 2,
+      "case_id": "HELD-09",
+      "constraint_checks": [],
+      "dataset_id": "AkashPS11/recipes_data_food.com",
+      "origin": "h6_title_boost_pool",
+      "source_id": "002495",
+      "suitability": "not_applicable",
+      "title": "Chocolatetown Special Cake (Chocolate Cake)",
+      "topical_grade": 2,
+      "topical_reason": "A chocolate cake; the directions use cocoa. Cocoa is missing from the stored ingredient list (a completeness issue, recorded separately)."
+    }
+  ]
+}

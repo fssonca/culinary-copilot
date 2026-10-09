@@ -1,0 +1,115 @@
+{
+  "version": "h8-live-scenarios-v3-2026-10-08",
+  "note": "H8 second attempt (2026-10-08), written before the run and after the stall-recovery change. Fresh requests, answers and follow-ups for the same two workflows as v1 (party baking, unnamed allergy), so the scenarios that motivated the change are not the ones that check it. Demo limits per session (40 steps, 40 tool calls, 300k/60k tokens, 240 s per run); web search off. Scripted answers are given in order to whatever the model asks, each at most once. Run with --budget-pool h8 --max-attempts 1. Success criteria unchanged from evals/h8_live/PLAN.md; the allergy grade checks the terms in expected.allergen_terms.",
+  "scenarios": [
+    {
+      "key": "h8b-bake-sale",
+      "title": "Vague bake-sale request: questions, options, select, plan, technique question",
+      "request": "I need to bake something for a school bake sale on Saturday. Any ideas?",
+      "session": {
+        "steps_remaining": 40,
+        "tool_calls_remaining": 40,
+        "internet_search_allowed": false
+      },
+      "settings": {
+        "agent_input_token_ceiling": 300000,
+        "agent_output_token_ceiling": 60000,
+        "agent_wall_clock_s": 240,
+        "agent_record_trajectory": true,
+        "web_search_enabled": false,
+        "epicure_enabled": true,
+        "session_max_steps": 40,
+        "session_max_tool_calls": 40
+      },
+      "scripted_answers": [
+        {
+          "question_id": "q-1",
+          "answer": "About 24 pieces. I have a standard oven and a 9x13 pan."
+        },
+        {
+          "question_id": "q-2",
+          "answer": "No dietary restrictions. Something easy to wrap and carry, like bars or cookies."
+        },
+        {
+          "question_id": "q-3",
+          "answer": "Whatever you think sells best."
+        }
+      ],
+      "followup_message": "How should I store it overnight so it is still fresh on Saturday?",
+      "flow": [
+        "recommend-ask",
+        "resume",
+        "select-first",
+        "plan",
+        "followup"
+      ],
+      "fake_flow": "h8-full",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "kind": "technique_answer",
+        "workflow": [
+          "options",
+          "plan",
+          "technique_answer"
+        ],
+        "epicure": "skip:simple_technique_question"
+      }
+    },
+    {
+      "key": "h8b-allergy-treat",
+      "title": "Unnamed allergy: question, named answer, checked options, select, plan, technique question",
+      "request": "My nephew has a food allergy and I'd like to bake him a treat. What can I make?",
+      "session": {
+        "steps_remaining": 40,
+        "tool_calls_remaining": 40,
+        "internet_search_allowed": false
+      },
+      "settings": {
+        "agent_input_token_ceiling": 300000,
+        "agent_output_token_ceiling": 60000,
+        "agent_wall_clock_s": 240,
+        "agent_record_trajectory": true,
+        "web_search_enabled": false,
+        "epicure_enabled": true,
+        "session_max_steps": 40,
+        "session_max_tool_calls": 40
+      },
+      "scripted_answers": [
+        {
+          "question_id": "q-1",
+          "answer": "Peanuts."
+        },
+        {
+          "question_id": "q-2",
+          "answer": "Anything without peanuts is fine; I have an oven."
+        }
+      ],
+      "followup_message": "How do I keep peanuts out of the treat by accident when baking at home?",
+      "flow": [
+        "recommend-ask",
+        "resume",
+        "select-first",
+        "plan",
+        "followup"
+      ],
+      "fake_flow": "h8-full",
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "kind": "technique_answer",
+        "workflow": [
+          "options",
+          "plan",
+          "technique_answer"
+        ],
+        "epicure": "skip:simple_technique_question",
+        "allergy_check": true,
+        "allergen_terms": [
+          "peanut",
+          "groundnut",
+          "arachis"
+        ]
+      }
+    }
+  ],
+  "freeze_sha256": "9c09c6930238e67a958ac0e8cf90815744ffdf6c5ab0c72681dd138d493de16a"
+}

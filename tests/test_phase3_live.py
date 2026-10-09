@@ -1570,6 +1570,21 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr(_socket.socket, "connect", _guarded_connect)
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
 
+    # The technique loader reads the local corpus (data/technique-corpus,
+    # git-ignored); a checkout without it (CI) cannot run this path.
+    corpus_dir = Path(__file__).resolve().parents[1] / "data" / "technique-corpus"
+    manifest_path = (
+        Path(__file__).resolve().parents[1] / "evals" / "technique_corpus" / "manifest.json"
+    )
+    ingested = [
+        doc_id
+        for doc_id, record in json.loads(manifest_path.read_text(encoding="utf-8"))["docs"].items()
+        if record.get("status") == "ingested"
+    ]
+    missing = [d for d in ingested if not (corpus_dir / f"{d}.txt").exists()]
+    if missing:
+        pytest.skip(f"local technique corpus absent ({len(missing)} docs missing)")
+
     base = Settings().database_url.get_secret_value()
     head, _, _ = base.rpartition("/")
     db_name = "culinary_test_livepath"
@@ -1631,8 +1646,14 @@ def test_live_path_with_faked_sdk_only(tmp_path: Path, monkeypatch: pytest.Monke
             from culinary_copilot.tools.registry import strict_violations as _check_strict
 
             assert len(seen_tools) == 11
+            # Every turn is sent the tool schemas; the one wrap-up turn
+            # after c7 (which only repeats c2's fetch) withholds only
+            # get_recipe (2026-10-07: the repeated tools, not all tools).
+            assert all(seen_tools)
+            names_per_turn = [{t["name"] for t in turn} for turn in seen_tools]
+            withheld = [i for i, names in enumerate(names_per_turn) if "get_recipe" not in names]
+            assert withheld == [7]
             for payload_tools in seen_tools:
-                assert payload_tools, "every model turn is sent the tool schemas"
                 for _tool in payload_tools:
                     assert _tool["strict"] is True
                     assert _check_strict(_tool["parameters"]) == []
@@ -2377,15 +2398,62 @@ def test_projection_carries_errors_stop_reason(tmp_path: Path) -> None:
 
 
 def test_no_answer_run_reports_no_answer_status(engine, tmp_path: Path) -> None:
+    assert live_run._final_answered({"options": [{"title": "x"}]}) is True
+    assert live_run._final_answered({"plan": {"steps": []}}) is True
+    assert live_run._final_answered({"question": {"question_id": "q"}}) is False
+    assert live_run._final_answered(None) is False
+    assert live_run._final_answered({}) is False
+
+
+def test_question_stop_reports_no_answer_and_na_constraint(engine, tmp_path: Path) -> None:
+    # Checkpoint B condition 6 via the runner: a stop that only asks is
+    # "completed: no-answer", and constraint adherence is "n/a" when
+    # nothing was offered.
     from culinary_copilot.config import Settings
     from culinary_copilot.llm.client import NativeTurnResult
     from culinary_copilot.services.session_store import PostgresSessionStore
 
-    assert live_run._final_answered({"options": [{"title": "x"}]}) is True
-    assert live_run._final_answered({"plan": {"steps": []}}) is True
-    assert live_run._final_answered({"question": {"question_id": "q"}}) is True
-    assert live_run._final_answered(None) is False
-    assert live_run._final_answered({}) is False
+    class _Ask:
+        async def complete_native_tool_turn(self, **kwargs: Any) -> Any:
+            return NativeTurnResult(
+                tool_calls=[],
+                parsed={
+                    "decision": "ask_user",
+                    "question": {"question_id": "q1", "question_text": "Which allergy?"},
+                    "note": "need the name",
+                },
+                chain_items=[],
+                input_tokens=5,
+                output_tokens=5,
+            )
+
+    settings = Settings(_env_file=None, epicure_enabled=True)
+    store = PostgresSessionStore(engine)
+    scenario = {
+        "key": "ask-only",
+        "request": "Dinner for a friend with an allergy.",
+        "session": {"constraints": {"dietary_constraints": ["vegan"]}},
+        "settings": {},
+        "scripted_answers": [],
+        "flow": ["recommend"],
+        "fake_flow": "direct",
+        "expected": {"stop_reason": "agent_needs_user_input"},
+    }
+    report = live_run.run_scenario_live(
+        engine=engine,
+        store=store,
+        settings=settings,
+        scenario=scenario,
+        ledger=_ledger(),
+        provider_factory=lambda s: _Ask(),
+        context_factory=lambda s, sc: live_run._fake_context(s, settings, sc),
+        raw_dir=tmp_path,
+        max_attempts=1,
+        recipe_resolver=None,
+    )
+    assert report["stop_reason"] == "agent_needs_user_input"
+    assert report["status"] == "completed: no-answer (agent_needs_user_input)"
+    assert report["grades"]["constraint_adherence"] == "n/a"
 
     settings = Settings(_env_file=None, epicure_enabled=True)
     store = PostgresSessionStore(engine)
@@ -2628,3 +2696,116 @@ def test_projection_carries_finish_review_keys() -> None:
     assert finished["steps_source"] == "source"
     assert finished["input_tokens"] == 500
     assert finished["output_tokens"] == 60
+
+
+def test_projection_carries_search_events_minimized() -> None:
+    project = live_run._project_trajectory_event
+    cases = [
+        (
+            "search_slot_claimed",
+            {"call_id": "web-abc", "slots_used": 1, "slots_max": 3, "extra": "drop"},
+            {"call_id", "slots_used", "slots_max"},
+        ),
+        (
+            "search_requested",
+            {"call_id": "web-abc", "minimized_query": "okonomiyaki recipe", "permission": True},
+            {"call_id", "minimized_query", "permission"},
+        ),
+        (
+            "search_results_retrieved",
+            {
+                "call_id": "web-abc",
+                "urls": ["https://example.com/a"],
+                "web_search_call_ids": ["ws_1"],
+                "retrieved_at": "2026-10-03T00:00:00Z",
+            },
+            {"call_id", "urls", "web_search_call_ids", "retrieved_at"},
+        ),
+        (
+            "evidence_evaluated",
+            {
+                "call_id": "web-abc",
+                "evaluations": [
+                    {"url": "https://example.com/a", "classification": "recipe", "decision": "kept"}
+                ],
+            },
+            {"call_id", "evaluations"},
+        ),
+        (
+            "search_outcome",
+            {"call_id": "web-abc", "outcome": "ok"},
+            {"call_id", "outcome"},
+        ),
+        (
+            "search_operations",
+            {
+                "call_id": "web-abc",
+                "latency_ms": 12.5,
+                "model": "gpt-6-luna",
+                "input_tokens": 9230,
+                "output_tokens": 310,
+                "estimate_status": "reconciled",
+            },
+            {"call_id", "latency_ms", "model", "input_tokens", "output_tokens", "estimate_status"},
+        ),
+    ]
+    for event_type, payload, keys in cases:
+        projected = project(event_type, dict(payload))
+        assert projected is not None, event_type
+        assert projected["type"] == event_type
+        for key in keys:
+            assert projected[key] == payload[key], (event_type, key)
+        assert "extra" not in projected
+        assert "stop" in projected and "reason" in projected
+
+
+def test_projection_search_tool_call_carries_result_facts() -> None:
+    project = live_run._project_trajectory_event
+    facts = {"source_count": 3, "classifications": ["recipe", "reference", "video"]}
+    projected = project(
+        "tool_call",
+        {"tool": "search_web", "outcome": "ok", "result_facts": dict(facts)},
+    )
+    assert projected is not None
+    assert projected["result_facts"] == facts
+    other = project(
+        "tool_call",
+        {
+            "tool": "search_recipes",
+            "outcome": "ok",
+            "result_facts": {"source_count": 9},
+        },
+    )
+    assert other is not None
+    assert "result_facts" not in other
+
+
+def test_search_web_result_facts_shape() -> None:
+    from culinary_copilot.tools.registry import _result_facts
+
+    facts = _result_facts(
+        "search_web",
+        {
+            "ok": True,
+            "sources": [
+                {
+                    "url": "https://example.com/a",
+                    "title": "Guide A",
+                    "classification": "recipe",
+                },
+                {
+                    "url": "https://example.org/b",
+                    "title": "",
+                    "citation_title": "Cited B",
+                    "classification": "reference",
+                },
+            ],
+        },
+    )
+    assert facts == {
+        "source_count": 2,
+        "classifications": ["recipe", "reference"],
+        "titles": ["Guide A", "Cited B"],
+        "hosts": ["example.com", "example.org"],
+    }
+    assert _result_facts("search_web", {"ok": False}) is None

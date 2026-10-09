@@ -65,6 +65,19 @@ def test_audit_has_explicit_scope_and_does_not_change_fallback():
     assert len(brief["requested_ingredient_line_ids"]) == 2
 
 
+def test_summary_layout_parse_error_quarantines_without_llm():
+    # H5: no title evidence, and the targeted contract preserves titles, so
+    # paid extraction cannot repair these either. Quarantine, never sample.
+    result = routing.route_record(
+        "summary\nDesc.\ningredients\n2 cups flour1 teaspoon salt\ninstructions\nMix. Bake.\n",
+        19350,
+        parse_error="summary_layout_missing_title",
+    )
+    assert result["route"] == "quarantine"
+    assert result["reason_codes"] == ["summary_layout_missing_title"]
+    assert not result["audit"]
+
+
 def test_structural_signal_is_not_silently_accepted():
     recipe = normalize_foodie_text(CLEAN, 1)
     recipe["line_coverage"] = {"dropped": ["unclassified ingredient"]}

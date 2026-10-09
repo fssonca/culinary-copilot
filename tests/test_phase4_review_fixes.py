@@ -351,7 +351,10 @@ def test_pre_stream_errors_match_the_json_endpoint(
 # --- client disconnect through the endpoint ----------------------------------------
 
 
-async def _stream_then_disconnect(app: Any, body: dict[str, Any], spec: str) -> list[bytes]:
+async def _stream_then_disconnect(
+    app: Any, body: dict[str, Any], spec: str, ready: asyncio.Event | None = None
+) -> list[bytes]:
+    """Stream, then disconnect after the first chunk (and ``ready``, if given)."""
     payload = json.dumps(body).encode()
     first_chunk = asyncio.Event()
     delivered = False
@@ -363,11 +366,17 @@ async def _stream_then_disconnect(app: Any, body: dict[str, Any], spec: str) -> 
             delivered = True
             return {"type": "http.request", "body": payload, "more_body": False}
         await first_chunk.wait()
+        if ready is not None:
+            # CI (2026-10-09): on a slower runner the first chunk can go out
+            # before the workflow reaches the provider; disconnecting then
+            # cancels it earlier, so "the provider call was cancelled" is
+            # only testable once that call has started.
+            await asyncio.wait_for(ready.wait(), timeout=5)
         return {"type": "http.disconnect"}
 
     async def send(message: dict[str, Any]) -> None:
         if message["type"] == "http.response.body" and message.get("body"):
-            if first_chunk.is_set() and spec >= "2.4":
+            if first_chunk.is_set() and spec >= "2.4" and (ready is None or ready.is_set()):
                 raise OSError("client gone")
             chunks.append(message["body"])
             first_chunk.set()
@@ -398,21 +407,37 @@ async def _stream_then_disconnect(app: Any, body: dict[str, Any], spec: str) -> 
 
 
 @pytest.mark.parametrize("spec", ["2.3", "2.4"])
-def test_client_disconnect_cancels_workflow_and_records_telemetry(spec: str) -> None:
+@pytest.mark.parametrize("middleware", ["absent", "present"])
+def test_client_disconnect_cancels_workflow_and_records_telemetry(
+    spec: str, middleware: str
+) -> None:
+    """Disconnect cancels the workflow with or without the /ui security
+    headers middleware installed (a permanent regression for the Phase 6
+    app wiring: the middleware must not swallow disconnects)."""
+    from culinary_copilot.api.app import _ui_security_headers
+
     cancelled = {"hit": False}
+    entered: dict[str, asyncio.Event] = {}
 
     class _Slow:
         async def complete_recommendation(self, **_: Any) -> Any:
+            entered["event"].set()
             try:
                 await asyncio.sleep(30)
             except asyncio.CancelledError:
                 cancelled["hit"] = True
                 raise
 
+    async def _scenario() -> list[bytes]:
+        entered["event"] = asyncio.Event()
+        return await _stream_then_disconnect(app, _body(state, group), spec, ready=entered["event"])
+
     store, state, group = _store_with_group()
     app = _app(store, _settings(), _Slow())
+    if middleware == "present":
+        app.add_middleware(_ui_security_headers)
     with _telemetry() as records, _patched_repo()[0], _patched_repo()[1]:
-        chunks = _run(_stream_then_disconnect(app, _body(state, group), spec))
+        chunks = _run(_scenario())
     text = b"".join(chunks).decode()
     assert "event: final" not in text and "event: error" not in text
     assert cancelled["hit"] is True

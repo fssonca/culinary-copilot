@@ -1,16 +1,29 @@
 # Current system architecture
 
-Code snapshot: **2026-09-28 (Milestone 3, Phase 1 sessions added)**. Phase 3 is accepted as a bounded backend
-milestone. Phase 5 added recipe embeddings and vector/hybrid retrieval code.
-Phase 6 compared the retrieval modes blind. Runtime search is still full-text
-only (see §5).
-This describes implemented behavior, not the eventual agent design. Start here;
-then read [request flows](request-flows.md) and [data and ingestion](data-and-ingestion.md).
-Diagrams use Mermaid, which GitHub renders directly.
+Code snapshot: **2026-10-05 (Milestone 3, Phases 1-7 done; live
+evaluation run and reviewed at checkpoint C; milestone acceptance
+pending)**. The bounded agent loop, permission-gated web search and
+minimal UI are implemented as described below. This page describes
+implemented behavior, not the eventual agent design. Diagrams use
+Mermaid, which GitHub renders directly.
+
+**Reading order:**
+
+1. **[The agent system](agent-system.md):** a one-sitting explanation
+   of the agent. It covers the design principles, components, a run
+   step by step, context management, memory, human approvals,
+   guardrails, security, observability, evaluation and limits.
+2. **[Agentic development workflow](agentic-development.md):** how the
+   system is built with AI coding agents. It covers roles, guardrails,
+   human checkpoints, verification and paid-run governance.
+3. This page, which places the agent within the whole backend,
+   including ingestion, clarification and retrieval.
+4. [Request flows](request-flows.md) and
+   [data and ingestion](data-and-ingestion.md).
 
 ## 1. The system in plain language
 
-The backend has four main jobs:
+The backend has five main jobs:
 
 1. **Prepare recipe data:** explicit ingestion commands normalize dataset rows,
    optionally ask a model to interpret ambiguous text, validate results, and load PostgreSQL.
@@ -20,10 +33,26 @@ The backend has four main jobs:
 4. **Recommend a stored recipe:** consult Epicure, fetch source evidence, ask a
    bounded model to select, then validate and render recipe facts and propositions
    on the server.
+5. **Run the cooking agent (Milestone 3):** a bounded tool-using loop that
+   works through a Postgres-backed session from request to cooking plan. It
+   asks when an answer matters, waits for the user's dish choice, searches
+   the web only with permission, and passes every answer through
+   deterministic validators. See [the agent system](agent-system.md).
 
-There is no frontend or autonomous agent loop yet. Vector and hybrid
-retrieval exist in the retrieval service and the evaluation harness, but no
-HTTP endpoint selects them: the API and recommendations run full-text search.
+The agent loop is implemented (`agent/loop.py`, hand-written, no
+framework): native function calling over the typed registry, parallel
+calls in call order, CAS plus events per step, server-set budgets
+(12 steps, 12 tool calls, 60k/12k tokens, 90 s wall clock) with stable
+stop reasons, Epicure queried by default, validation as the last gate
+(see `docs/agent.md` and `docs/adr/0002-agent-loop.md`). `search_web`
+is implemented behind the same registry (server-bound session,
+atomic slot claim max 3/session, one bounded hosted sub-request per
+dispatch; see `docs/tools.md`). The minimal UI is served at `/ui`
+(native ES modules, no build; toggle off by default, backend
+enforces; see `docs/ui-walkthrough.md`). Vector and hybrid
+retrieval exist in the retrieval service and the evaluation harness, but
+the API and recommendations run full-text by default (code default
+`fulltext`; see ADR 0001).
 Clarification readiness feeds the implemented recommendation
 workflow (source-grounded selection, backend-only), served over both
 non-streaming JSON and versioned SSE streaming (Phase 4, shared
@@ -34,7 +63,13 @@ practical usefulness; see [closure and limitations](../phase3-closure.md).
 
 ```mermaid
 flowchart TB
-    Client["Client: curl, Swagger, or future UI"] --> API["FastAPI backend"]
+    Client["Client: curl, Swagger, or /ui page"] --> API["FastAPI backend"]
+    API --> Agent["Bounded agent loop (sessions, typed tools, validators)"]
+    Agent --> Sessions[("PostgreSQL: sessions + append-only events")]
+    Agent --> Recipes
+    Agent -->|"LLM_RECOMMENDATION_ENABLED"| AppLLM
+    Agent -->|"pairing tools"| Epicure
+    Agent -->|"permission on"| WebSearch["Hosted web search"]
     API --> Recipes["Recipe search and lookup"]
     Recipes --> PG[("PostgreSQL: shared recipe corpus")]
     API --> Clarify["Clarification services"]
@@ -89,7 +124,9 @@ All paths below are relative to `src/culinary_copilot/`.
 | Recipe access | Parameterized SQL search, exact vector search, RRF fusion and document lookup | `recipes/repository.py`, `search.py`, `vector_search.py` |
 | Ingestion | Source normalization, extraction, validation and loading | `recipes/import_data.py`, `adapters/`, `llm_batch.py`, `llm_sched.py`, supporting modules |
 | Epicure | Load pinned vocabulary/vectors and calculate neighbors (core/cooc/chem) | `tools/epicure.py` |
-| Agent tools (M3 Phase 2 + Phase 4) | Typed registry, recipe search, Epicure pairings/substitutions, scaling/conversion, technique search, web stub | `tools/registry.py`, `search_tools.py`, `epicure_tools.py`, `measure_tools.py`, `technique_tools.py`, `stub_tools.py` (see `docs/tools.md`, `docs/techniques.md`) |
+| Agent tools (M3 Phase 2 + Phase 4 + Phase 5 part 2) | Typed registry, recipe search, Epicure pairings/substitutions, scaling/conversion, technique search, server-bound web search | `tools/registry.py`, `search_tools.py`, `epicure_tools.py`, `measure_tools.py`, `technique_tools.py`, `stub_tools.py` (see `docs/tools.md`, `docs/techniques.md`) |
+| Agent loop (M3 Phase 3 + Phase 7) | Bounded hand-written loop, Epicure-by-default, ask/resume, select/plan, validation last gate, SSE stream | `agent/loop.py`, `agent/validate.py`, `api/agent.py` (see `docs/agent.md`, `docs/adr/0002-agent-loop.md`) |
+| Web UI (M3 Phase 6) | Static page at `/ui` (no build): message box, streamed stages, options/plan/technique/web cards, question answering, toggle off by default (backend enforces) | `web/` (`index.html`, `demo.html`, `js/`, `styles.css`; see `docs/ui-walkthrough.md`) |
 | Infrastructure | Settings, database engine, planning events | `config.py`, `db.py`, `obs/clarification.py` |
 
 Development-only tools are under `scripts/`:
@@ -187,14 +224,14 @@ planning call” does not necessarily mean exactly one network attempt.
 | Source-grounded recommendations | Implemented backend-only (Phase 3): `POST /api/v1/recommendations` selects one source recipe with server-rendered content, deterministic validation, and Epicure consultation or a recorded skip/degraded outcome; see `docs/recommendations.md` |
 | Epicure inside recommendations | Implemented: early consultation with canonical ingredients via cached assets (`CachedEpicureAdapter`), distinct outcomes (consulted/skip/disabled/unavailable/unmapped/insufficient context), opt-in `get_recipe` tool mode |
 | Substitution verification | Limited checks; suggestions remain unverified, not certified equivalents |
-| Agent sessions + cooking phases | Implemented (Milestone 3, Phase 1): Postgres `sessions` + append-only `session_events` (migration `005`), phase table with `recommend -> plan` skip-select, create/read/permission endpoints; budgets stored (12 tool calls, 8 steps), not yet enforced. See [sessions](../sessions.md) |
+| Agent sessions + cooking phases | Implemented (Milestone 3, Phase 1): Postgres `sessions` + append-only `session_events` (migration `005`), phase table with `recommend -> plan` skip-select, create/read/permission endpoints; budgets stored (12 tool calls, 12 steps) and enforced by the loop. See [sessions](../sessions.md) |
 | Durable clarification conversations | Not implemented (in-memory store stays; sessions link by ID; migration path in [sessions](../sessions.md)) |
 | Recipe embeddings / pgvector | Implemented (Phase 5): migration 004 adds pgvector and `recipe_embeddings`. There is one `text-embedding-3-small` 1536-dimension vector per recipe, and search is an exact cosine scan with no HNSW index. `search_vector` is still the separate PostgreSQL full-text column |
 | Vector / hybrid retrieval | Retrieval endpoint wired (M3 Phase 2, ADR 0001 steps 1–2/5): `RETRIEVAL_MODE` and friends reach `retrieve_for_group`; provider starts only when `EMBEDDINGS_ENABLED`. Code default stays `fulltext` (zero embedding calls); recommendations keep full-text (step 4 open). Vector/hybrid measured in Phase 6; flipping the default still needs owner approval |
 | Typed tool layer (M3 Phase 2 + Phase 4 + Phase 5 part 2) | Implemented: 10 typed tools (search/get, 3 Epicure variants + substitutions, scale/convert, technique search, server-bound web search) with server-set 10 s timeout, typed errors + `next_action`, and `session_events` logging; see `docs/tools.md`, `docs/techniques.md` |
-| Technique corpus (M3 Phase 4) | Implemented on disposable DBs, not yet on the app DB: 34/40 approved docs ingested (006 full-text on both images; 007 vector on pgvector only), `search_techniques` full-text/vector with attribution, plan/cook `technique_refs` validation + evidence, frozen 16-case eval (full-text HitRate@5 0.625, MRR 0.594). App apply + paid embedding ($0.01 cap) pending owner go-ahead; see `docs/techniques.md` |
-| Bounded agent loop (M3 Phase 3) | Implemented: hand-written loop over the registry (native function calling, parallel calls in call order, CAS + events per step); server-set 8 steps / 12 calls / 90 s; stable stops with `next_action`; Epicure-by-default; answers/select/SSE endpoints; see `docs/agent.md`. Review packet in `evals/phase3_agent/`; live plan unrun |
-| Recipe rewriting, scaling, web search, agent loops | Recommendations select and render stored sources; scaling/conversion exist as deterministic tools (unknown stays unknown). Session budgets (`SESSION_MAX_TOOL_CALLS`, `SESSION_MAX_STEPS`) are stored and enforced by the loop; web-search permission is backend-enforced in server-bound `search_web` (off → denied with no slot, on → atomic slot claim max 3/session then one bounded hosted sub-request; provisional $0.025/search estimate per owner decision 4, live check separately authorized) |
+| Technique corpus (M3 Phase 4) | Implemented and applied to the app DB: 34 approved documents, 253 chunks, each with an embedding (migrations 006 full-text, 007 vector). `search_techniques` runs full-text by default, with vector as an option, and returns attribution. Plan and cook `technique_refs` are validated and stored as evidence. Frozen 16-case eval: full-text HitRate@5 0.625, MRR 0.594. See `docs/techniques.md` |
+| Bounded agent loop (M3 Phase 3 + Phase 7) | Implemented. See [the agent system](agent-system.md), `docs/agent.md` and ADR 0002. A hand-written loop over the registry: native function calling, parallel calls recorded in call order, a CAS write and an event per step. Server-set budgets: 12 steps, 12 calls, 60k input tokens, 90 s. Stable stops with `next_action`; Epicure by default; answers, select and SSE endpoints. Phase 7 offline harness: v8, 43 cases (`docs/agent-scoreboard.md`). The live evaluation ran 11 sessions; the owner reviewed them at checkpoint C (`evals/phase7_agent/CHECKPOINT_C.md`) |
+| Recipe rewriting, scaling, web search | Recommendations select and render stored sources; scaling and conversion are deterministic tools (unknown stays unknown). Plans that change a source's method are labelled `model_adaptation`. Web search is permission-gated in the backend, in server-bound `search_web`: off means denied with no slot; on means an atomic slot claim (at most 3 per session), then one bounded hosted sub-request. Answers are discovery-only: cited pointers and page descriptions, never a cooking method |
 | Streaming | Implemented (Phase 4): `POST /api/v1/recommendations/stream` shares the recommendation service via a stage hook; versioned stage/final/error events, bounded duration/events, disconnect cancellation |
 | Complete telemetry | Implemented (Phase 4): correlated clarification + recommendation events with real ids, stage timings, per-turn usage and estimated cost from the model registry (gpt-6-luna); one event per run including cancelled runs; no message/recipe/secret logging |
 
@@ -224,6 +261,10 @@ PGVECTOR_TEST_URL=postgresql+psycopg://t:t@127.0.0.1:55439/cc_disposable_test \
 docker stop cc-pgv-test
 ```
 
+- [The agent system](agent-system.md)
+- [Agentic development workflow](agentic-development.md)
+- [Agent loop contracts](../agent.md), [tools](../tools.md), [sessions](../sessions.md)
+- [Agent scoreboard](../agent-scoreboard.md) and [checkpoint C packet](../../evals/phase7_agent/CHECKPOINT_C.md)
 - [Clarification contracts and HTTP examples](../clarification.md)
 - [Retrieval evidence summaries](../retrieval.md)
 - [Phase 6 retrieval scoreboard](../scoreboard.md)
