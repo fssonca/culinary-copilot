@@ -162,3 +162,27 @@ rejected by a validator false positive (fixed after the run); the bake
 sale's follow-up re-issued the plan instead of a technique answer.
 $0.0423 spent, H8 total $0.0566 of $1.00. Details: `RESULTS.md`,
 "Second attempt".
+
+## Third attempt: freeze record (2026-10-08)
+
+Recorded by an AI assistant at the owner's go-ahead ("proceed with your
+recommendations, and do a new attempt"); not a signature.
+
+| Item | Value |
+|---|---|
+| Label | H8 attempt 3; acknowledgement `h8-attempt-3-2026-10-08` (earlier values refused) |
+| Commit | Code as of `5447fac`: attempt-2 fixes (answers support note claims, `692b12c`) and the follow-up framing line. The commit that records this table changes only docs. |
+| Corpus | Unchanged: 15,875 recipes, 644 quarantine rows, 3 imports (last `foodie-repair-v5-20261008`), 0 `summary` titles |
+| Model, reasoning effort, service tier | `gpt-6-luna`, `LLM_REC_REASONING_EFFORT=none`, standard tier |
+| Limits | Demo limits, as in the scenarios file |
+| Retrieval, Epicure, embeddings | `RETRIEVAL_MODE=fulltext`, technique retrieval fulltext, `EPICURE_ENABLED=true`, `EMBEDDINGS_ENABLED=true`, `WEB_SEARCH_ENABLED=false` |
+| Scenarios | `scenarios_v4.json`, freeze sha256 `7d01af3abd5bdb9945fa223145e362c9c1aec5d708a10f5c6e438509575550f5`: `h8c-office-birthday`, `h8c-allergy-sleepover` (eggs), written before this run |
+| Harness | Cases v12, 59/59 |
+| Budget | H8 pool $1.00; $0.0566 spent by attempts 1 and 2; $0.9434 available |
+| Success | Unchanged from "Success, declared before the run" above |
+
+Command: the attempt-2 command with
+`--acknowledge-live-run h8-attempt-3-2026-10-08`,
+`--scenarios-file evals/h8_live/scenarios_v4.json`,
+`--raw-dir data/h8-live/raw-attempt-3` and
+`--summary-out data/h8-live/summary-attempt-3.json`.

@@ -496,3 +496,11 @@ further than attempt 1; the stall recovery worked in both sessions. One
 validator false positive was fixed afterwards; the follow-up-as-plan
 behaviour and a third attempt await the owner. See
 `evals/h8_live/RESULTS.md`, "Second attempt".
+
+### After the second H8 attempt (2026-10-08)
+
+Recorded by an AI assistant; not a signature. The owner approved the
+recommendations: the plan-phase follow-up framing (option b; option a,
+rejecting a re-issued plan, only if attempt 3 still shows the problem)
+and a third, separately labelled attempt on fresh scenarios
+(`scenarios_v4.json`). Push still not authorized.
