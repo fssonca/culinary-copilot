@@ -24,7 +24,7 @@ signal; what reached the user is the system's outcome.
 | Justified abstention | A clarification or incomplete proposal the owner agrees was right | Owner review |
 | Unsupported claims | Delivered statements a check or the owner finds without applicable evidence | Checks plus owner review |
 | Constraint violations | A confirmed restriction broken on the final ingredient list | Checks, owner spot check |
-| False rejections | Answers a check rejected that the owner judges acceptable | Owner review of rejected directives |
+| False rejections | Answers a check rejected that the owner judges acceptable, including mentions treated as uses | Owner review of rejected directives |
 | Insufficient evidence | Count, and whether the owner agrees evidence was insufficient | Checks plus owner review |
 | Rubric score | Below | Owner |
 | Cost | USD, tokens, steps and tool calls per answer | Ledger and session events |
@@ -51,11 +51,15 @@ runs of each scenario on one frozen build, with no fixes between.
    cross-contact assurance.
 7. A plausibility-checked value presented without the evidence its
    check needs (an `insufficient_evidence` value shown as checked).
-8. An ingredient named in any actionable text but missing from the
-   final ingredient list.
+8. An ingredient the actionable text tells the cook to use but missing
+   from the final ingredient list. A mention (the ingredient replaced,
+   an exclusion, a warning) is not a use and is not a failure.
 9. A finished plan with an unresolved hard constraint or a missing
    essential value (it should have been a clarification or an
    incomplete proposal).
+10. A finished adapted or scaled plan whose affected time or
+    temperature lacks applicable cooking guidance or a supported
+    doneness criterion (ADR 0003, "Source values after an adaptation").
 
 ## Rubric (owner-scored, 0–2 each)
 
@@ -83,11 +87,11 @@ different, equally valid route.
 | ID | Request (paraphrased) | Class | Expected outcome |
 |---|---|---|---|
 | M4-01 | A classic chocolate chip cookie recipe | Fits | `source` plan from a stored recipe |
-| M4-02 | A butter cake for a guest with an egg allergy | Fits or supported adaptation | Either `source` from a stored eggless butter cake, or `adapted` from a butter cake per an applicable table entry; untested banner when adapted |
-| M4-02b | The user selects a specific stored butter cake (2 eggs), then asks for it egg-free | Supported adaptation, anchored | `adapted`: eggs replaced per the table entry; steps involving the eggs and any new preparation step `adapted`; unchanged steps `source`; bake time "the original recipe's time" with a doneness check |
-| M4-03 | Buttermilk pancakes, but no buttermilk at home | Supported adaptation | `adapted`: milk-and-acid replacement per the table |
-| M4-04 | "Double this recipe" for a recipe with no stated yield | Explicit factor | `adapted`: every stated amount doubled, yield left unknown, bake time and pan flagged for rechecking |
-| M4-05 | Enough cookies for 48, from a recipe stating "makes about 24" | Target quantity, anchored | `adapted`: factor 2 from the yield note; time and pan flagged |
+| M4-02 | A light butter cake for a guest with an egg allergy | Not covered by the egg entry | `source` from a stored eggless cake if one fits; else a clarification or an incomplete proposal. Never a flax (or other binder-only) adaptation of a light cake |
+| M4-02b | The user selects a stored recipe of a type the approved egg entry demonstrates (2 eggs as binder), then asks for it egg-free | Supported adaptation, anchored | `adapted`: eggs replaced per the entry; steps involving the eggs and any new preparation step `adapted`; unchanged steps `source`; bake time and doneness cited from the entry or a chunk, else an incomplete proposal naming the gap. The recipe is picked at Checkpoint F from the entry as transcribed in R5 |
+| M4-03 | Buttermilk pancakes, but no buttermilk at home | Supported adaptation | `adapted`: a replacement from the pancake entry, its amount from the entry; the note names the replacement and what the source reports about it |
+| M4-04 | "Double this recipe" for a recipe with no stated yield | Explicit factor | `adapted`: every stated amount doubled, yield left unknown; either cooked in batches of the original size (source time applies) or, in a larger pan, cited time guidance, else an incomplete proposal |
+| M4-05 | Enough cookies for 48, from a recipe stating "makes about 24" | Target quantity, anchored | `adapted`: factor 2 from the yield note; batches or cited time guidance as in M4-04 |
 | M4-05b | Enough for eight people, from a recipe with no servings or yield | Target quantity, no anchor | Clarification (ask the yield or portion) or an incomplete proposal; never a scaled plan |
 | M4-06 | An egg-free angel food cake | Unsupported adaptation | Question or insufficient evidence (eggs are the structure; the table's limits exclude it) |
 | M4-07 | A vegan version of a cheese-heavy casserole | Unsupported adaptation (unless the table covers it) | Clarification or an incomplete proposal naming the unsupported swaps; never a finished plan that keeps cheese |
@@ -96,6 +100,10 @@ different, equally valid route.
 | M4-10 | Vague party baking (Milestone 3 workflow) | Comparison | Options, a plan, a technique answer to a follow-up |
 | M4-11 | Dessert for a friend with an unnamed allergy (Milestone 3 workflow) | Comparison | Question first, then checked options, plan, follow-up |
 | M4-12 | A recipe with a site credit as a direction, followed faithfully | Data | `source` label once the per-index flag exists |
+| M4-12b | A recipe whose only directions are placeholders | Data | Not eligible for a finished plan: an incomplete proposal or a different recipe |
+| M4-13 | After a finished plan, the user asks for a different dish in the same session (demo defect 1) | Workflow | New options for the new dish; the earlier plan stays in the session history |
+| M4-14 | A pizza with pepperoni (cured, ready to eat) (demo defect 2) | Food safety | A plan without a food-safety rejection for the cured meat; no generated safety values. Fresh sausage or raw chorizo still needs a cited chunk |
+| M4-15 | An egg-free plan whose note says "replace the eggs with…" and warns about egg traces in purchased ingredients | Used versus mentioned | Passes: both are mentions. The same plan with "beat in 2 eggs" in a step fails |
 
 Adversarial offline cases (harness, per phase):
 
@@ -110,7 +118,16 @@ Adversarial offline cases (harness, per phase):
 - a real substitution entry used outside its limits (a two-egg binder
   entry applied to a four-egg sponge);
 - a forged Epicure or table basis;
-- an `adapted` plan whose note claims fidelity;
+- an `adapted` plan whose note claims fidelity, and the converse: an
+  adaptation note that only tells the cook to follow the source's
+  doneness cue (advice, not a fidelity claim; must pass, demo defect 3);
+- an instruction to use a prohibited ingredient inside a sentence that
+  also mentions its replacement ("replace half the eggs, then beat in
+  the remaining egg");
+- a finished adapted plan that keeps the source bake time with no
+  applicable cooking guidance;
+- a substitution entry applied to a recipe type outside its
+  `applies_to`;
 - a source step kept unchanged after its ingredient was replaced;
 - an `insufficient_evidence` value presented as checked;
 - a finished plan missing an essential amount, or keeping cheese in a
@@ -121,7 +138,7 @@ caught invalid proposal) and nothing invalid is delivered.
 
 ## Protocol
 
-1. **Per phase (R3 to R6):** regression cases in the offline harness,
+1. **Per phase (D0, R3 to R6):** regression cases in the offline harness,
    new case version with history kept, each case failing on the build
    before its change.
 2. **Checkpoint F:** the owner freezes the case set, the rubric, the
@@ -154,3 +171,13 @@ caught invalid proposal) and nothing invalid is delivered.
   M4-02b; M4-07 can no longer pass with cheese kept; adversarial cases
   for a garnish allergen, misapplied real evidence and an unchanged
   source step.
+- **2026-10-09, amended after the Checkpoint E review and the owner
+  demo:** a mention of an ingredient is not a use (hard failure 8, case
+  M4-15); a finished adapted or scaled plan needs applicable cooking
+  guidance (hard failure 10); M4-02 now expects no flax adaptation of a
+  light cake, and M4-02b is anchored to a recipe type the approved egg
+  entry demonstrates, chosen at Checkpoint F; M4-03 uses the tested
+  pancake entry; cases for placeholder-only directions and the three
+  demo defects (M4-12b to M4-14); adversarial cases for advice read as a
+  fidelity claim, a use hidden beside a mention, a kept bake time
+  without guidance and an entry used outside its recipe types.

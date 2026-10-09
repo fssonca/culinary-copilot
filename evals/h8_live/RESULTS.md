@@ -353,3 +353,53 @@ answers not supporting claims, list quantity attribution, and equipment
 sizes read as amounts. The plan run no longer re-fetches the selected
 recipe. This shows each workflow can complete under demo limits on this
 build; it does not establish reliability.
+
+# Demo check (2026-10-09, not a frozen attempt)
+
+Before an owner demo, the owner asked for a few live tests of the
+current build. The live runner re-ran scenarios v5 (`cbbc6126…`, the
+attempt-4 scenarios, so not fresh) on code unchanged since `b3b4b04`,
+acknowledgement `h8-demo-check-2026-10-09`, from the H8 pool. This is a
+smoke test, not a measurement: same scenarios as attempt 4, one run
+each, no freeze record.
+
+## Outcome: 2 of 2 complete
+
+| Scenario | Result | Stop |
+|---|---|---|
+| `h8d-family-picnic` | Options, plan, technique follow-up; mechanical grades pass | `agent_sufficient_evidence` |
+| `h8d-allergy-potluck` | Question, options checked for the allergen, plan, follow-up; mechanical grades pass | `agent_sufficient_evidence` |
+
+The runner's isolation check reported problems: during the run, an
+HTTP smoke session was created against the same database by a separate
+demo-limit server. That session was outside the runner's manifest, so
+the check flagged it correctly; it reflects concurrent testing, not a
+leak between runner sessions.
+
+## Spend
+
+$0.0525: 65 model turns (488,515 input and 7,317 output tokens) and
+query embeddings, all reconciled; largest single reservation $0.0085.
+H8 total $0.1658 of $1.00.
+
+## Defects seen in the owner's demo sessions
+
+Outside the runner, the owner's demo sessions exposed three defects on
+the same build (diagnosed read-only from the session exports; carried
+into `docs/milestone-4-plan.md`, D0):
+
+1. **A new dish after a plan.** Asking for a different dish in a
+   session that already holds a plan fails validation twice: after a
+   plan the session can only move to cooking or back to selection, so
+   new options are not a legal outcome.
+2. **Cured meats treated as raw protein.** A pizza plan with pepperoni
+   was rejected for lacking a food-safety citation; the raw-protein
+   term list includes cured, ready-to-eat meats.
+3. **Advice read as a fidelity claim.** The retry's adaptation note told
+   the cook to follow the source's doneness cues; the fidelity check
+   read "follow … the source" as a claim that the plan reproduces the
+   recipe, and the second rejection ended the run.
+
+The pizza session also ran on a server without the demo limits (the
+server had inherited unlimited settings rather than being started with
+`make demo`).

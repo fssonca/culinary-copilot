@@ -241,9 +241,10 @@ H8_HISTORY = REPO_ROOT / "data" / "h8-live" / "spend-history.json"
 #: Exact owner-acknowledgment value for a live H8 run. Preflight checks
 #: this exact string; the owner gives it with the go-ahead. Attempts 1
 #: to 3 ran with "h8-checkpoint-d-2026-10-08", "h8-attempt-2-2026-10-08"
-#: and "h8-attempt-3-2026-10-08"; each attempt gets its own value so a
+#: and "h8-attempt-3-2026-10-08", attempt 4 with
+#: "h8-attempt-4-2026-10-08"; each attempt gets its own value so a
 #: run cannot reuse an earlier go-ahead.
-H8_ACK_VALUE = "h8-attempt-4-2026-10-08"
+H8_ACK_VALUE = "h8-demo-check-2026-10-09"
 
 
 # --- input bound ---------------------------------------------------------------

@@ -1,6 +1,6 @@
 # ADR 0003: Stored recipes as references, not the answer
 
-Status: **proposed** (2026-10-09), for Checkpoint E of
+Status: **proposed, amended** (2026-10-09), for Checkpoint E of
 `docs/milestone-4-plan.md`. Supersedes nothing; ADR 0002 (agent loop)
 stays in force. Evidence: `docs/m4/r1-corpus-readiness.md`.
 Evaluation: `docs/m4/evaluation-design.md`.
@@ -68,6 +68,18 @@ adaptation descriptions, technique answers and option notes. An almond
 garnish in the plating text is an ingredient, whatever the provenance
 of the line it appears in.
 
+**Used versus mentioned.** Checks act on ingredients the text tells the
+cook to *use*: add, combine, cook, coat, grease, dust, garnish or serve
+with. A *mention* is not a use: the ingredient being replaced ("replace
+the eggs with…", "instead of butter"), an exclusion ("no nuts",
+"egg-free", "omit the pecans"), or a warning ("check labels for traces
+of peanuts"). A mention neither requires the ingredient on
+`final_ingredients` nor counts as a constraint violation. An
+instruction to use a prohibited ingredient always rejects, wherever it
+appears. Mention contexts are recognized by a closed list of patterns;
+text that matches none is treated as a use (strict by default), and
+each new mention pattern needs a classified false positive.
+
 **Applicability.** Evidence must support the specific claim, not merely
 exist in the session. A returned chunk about poultry temperatures does
 not support a pork temperature; a substitution entry used beyond its
@@ -100,11 +112,25 @@ with a gap. An unresolved hard constraint (a violation, or an allergen
 component that cannot be resolved) always prevents a finished plan: a
 partial vegan adaptation that keeps cheese is an incomplete proposal.
 
-**Fallback to a source value.** A source value kept after an adaptation
-is rechecked for applicability: an original bake time is evidence for
-the original recipe, not for the adapted one. Without evidence that it
-still applies, it is labelled "the original recipe's time" with a
-doneness check (`adapted`), never `source`.
+**Source values after an adaptation.** A source time or temperature
+is evidence for the original recipe, not for the adapted one; a label
+such as "the original recipe's time" does not show that it works after
+the change. A finished adapted plan therefore needs, for every time and
+temperature the change can affect, **applicable cooking guidance**:
+
+- guidance for the value: the substitution entry or a technique chunk
+  states that the time and temperature carry over for this change, or
+  how to adjust them; and
+- a supported doneness criterion: a cue the source recipe states that
+  the change does not invalidate (judged by the entry's notes or a
+  chunk), or a cue from a technique chunk applicable to the adapted
+  dish.
+
+Both are cited (`adapted`, basis: the entry or chunk). If either is
+missing, the answer is an **incomplete proposal** that names the
+missing cooking guidance, never a finished plan. Values the change
+cannot affect (a scaling factor applied to a garnish amount, a
+preparation step unrelated to the swap) stay `source`.
 
 ### Ingredient contract
 
@@ -114,11 +140,12 @@ ingredients (cake mix, pie filling, stock, sauces) `components`, which
 may be `unresolved`. Greasing, dusting and garnish ingredients are
 included. Checks:
 
-- every ingredient named anywhere in actionable text (mise en place,
-  steps, plating and garnish, notes, adaptation descriptions) is on the
-  list, and every listed ingredient is used or has a reason;
-- allergen and diet checks read the list and all actionable text,
-  whatever the provenance; an unresolved component reports as
+- every ingredient the actionable text tells the cook to use (mise en
+  place, steps, plating and garnish, notes, adaptation descriptions) is
+  on the list, and every listed ingredient is used or has a reason;
+  mentions do not count (see "Used versus mentioned");
+- allergen and diet checks read the list and every use in actionable
+  text, whatever the provenance; an unresolved component reports as
   unresolved, blocks any claim about that allergen, and prevents a
   finished plan when that allergen is a hard constraint;
 - answers state that ingredient checks do not cover cross-contact
@@ -167,8 +194,12 @@ Two different requests:
   never a "scaled" plan.
 
 In both cases cooking time, pan size and equipment do not scale
-linearly: they are rechecked separately (technique evidence, or labelled
-"check doneness; time may change") and never multiplied silently.
+linearly and are never multiplied silently. A finished scaled plan
+either keeps the original batch (cook in batches of the original size,
+in the original pan, so the source time and temperature still apply)
+or, for a changed pan or batch size, carries applicable cooking
+guidance as for any adaptation ("Source values after an adaptation");
+otherwise it is an incomplete proposal.
 
 ### Substitution evidence
 
@@ -180,10 +211,20 @@ table:
 |---|---|
 | `replaced` | egg (one large) |
 | `function` | binder, leavening, moisture, emulsifier, structure, fat, acid |
-| `replacement` | 1 tbsp ground flaxseed + 3 tbsp water |
+| `replacement` | the source's stated replacement and amount |
 | `amount_rule` | per egg replaced, binder role only |
-| `limits` | not for more than 2 eggs; not where egg is the structure (soufflé, angel food) |
-| `citation` | vetted source, with licence notes |
+| `applies_to` | the recipe types the source demonstrates (for example dense baked goods); never wider than the source shows |
+| `limits` | not for more than 2 eggs; not where egg is the structure or aeration (light, fluffy cakes, soufflé, angel food) |
+| `outcome_notes` | how the source says the result differs (texture, rise, flavour), and whether it compared alternatives |
+| `cooking_guidance` | what the source says about time, temperature and doneness after the swap, or "none stated" |
+| `citation` | the source page, retrieval date, licence or reuse terms |
+
+Each entry is limited to the uses its source demonstrates; a
+replacement is never recorded as a general equivalent. Where a source
+compares alternatives for one use (for example buttermilk replacements
+tested in pancakes, biscuits and cake), the entry keeps the
+distinctions: an available replacement and a better-performing one are
+recorded as such, per use.
 
 Entries are added to the technique corpus as documents with provenance,
 after the owner approves the sources. Without a table entry, a swap may
@@ -217,29 +258,43 @@ Keep the data-integrity rule for the corpus and add one for answers:
 
 ## Worked examples
 
-1. **Egg-free version of a stored butter cake.** The cake uses 2 eggs.
-   The substitution table has a binder entry for up to 2 eggs in butter
-   cakes. Kind `adapted`:
-   - the eggs become two flax eggs in the final ingredients (`adapted`,
-     basis: the table entry, applicable: butter cake, 2 eggs, binder);
-   - a new step mixes the flax and water and lets it rest (`adapted`,
+1. **Egg-free version of a stored recipe the table covers.** The
+   example is written against an entry, not a general rule: the recipe
+   type, egg count and egg role must all fall within an approved entry's
+   `applies_to` and `limits`. Suppose a stored recipe of a type the
+   entry demonstrates (to be confirmed when R5 transcribes the source;
+   a dense baked good is the likely case) uses 2 eggs as binder. Kind
+   `adapted`:
+   - the eggs become the entry's replacement in the final ingredients
+     (`adapted`, basis: the entry, applicable: recipe type, 2 eggs,
+     binder);
+   - a new step prepares the replacement as the entry says (`adapted`,
      same basis);
-   - "beat in the eggs" becomes "beat in the flax mixture" (`adapted`);
+   - "beat in the eggs" becomes "beat in the replacement" (`adapted`);
    - steps that do not involve the eggs stay `source`;
-   - the bake time is "the original recipe's time" with a doneness check
-     (`adapted`), because the source time is not evidence for the
-     egg-free batter unless the table entry says so.
+   - the bake time and doneness need applicable cooking guidance (see
+     "Source values after an adaptation"); if the entry and the
+     technique chunks give none, the answer is an incomplete proposal
+     naming that gap.
 
-   If a stored eggless butter cake fits the request, a `source` answer
-   from that recipe is equally valid. A 4-egg sponge fails the table's
-   limits (eggs are its structure): the answer is a clarification or an
-   incomplete proposal, or offers a different stored recipe.
-2. **Pantry swap.** No buttermilk; the table has milk plus lemon juice
-   for buttermilk's acid role. `adapted`, amounts from the table.
+   **A light butter cake is not covered.** The review of the proposed
+   source reports that it describes flax as binding but lacking the
+   structure and aeration light, fluffy cakes need; R5 verifies this
+   when transcribing the entry. Asked for an egg-free version of such a
+   cake, the answer offers a stored eggless cake (`source`) if one
+   fits, else a clarification or an incomplete proposal; never a flax
+   adaptation. A 4-egg sponge fails for the same reason.
+2. **Pantry swap.** No buttermilk, for pancakes; the table has the
+   tested replacements for buttermilk in pancakes, with milk plus acid
+   recorded as an available replacement and any better-performing one
+   noted as such. `adapted`, amounts from the entry; the note says
+   which replacement was used and what the source reports about the
+   result.
 3. **Doubled batch.** "Double this recipe": every stated amount is
    doubled (`adapted`, basis: the user's factor) whether or not a yield
-   is stated; an unstated yield stays unknown; bake in two batches or
-   recheck the time (labelled). "Enough cookies for 48": with the yield
+   is stated; an unstated yield stays unknown; baked in two batches of
+   the original size, the source time applies; in one larger pan, the
+   time needs cited guidance or the answer is an incomplete proposal. "Enough cookies for 48": with the yield
    note "makes about 24" the factor is 2; without a yield or piece count
    the answer asks.
 4. **Dish the corpus lacks.** No stored recipe matches. Increment 1:
@@ -272,3 +327,13 @@ Keep the data-integrity rule for the corpus and add one for answers:
   evidence applicability required, not just presence; explicit scaling
   factors separated from target quantities; the egg-free example marks
   changed steps and the bake time `adapted`.
+- **2026-10-09, amended after the Checkpoint E review:** ingredients
+  used are separated from ingredients merely mentioned (a replaced
+  ingredient, an exclusion or a warning is not a use; an instruction to
+  use a prohibited ingredient still rejects); a finished adapted plan
+  needs applicable cooking guidance and a supported doneness criterion,
+  else an incomplete proposal (the "original recipe's time" label alone
+  no longer suffices); substitution entries are limited to the uses
+  their source demonstrates, keep per-use distinctions, and record
+  cooking guidance; the egg-free example is written against an entry's
+  coverage, and a light butter cake is shown as not covered.

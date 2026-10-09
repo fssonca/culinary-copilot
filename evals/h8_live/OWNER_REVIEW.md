@@ -1,8 +1,14 @@
 # H8 owner review packet (Milestone 4, R0)
 
-Prepared 2026-10-09 by an AI assistant for the owner's review; not a
-review result. The verdict column is for the owner. Model output is
-paraphrased here; the full transcripts are local only.
+Prepared 2026-10-09 by an AI assistant for the owner's review. The
+verdict column is for the owner. Model output is paraphrased here; the
+full transcripts are local only.
+
+An AI-assisted review of the transcripts and the evidence they cite
+(2026-10-09) recommends **accept with recorded limitations**; its
+findings are listed under "Review findings" below. Adopting them would
+supply the owner verdict; it would not imply a cooking test or a
+general reliability result.
 
 ## Transcripts (local, not committed)
 
@@ -38,23 +44,51 @@ need a judgement the grades cannot make.
 |---|---|---|---|
 | 1 | Questions judged for relevance (may not ask) | No question; options straight away | |
 | 2 | Answers recorded and used | Not applicable (no question) | |
-| 3 | Suitable options, all fetched | Three bar recipes (two raspberry oatmeal, one pecan pie). Owner: suitable for a picnic without a fridge? | |
+| 3 | Suitable options, all fetched | Three bar recipes (two raspberry oatmeal, one pecan pie). Owner: suitable for a family picnic? (The user stated no storage constraint; an earlier draft of this row assumed one.) | |
 | 4 | Plan for exactly the selected dish | Plan for the selected raspberry oatmeal bars, labelled as a model adaptation, written on the plan run's first turn. Owner: check quantities and label | |
 | 5 | Grounded technique answer, or an honest "not covered" | Cited the FDA refrigeration chunk (2 hours, 1 hour above 90°F), said the sources set no time limit for these bars, invented none. Owner: is that the right level of caution? | |
 | 6 | No budget stop | None; 10 steps in total | |
 
+## Review findings (AI-assisted, 2026-10-09)
+
+Recorded limitations, to be kept with the verdict:
+
+- **Allergy sleepover.** The answer was recorded and used, and the
+  selected plan keeps all four recorded quantities. But the question
+  came only after 16 search and pairing steps, which misses the
+  intended clarification-first behaviour. The source lists butter while
+  its directions say margarine; the plan resolves this without
+  explaining the discrepancy. The follow-up uses the recipe's own
+  firm-to-the-touch cue, which is valid, but the general baking excerpt
+  it cites gives no cookie-specific support.
+- **Family picnic.** The selected raspberry-bar plan keeps the recorded
+  quantities and cooking instructions. The pecan-bar option lacks
+  filling quantities; the gap was disclosed, but not every option was a
+  complete cooking plan.
+- **Picnic follow-up.** The refusal to invent a storage limit for these
+  bars is right: the cited FDA guidance supports the general rule for
+  perishables, not a judgement that these bars are shelf-stable.
+
 ## Spend reconciliation
 
-Recorded by the live runner's ledgers (reported usage, reconciled per
-call):
+Recorded by the live runner's ledgers. Calls are reserved before
+dispatch and reconciled to reported usage afterwards. Where usage was
+ambiguous, the ledger kept the reservation at its reserved amount
+(decision `kept-ambiguous`): those amounts are **unresolved**, not
+reconciled. Totals recomputed from the ledger files on 2026-10-09:
 
-| Pool | Runs | Recorded spend | Last run (UTC) |
-|---|---:|---:|---|
-| `phase3` | 9 | $0.1304 | 2026-10-03 |
-| `phase5` | 5 | $0.1015 | 2026-10-03 |
-| `phase7` | 2 | $0.0476 | 2026-10-04 |
-| `h8` | 4 | $0.1133 | 2026-10-09 |
-| **Total recorded** | | **$0.3928** | |
+| Pool | Runs | Recorded | Of which unresolved reservations | Last run (UTC) |
+|---|---:|---:|---:|---|
+| `phase3` | 9 | $0.1304030 | $0.0070108 (two model turns) | 2026-10-03 |
+| `phase5` | 5 | $0.1014895 | $0.0250000 (one search correction) | 2026-10-03 |
+| `phase7` | 2 | $0.0476090 | — | 2026-10-04 |
+| `h8` | 4 | $0.1133253 | — | 2026-10-09 |
+| **Total at R0** | | **$0.3928268** | **$0.0320108** | |
+| `h8` demo check | 1 | $0.0525107 | — | 2026-10-09 |
+| **Total now** | | **$0.4453375** | **$0.0320108** | |
+
+The review accepts the ledger arithmetic; provider reconciliation
+stays open (below). It does not block the offline Milestone 4 phases.
 
 Not recorded by any ledger:
 
@@ -67,7 +101,12 @@ Not recorded by any ledger:
   recorded; only provider billing can say.
 - Query embeddings outside the ledgers: negligible at
   `text-embedding-3-small` prices, but not recorded.
+- **2026-10-09 demo preparation**: three HTTP test requests against a
+  local demo-limit server, about $0.02 by token count, and the owner's
+  demo sessions that day; neither went through a ledger.
+
+The token-based estimates are not a spending ceiling.
 
 Owner action: compare the total for 2026-09-30 to 2026-10-09 in the
-provider's billing with the recorded total plus the estimate, and record
+provider's billing with the recorded total plus the estimates, and record
 the result in `docs/phase7-owner-decisions.md`.

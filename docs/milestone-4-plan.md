@@ -1,12 +1,15 @@
 # Milestone 4 plan: recipes as references, the AI as the cook
 
-Status: **draft revision 2; R0 to R2 delivered, awaiting Checkpoint E**
-(2026-10-09). The owner approved R0 to R2 as preparation. R0: review
-packet `evals/h8_live/OWNER_REVIEW.md` (owner items open; baseline not
-run). R1: `docs/m4/r1-corpus-readiness.md`. R2:
+Status: **revision 3; R0 to R2 delivered and amended, awaiting the
+owner's Checkpoint E decisions** (2026-10-09). The owner approved R0 to
+R2 as preparation. R0: review packet `evals/h8_live/OWNER_REVIEW.md`
+(review findings recorded; owner verdict open; baseline skipped). R1:
+`docs/m4/r1-corpus-readiness.md`. R2:
 `docs/adr/0003-references-not-answers.md` and
-`docs/m4/evaluation-design.md`. Revision 1 (2026-10-08) was reviewed;
-revision 2 addresses the review (see "Revision history"). Follows the
+`docs/m4/evaluation-design.md`, both amended after the Checkpoint E
+review. Revision 3 adds D0, the defects seen in the owner demo of
+2026-10-09, and records the Checkpoint E recommendations (see
+"Checkpoint E" and "Revision history"). Follows the
 close of Milestone 3 (`docs/milestone-3-hardening-plan.md`,
 "Close-out"). Branch: this work continues on
 `m3-checkpoint-c-demo-hardening` until the owner decides on pushing and
@@ -33,7 +36,8 @@ missing check never counts as a pass.
 | Adaptations | Free-text `adaptations` and `model_adaptation` steps are allowed | Any amount the source does not state is rejected, so a swap cannot carry its quantity |
 | Dietary and allergy needs | Recipes that violate the restriction are dropped | A recipe one ingredient away is excluded instead of adapted |
 | Plan schema | Steps with direction citations, up to 20 quantity claims, free-text adaptations | No complete final ingredient list, so checks see quantity claims and prose, not the full set of ingredients |
-| Checks | Deterministic: quantity attribution, pairing claims, time/temperature claims, fidelity wording; one retry, none on a finishing turn | After the stall fix, three H8 runs were lost to false positives (an allergen named in a note; list quantity attribution; an equipment size, which used the only retry before a correct fidelity rejection ended the run). One failure was the model's, not caught by a check: a follow-up answered by re-issuing the plan with partly unsupported advice |
+| Checks | Deterministic: quantity attribution, pairing claims, time/temperature claims, fidelity wording; one retry, none on a finishing turn | After the stall fix, three H8 runs were lost to false positives (an allergen named in a note; list quantity attribution; an equipment size, which used the only retry before a correct fidelity rejection ended the run). One failure was the model's, not caught by a check: a follow-up answered by re-issuing the plan with partly unsupported advice. The owner demo (2026-10-09) lost a pizza plan to two more false positives (cured pepperoni treated as raw; advice to follow the source's doneness cue read as a fidelity claim) |
+| Session flow | discover → recommend → select → plan → follow-ups | After a plan, a request for a different dish cannot produce new options (plan moves only to cook or select); the demo session failed validation twice |
 
 Corpus facts (read-only, 2026-10-08/09):
 
@@ -120,6 +124,7 @@ checks show useful coverage, with their own acceptance gate.
 
 ```mermaid
 flowchart TD
+    D0["D0. Demo defects on the Milestone 3 build"] --> R3
     R0["R0. Close-out items and baseline"] --> RE
     R1["R1. Corpus readiness and data profile (offline)"] --> RE
     R2["R2. Design, ADR 0003, evaluation design"] --> RE["Checkpoint E: owner approves design and evaluation"]
@@ -139,15 +144,64 @@ flowchart TD
 Each phase delivers its own regression cases (offline harness, new case
 version, history kept) alongside the code; Checkpoint F freezes them.
 
+### D0. Demo defects on the Milestone 3 build (offline)
+
+Three defects from the owner's demo sessions of 2026-10-09
+(`evals/h8_live/RESULTS.md`, "Demo check"). They concern today's
+behaviour, not the Milestone 4 design, so D0 does not wait for
+Checkpoint E; it does need the owner's go-ahead. Each fix starts from
+the classified failure in the session export, ships a harness case that
+fails on the build before it (new case version, history kept), and
+leaves the strict cases of the earlier versions passing.
+
+1. **A new dish after a plan.** Allow `plan → recommend` (and
+   `plan → clarify`) when a follow-up asks for a different dish: the
+   follow-up run may return options, which clear the selection; the
+   earlier plan stays in the session history and the export. A
+   technique question after a plan still gets a technique answer, and a
+   follow-up that re-issues the same plan is still rejected. Case: a
+   session with a finished plan, then a request for a different dish,
+   expecting options (M4-13).
+2. **Cured meats in the raw-protein list.** Classify each term of
+   `RAW_PROTEIN_TERMS` as raw (needs a food-safety chunk), cured and
+   ready to eat, or ambiguous (sold both fresh and cured: sausage,
+   chorizo, ham, bacon, pancetta). Only a term with a cited source
+   saying it is ready to eat leaves the list; ambiguous terms stay
+   strict unless the ingredient line qualifies them ("dry-cured",
+   "cooked", as the existing "cooked" exemption does). If the technique
+   corpus holds no such source, the owner decides whether to add one
+   before any term moves. The vegetarian and allergen lists are
+   unaffected. Cases: a pepperoni pizza plan (M4-14) and a fresh
+   sausage plan that must still cite a chunk.
+3. **Advice read as a fidelity claim.** Separate an instruction to the
+   cook ("follow the source's doneness cues for the cheese") from a
+   claim about the plan ("these steps follow the source"): an imperative
+   whose object is a named cue, timing or instruction *of* the source is
+   advice. Claims stay rejected; every fidelity case of the current
+   harness keeps its verdict. Case: the demo note, paraphrased.
+4. **Demo limits visible.** The pizza session ran on a server that had
+   inherited unlimited settings. Log the effective session and token
+   limits at start-up, and warn when they exceed the `make demo`
+   values, so a demo server without limits is noticed before a demo.
+   Documentation only otherwise: `make demo` is the demo path.
+
 ### R0. Close-out items and baseline
 
-- Owner: review the two completed H8 transcripts against the
-  predeclared criteria; reconcile the 2026-10-06/07 spend; decide push
-  and merge of the Milestone 3 branch.
-- Optional, owner-authorized: a measurement batch on the final
-  Milestone 3 build (fresh scenarios per workflow, each run more than
-  once, no fixes between) to give Milestone 4 a measured baseline,
-  from the existing H8 pool.
+Status: packet delivered (`evals/h8_live/OWNER_REVIEW.md`). An
+AI-assisted review recommends "accept with recorded limitations"; its
+findings and the corrected spend table are in the packet. The owner
+verdict and the provider-billing comparison stay open; neither blocks
+the offline phases.
+
+- Owner: verdict on the two completed H8 transcripts; compare provider
+  billing for 2026-09-30 to 2026-10-09 with the ledgers ($0.4453375
+  recorded, $0.0320108 of it unresolved reservations) plus the
+  unledgered estimates; decide push and merge of the Milestone 3
+  branch.
+- The optional Milestone 3 baseline is skipped (Checkpoint E
+  recommendation): the final Milestone 3 revision and its evidence are
+  kept. A matched baseline becomes necessary before any claim that
+  Milestone 4 measurably improves on Milestone 3.
 
 ### R1. Corpus readiness and data profile (offline, read-only)
 
@@ -214,10 +268,27 @@ Evaluation design, in the same phase so it guides implementation:
 
 ### Checkpoint E (owner)
 
-Approve or amend: the design and check matrix, the ingredient contract,
-the `AGENTS.md` wording, the non-instruction flag, the substitution
-evidence sources (R5), the rubric, cases and failure criteria, and
-whether the Epicure-before-options rule is kept.
+An AI-assisted review (2026-10-09) recommends approval with three
+amendments, now applied to ADR 0003 and the evaluation design:
+ingredients used are separated from ingredients merely mentioned; a
+finished adapted plan needs applicable cooking guidance and a supported
+doneness criterion, else an incomplete proposal; and the anchored
+egg-free example is limited to what the substitution source
+demonstrates (a light butter cake is not covered).
+
+| Decision | Review recommendation | Owner decision |
+|---|---|---|
+| Design, check matrix, ingredient contract, evaluation design | Approve as amended | |
+| `AGENTS.md` wording for labelled answer content (ADR 0003) | Approve; applied in R3 | |
+| Per-direction flag | Approve: keep original text and indices; record class, rule and classifier version; credits may be skipped; headings and yield notes kept as structure; a placeholder marks missing instructions and never makes a recipe eligible for a finished plan; review `name_like` and `unclear` classes before applying | |
+| Substitution sources (R5) | Approve King Arthur's egg-replacement guide and its tested buttermilk substitutions, each limited to its demonstrated uses, with citation, applicability and reuse terms | |
+| Mandatory Epicure mention in options | Remove the mandatory user-facing mention; keep consulting Epicure before options (after any needed clarification) as default policy; name a pairing only when it informs the recommendation, otherwise keep the result in diagnostics | |
+| Optional Milestone 3 baseline | Skip for now | |
+| Closeness thresholds (ADR 0003) | Not covered by the review; proposed: set at Checkpoint F with the envelope thresholds, once R3 to R5 show what the measure sees | |
+| Push and merge of the reviewed work | Approve after normal checks pass, recording the limitations; paid Milestone 4 evaluation stays separately gated | |
+
+Recorded by an AI assistant; not a signature. The decision column is
+the owner's.
 
 ### R3. Ingredient contract, provenance schema, compatibility
 
@@ -230,9 +301,27 @@ whether the Epicure-before-options rule is kept.
   mise-en-place line uses an ingredient missing from the list (removing
   butter must not leave "grease with butter"), and no listed ingredient
   goes unused without a reason.
+- **Used versus mentioned.** Consistency and constraint checks act on
+  ingredients the text tells the cook to use. A replaced ingredient, an
+  exclusion or a warning is a mention: it needs no list entry and is no
+  violation; an instruction to use a prohibited ingredient always
+  rejects. Mention contexts come from a closed pattern list; unmatched
+  text counts as a use (ADR 0003, "Used versus mentioned").
 - Allergen and diet checks run on that list; unresolved ingredients
   report as unresolved; the answer states that cross-contact is not
   covered.
+- **Direction flags.** The approved per-direction classes stored as a
+  versioned file keyed by `(dataset_id, source_id, direction index)`,
+  with class, rule and classifier version; no change to stored recipe
+  text. `name_like` and `unclear` rows are reviewed before the file is
+  frozen. Plans may skip credit and sign-off indices without losing the
+  `source` label; headings and yield notes stay available as structure
+  (yield notes are scaling anchors); a recipe whose directions are only
+  placeholders is not eligible for a finished plan. Moving the flags
+  into the database is a separate owner decision with the H5-style
+  procedure.
+- The `AGENTS.md` rule for labelled answer content, if approved at
+  Checkpoint E.
 - Provenance (`source` / `adapted` / `generated`) and `basis` (source
   line or direction index, substitution guidance, Epicure result,
   reference recipe, technique chunk) on ingredients, steps and claims;
@@ -267,17 +356,30 @@ whether the Epicure-before-options rule is kept.
 - Epicure keeps its role: candidate ingredients and flavour
   relationships, labelled unverified as today.
 - A separate, cited substitution table states, per common replacement,
-  the function replaced and the replacement quantity, for example egg as
-  binder, leavening or moisture, butter as fat or structure. Sources
-  are vetted references (for example tested baking guidance), added to
-  the technique corpus with provenance and licence notes; the owner
-  approves the sources at Checkpoint E.
+  the function replaced, the replacement quantity, the recipe types the
+  source demonstrates (`applies_to`), limits, outcome notes and any
+  cooking guidance (ADR 0003, "Substitution evidence"). First sources,
+  pending Checkpoint E: King Arthur's egg-replacement guide and its
+  tested buttermilk substitutions (pancakes, biscuits, cake). Each entry
+  is limited to its demonstrated uses; where the source compares
+  replacements, the entry records which is available and which
+  performed better, per use, rather than treating them as equivalent.
+  Transcription records the page, retrieval date and reuse terms;
+  fetching the pages needs the owner's go-ahead (a download).
+- R5 verifies, from the source text, the claims the design relies on
+  (for example that flax binds but lacks the structure and aeration of
+  light cakes) and corrects ADR 0003's example if the source says
+  otherwise.
 - An adapted swap needs both: an Epicure or table candidate, and a
   table entry for the function and amount. Without the table entry the
   swap is offered as an unverified idea without an amount, or the
   answer asks.
-- Decide at Checkpoint E whether options still require an Epicure line
-  when no adaptation is planned.
+- Options no longer require a user-facing Epicure line (if approved at
+  Checkpoint E): Epicure is still consulted before options by default,
+  after any needed clarification; a pairing is named only when it
+  informs the recommendation, and otherwise the result is kept in the
+  session diagnostics. Framing, validator and the harness's Epicure
+  cases change together, with history kept.
 
 ### R6. Adapted answers, first increment
 
@@ -286,7 +388,13 @@ whether the Epicure-before-options rule is kept.
   the substitution table, pantry swaps with table entries, explicit
   scaling factors and anchored target quantities, technique changes backed by technique chunks.
 - Recipes previously dropped for one violating ingredient become
-  candidates for an adapted answer when the table covers the swap.
+  candidates for an adapted answer when the table covers the swap for
+  that recipe type.
+- **Cooking guidance.** A finished adapted or scaled plan cites
+  guidance for every time and temperature the change can affect, plus a
+  supported doneness criterion; otherwise it is delivered as an
+  incomplete proposal naming the gap. Scaling may keep the original
+  batch (cook in batches) so the source time still applies.
 - Framing, loop and UI for adapted answers: per-element provenance
   badges, an "untested" banner, the basis shown on demand,
   insufficient-evidence outcomes shown plainly.
@@ -333,7 +441,17 @@ composition ships only on its own evidence.
   evidence will be common at first; the design must make it a useful
   answer, not a failure.
 - **Function is not flavour.** Without the substitution table,
-  adaptations reduce to unverified ideas. Its coverage limits increment 1.
+  adaptations reduce to unverified ideas. Its coverage limits increment 1:
+  with two sources, the supported adaptations are few (egg replacement
+  in the recipe types the guide demonstrates, buttermilk in pancakes,
+  biscuits and cake). That is deliberate; coverage grows with owner-
+  approved sources.
+- **Cooking guidance is thin.** Few sources state how a swap changes
+  bake time or doneness; many adapted bakes may end as incomplete
+  proposals until technique chunks cover them.
+- **Mention patterns can drift.** Each new mention pattern must come
+  from a classified false positive, and the harness keeps cases where a
+  real use sits beside a mention.
 - **Baking is unforgiving.** Wrong proportions fail silently; method
   subtypes matter as much as ratios.
 - **Labels can mislead.** "Adapted" must not read as "verified", and an
@@ -382,3 +500,21 @@ checkpoints are recorded, never signed, by an assistant.
   Correction: not every H8 failure after the stall fix was a check
   rejecting a reasonable answer. Adapted answers become the first
   increment; composition keeps a separate acceptance gate.
+- **Revision 3 (2026-10-09)**: after the Checkpoint E review and the
+  owner demo:
+  1. D0 added for three defects seen in the demo (a new dish after a
+     plan, cured meats treated as raw, advice read as a fidelity claim)
+     and for making a server without demo limits visible.
+  2. Checkpoint E recommendations recorded per decision, with the
+     owner's column left open; the three review amendments applied to
+     ADR 0003 and the evaluation design (used versus mentioned,
+     applicable cooking guidance, an egg-free example limited to what
+     the source demonstrates).
+  3. R0 status: review findings and corrected spend (unresolved
+     reservations shown separately; "reconciled per call" corrected)
+     recorded in the packet; the baseline is skipped.
+  4. R3 adds used-versus-mentioned checks, a versioned direction-flag
+     file and the `AGENTS.md` rule; R5 names the first sources and
+     verifies the claims the design relies on; R5 drops the mandatory
+     Epicure mention; R6 requires cooking guidance for finished
+     adapted plans.
