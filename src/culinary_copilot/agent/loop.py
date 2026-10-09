@@ -1487,6 +1487,20 @@ def build_turn_input(
             "the earlier request is answered: finish with its cooking plan "
             "(fetch it with get_recipe if its output is not in this conversation)."
         )
+    if isinstance(plan_steps, list) and plan_steps:
+        # H8 attempt 2 (2026-10-08): asked how to store the bars, the model
+        # ran 17 technique searches, then re-issued the plan with advice
+        # in its note, outside the technique-answer grounding checks.
+        text += (
+            "\nFollow-up after the plan: answer the user's latest question "
+            "with technique_answer, from cooking_plan_steps and the "
+            "technique chunks returned in this session (cite the ones you "
+            "use in technique_refs). Where those chunks do not cover the "
+            "question, say so in the answer text instead of adding advice "
+            "they do not support. Two or three technique searches are "
+            "enough; then answer. Re-issue the plan only when the user asks "
+            "to change it."
+        )
     if plan_requirement:
         text += "\n" + plan_requirement
     if last_outcome:

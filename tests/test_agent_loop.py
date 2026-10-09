@@ -1786,6 +1786,11 @@ def test_plan_finish_after_select(engine) -> None:
     assert '"cooking_plan_steps": ["brown the chicken"' in str(
         provider3.seen_inputs[0][-1].get("content")
     )
+    # H8 attempt 2: follow-ups get a technique answer, not a re-issued plan.
+    followup_framing = str(provider3.seen_inputs[0][-1].get("content"))
+    assert "Follow-up after the plan: answer the user's latest question" in followup_framing
+    assert "Re-issue the plan only when the user asks to change it." in followup_framing
+    assert "Follow-up after the plan" not in str(provider2.seen_inputs[0][-1].get("content"))
     assert store.get(state.id).cooking_plan["plating"] == "in a bowl"
 
 
