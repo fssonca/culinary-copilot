@@ -152,9 +152,11 @@ done, harness v14 (61/61). Item 2 stays open with the list unchanged
 (strict): the technique corpus has no source classifying cured meats as
 ready to eat, and with the owner's go-ahead the FSIS "Sausages and Food
 Safety" page was tried through the allowlisted fetcher, but
-fsis.usda.gov now answers 403 to every page, including ones fetched
-before, so the source was not added and the block was not worked
-around. Search summaries of that page describe dry sausages such as
+fsis.usda.gov answers 403 to every page tried, as it did for both FSIS
+pages in the Phase 4 fetch (`evals/technique_corpus/manifest.json`:
+`tech-fsis-temp-34` and `tech-fsis-leftover-36` dropped,
+`http-403-blocked`), so the source was not added and the block was not
+worked around. Search summaries of that page describe dry sausages such as
 pepperoni as ready to eat but not cooked, with a caution for at-risk
 groups; a future rule should keep that caution rather than drop the
 food-safety line. Options: retry the fetch later, or ingest a copy the
