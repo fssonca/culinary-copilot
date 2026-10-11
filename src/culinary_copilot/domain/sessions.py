@@ -61,7 +61,9 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     # Direct recipe or technique requests may skip select.
     "recommend": frozenset({"select", "plan", "clarify"}),
     "select": frozenset({"plan", "recommend"}),
-    "plan": frozenset({"cook", "select"}),
+    # A different dish asked for after a plan starts new options (owner
+    # demo 2026-10-09: "an air fryer pizza" after an adobo plan failed).
+    "plan": frozenset({"cook", "select", "recommend"}),
     "cook": frozenset({"plate", "plan"}),
     "plate": frozenset(),
 }

@@ -1311,6 +1311,27 @@ def _fidelity_match_negated(text: str, start: int) -> bool:
 
 _TRAILING_ADVERB_RE = re.compile(r"verbatim|word\s+for\s+word", re.IGNORECASE)
 
+#: Advice to the cook, not a claim about the plan (owner demo
+#: 2026-10-09): a clause-initial imperative "follow" whose object is a
+#: doneness cue *of* the source ("follow the source's visual doneness
+#: cues for the cheese"). Narrow on purpose: the object must be a
+#: possessive source plus a cue noun, so "follow the source's steps"
+#: and "these steps follow the source" stay claims.
+_COOK_ADVICE_RE = re.compile(
+    r"follow\s+(?:the\s+)?(?:original\s+|source\s+|stored\s+)?(?:recipe|source|original)"
+    r"['\u2019]s\s+(?:[a-z-]+\s+){0,2}?(?:cues?|doneness|signs?|indicators?|tests?)\b",
+    re.IGNORECASE,
+)
+_ADVICE_LEAD_WORDS = frozenset({"", "then", "and", "and then", "just", "simply", "please"})
+
+
+def _cook_advice(text: str, start: int) -> bool:
+    """True when the match at ``start`` is advice to follow a source cue."""
+    if not _COOK_ADVICE_RE.match(text, start):
+        return False
+    lead = " ".join(_fidelity_clause_before(text, start).split())
+    return lead in _ADVICE_LEAD_WORDS
+
 
 def fidelity_claim(text: str) -> str | None:
     """First non-negated fidelity claim in the text, or None.
@@ -1326,6 +1347,8 @@ def fidelity_claim(text: str) -> str | None:
     for pattern in _FIDELITY_CLAIM_PATTERNS:
         for match in pattern.finditer(body):
             if _fidelity_match_negated(body, match.start()):
+                continue
+            if _cook_advice(body, match.start()):
                 continue
             if _STEP_SCOPE_RE.search(_fidelity_clause_before(body, match.start())):
                 continue

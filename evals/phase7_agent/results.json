@@ -1,7 +1,7 @@
 {
   "cases_file": "cases.json",
-  "cases_version": "phase7-cases-v13-2026-10-08",
-  "cases_sha256": "0bf78cf946dc52bfae3046ab8f6e26296edcd59cdcb332f82fd6ebe40117e67a",
+  "cases_version": "phase7-cases-v14-2026-10-09",
+  "cases_sha256": "b63d98beccfc083fc490eb5a74423987974a54a7f3077d92fcee0a148fe96989",
   "history_v1": {
     "cases_version": "phase7-cases-v1-2026-10-04",
     "cases_sha256": "5655b1ccc792a0106b08d56e01bd7d76248cdf936175660ad9abd03515b5c35b",
@@ -196,16 +196,49 @@
     },
     "note": "pre-v13: no selected recipe in the plan run's input; a re-fetch came back full"
   },
+  "history_v13": {
+    "cases_version": "phase7-cases-v13-2026-10-08",
+    "cases_sha256": "0bf78cf946dc52bfae3046ab8f6e26296edcd59cdcb332f82fd6ebe40117e67a",
+    "aggregate": {
+      "total": 59,
+      "scored": 59,
+      "completed": 59,
+      "task_completion_rate": 1.0,
+      "expected_fail_total": 0,
+      "expected_fail_completed": 0,
+      "stop_reason_distribution": {
+        "agent_sufficient_evidence": 46,
+        "agent_validation_failed": 4,
+        "agent_needs_user_input": 4,
+        "agent_max_steps": 1,
+        "agent_tool_budget_exhausted": 1,
+        "agent_token_budget_exhausted": 1,
+        "agent_wall_clock_exceeded": 1,
+        "agent_no_progress": 1
+      },
+      "invalid_transitions_total": 1,
+      "tool_argument_validity_mean": 0.9932203389830508,
+      "unnecessary_call_rate_mean": 0.0,
+      "epicure_compliance_rate": 0.9830508474576272,
+      "source_reference_correctness_rate": 1.0,
+      "unsupported_claim_cases": 5,
+      "adversarial_total": 4,
+      "adversarial_caught": 4,
+      "adversarial_catch_rate": 1.0,
+      "latency_tokens_cost": "not measured offline (scripted provider)"
+    },
+    "note": "pre-v14: no new dish after a plan, no advice to follow a source cue"
+  },
   "note": "offline system results (loop control, tools, validators), not model judgement; latency/tokens/cost not measured offline",
   "aggregate": {
-    "total": 59,
-    "scored": 59,
-    "completed": 59,
+    "total": 61,
+    "scored": 61,
+    "completed": 61,
     "task_completion_rate": 1.0,
     "expected_fail_total": 0,
     "expected_fail_completed": 0,
     "stop_reason_distribution": {
-      "agent_sufficient_evidence": 46,
+      "agent_sufficient_evidence": 48,
       "agent_validation_failed": 4,
       "agent_needs_user_input": 4,
       "agent_max_steps": 1,
@@ -215,9 +248,9 @@
       "agent_no_progress": 1
     },
     "invalid_transitions_total": 1,
-    "tool_argument_validity_mean": 0.9932203389830508,
+    "tool_argument_validity_mean": 0.9934426229508196,
     "unnecessary_call_rate_mean": 0.0,
-    "epicure_compliance_rate": 0.9830508474576272,
+    "epicure_compliance_rate": 0.9836065573770492,
     "source_reference_correctness_rate": 1.0,
     "unsupported_claim_cases": 5,
     "adversarial_total": 4,
@@ -1881,6 +1914,59 @@
       },
       "stop_reason": "agent_sufficient_evidence",
       "shape": "options",
+      "task_completion": true,
+      "steps": 4,
+      "tool_calls": 5,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-new-dish-after-plan",
+      "criteria": [
+        "new-dish-after-plan",
+        "recovery-path"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "options",
+        "expect_phase": "recommend",
+        "min_options": 2
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "options",
+      "task_completion": true,
+      "steps": 6,
+      "tool_calls": 8,
+      "invalid_transitions": 0,
+      "tool_argument_validity": 1.0,
+      "unnecessary_call_rate": 0.0,
+      "forbidden_call": false,
+      "epicure_compliance": true,
+      "source_reference_correctness": true,
+      "grounding_rejections": 0
+    },
+    {
+      "id": "p7-plan-advice-source-cue",
+      "criteria": [
+        "plan-advice-source-cue",
+        "plan-fidelity"
+      ],
+      "adversarial": false,
+      "expected_fail": false,
+      "expected": {
+        "stop_reason": "agent_sufficient_evidence",
+        "shape": "plan",
+        "steps_source": "model_adaptation"
+      },
+      "stop_reason": "agent_sufficient_evidence",
+      "shape": "plan",
       "task_completion": true,
       "steps": 4,
       "tool_calls": 5,

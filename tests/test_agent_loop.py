@@ -1794,6 +1794,44 @@ def test_plan_finish_after_select(engine) -> None:
     assert store.get(state.id).cooking_plan["plating"] == "in a bowl"
 
 
+def test_new_dish_after_plan_returns_options(engine) -> None:
+    # Owner demo 2026-10-09 (paraphrased): after a finished plan, a
+    # request for a different dish failed validation twice; options were
+    # rejected ("a dish is selected") and plan -> recommend was illegal.
+    store = PostgresSessionStore(engine)
+    plan = {
+        "source": {"dataset_id": "odunola/foodie", "source_id": "curry-1"},
+        "steps": ["brown the chicken", "stir in yogurt", "serve"],
+        "step_sources": [0, 1, 2],
+    }
+    state = _session(
+        store,
+        current_phase="plan",
+        selected_dish={
+            "dataset_id": "odunola/foodie",
+            "source_id": "curry-1",
+            "title": "Creamy Chicken Curry",
+        },
+        cooking_plan=plan,
+    )
+    provider = ScriptedProvider([_retrieval_turn(), ("parsed", _finish_options(_two_opts()))])
+    deps = _deps(store, provider, request_text="Now give me a lentil soup recipe.")
+    result = _run(run_agent(state.id, deps=deps))
+    assert result.stop_reason == "agent_sufficient_evidence"
+    assert result.phase == "recommend"
+    assert result.final is not None and len(result.final["options"]) == 2
+    after = store.get(state.id)
+    assert after is not None
+    assert after.selected_dish is None and after.cooking_plan == {}
+    framing = str(provider.seen_inputs[0][-1].get("content"))
+    assert "If the user asks for a different dish, treat it as a new request" in framing
+    finished = [e for e in store.list_events(state.id) if e.event_type == "agent_finished"]
+    superseded = finished[-1].payload["superseded_plan"]
+    assert superseded["selected_dish"]["source_id"] == "curry-1"
+    assert superseded["plan"]["steps"] == plan["steps"]
+    assert not [e for e in store.list_events(state.id) if e.event_type == "agent_validation_reject"]
+
+
 def test_plan_without_admission_is_labelled_by_the_app(engine) -> None:
     # 2026-10-06 live sessions: faithful plans failed only because the
     # model did not write the admission for a label the code computes.

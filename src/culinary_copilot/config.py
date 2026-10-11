@@ -333,3 +333,32 @@ class Settings(BaseSettings):
     # Each session still needs its own toggle on, and
     # SEARCH_MAX_PER_SESSION caps searches per session. Paid.
     web_search_enabled: bool = False
+
+
+#: The ``make demo`` session limits (Makefile ``DEMO_*``; a test keeps
+#: them equal). Owner demo 2026-10-09: a demo server had inherited
+#: unlimited settings and nobody could tell; start-up now reports the
+#: effective limits and warns above these values.
+DEMO_SESSION_LIMITS: dict[str, float] = {
+    "session_max_steps": 40,
+    "session_max_tool_calls": 40,
+    "agent_input_token_ceiling": 300_000,
+    "agent_output_token_ceiling": 60_000,
+    "agent_wall_clock_s": 240,
+}
+
+
+def session_limit_report(settings: Settings) -> tuple[str, list[str]]:
+    """Effective per-session limits, and those above the demo values."""
+    values = {name: float(getattr(settings, name)) for name in DEMO_SESSION_LIMITS}
+
+    def shown(value: float) -> str:
+        return f"{value:.0f}" if value.is_integer() else f"{value:g}"
+
+    summary = ", ".join(f"{name}={shown(values[name])}" for name in DEMO_SESSION_LIMITS)
+    above = [
+        f"{name}={shown(values[name])} (make demo: {shown(float(limit))})"
+        for name, limit in DEMO_SESSION_LIMITS.items()
+        if values[name] > limit
+    ]
+    return summary, above
