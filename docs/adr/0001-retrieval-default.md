@@ -3,7 +3,9 @@
 Status: **result recorded, default unchanged; wiring steps 1–2 and 5
 done in Milestone 3, Phase 2 (see docs/tools.md)**. Full-text remains
 the default. Flipping to `vector_c` requires a separate owner
-approval; the exact change is proposed below, not applied.
+approval; the exact change is proposed below, not applied. Reviewed
+2026-10-11: still accurate; steps 3 and 4 are still open; see "Later
+developments" for the agent tool, which this ADR predates.
 
 ## Context
 
@@ -47,9 +49,10 @@ the AI first-pass grades and under a vegetarian reading of BLIND-18.
 
 ## Proposed default-flip change (proposal only)
 
-**An environment variable alone cannot enact this.** The `RETRIEVAL_*`
-and `EMBEDDINGS_ENABLED` settings are validated at load, but no request
-path reads them:
+**When this ADR was written, an environment variable alone could not
+enact this** (steps 1, 2 and 5 below have since changed that for the
+retrieval endpoint). The `RETRIEVAL_*` and `EMBEDDINGS_ENABLED`
+settings were validated at load, but no request path read them:
 - `POST /api/v1/retrieval/search` calls `retrieve_for_group` without a
   mode, so it always gets full-text.
 - The recommendation service runs its own full-text search.
@@ -98,3 +101,29 @@ This ADR makes no code or default changes. If approved:
 2. then switch by environment;
 3. monitor embedding latency and error rate, and the abstention rate;
 4. roll back on any regression.
+
+## Later developments (reviewed 2026-10-11)
+
+- **The agent's `search_recipes` follows `RETRIEVAL_MODE` too, and the
+  model can override it per call.** Added in Milestone 3 Phase 2: the
+  tool takes an explicit `mode` (`fulltext` or `vector`; hybrid is not
+  offered) and otherwise uses the setting (`tools/search_tools.py:115-129`).
+  Vector mode uses the same 0.66 cutoff (`TOOL_VECTOR_CUTOFF`,
+  `tools/search_tools.py:45`) and fails closed like the endpoint
+  (`allow_fallback=False`, `tools/search_tools.py:279`). So with
+  `EMBEDDINGS_ENABLED=true`, as in `make demo`, the model can run vector
+  searches while the default stays full-text; in H8 attempt 1 it did,
+  after a full-text search returned nothing
+  (`evals/h8_live/RESULTS.md`). Flipping the default would change the
+  agent's searches as well as the retrieval endpoint's.
+- **Ranking unchanged.** H6 tested a title-first ranking and a bounded
+  title boost; at Checkpoint D (2026-10-08) the owner kept the current
+  ranking (`docs/phase7-owner-decisions.md`, "Checkpoint D").
+- **Corpus changed after the comparison.** The H5 cleanup removed 158
+  Foodie records on 2026-10-08 (16,033 to 15,875 recipes,
+  `docs/h5-summary-cleanup.md`). The blind comparison above ran on the
+  earlier corpus and was not re-run; H6 re-ran its ranking comparison
+  on the cleaned data (`evals/results/h6/compare_v2_post_cleanup.json`).
+  Every remaining recipe has its embedding (15,875 rows, checked
+  2026-10-11).
+

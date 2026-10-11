@@ -1,11 +1,16 @@
 # Current system architecture
 
-Code snapshot: **2026-10-05 (Milestone 3, Phases 1-7 done; live
-evaluation run and reviewed at checkpoint C; milestone acceptance
-pending)**. The bounded agent loop, permission-gated web search and
-minimal UI are implemented as described below. This page describes
-implemented behavior, not the eventual agent design. Diagrams use
-Mermaid, which GitHub renders directly.
+Code snapshot: **`main` at `a4422c6`, reviewed 2026-10-11.** Milestone 3
+(Phases 1-7 and hardening H0-H8) is closed
+(`docs/milestone-3-hardening-plan.md`, "Close-out"). The Milestone 4
+design, stored recipes as references rather than answers, was accepted
+at Checkpoint E on 2026-10-09 (`docs/adr/0003-references-not-answers.md`)
+and is **not implemented**. Fixes for three defects seen in the owner demo
+of 2026-10-09 were merged with PR #2 (`docs/milestone-4-plan.md`, D0);
+the fourth, cured meats in the raw-protein list, is open. This page
+describes implemented behavior. Numbers carry their source; section 7
+lists how they were checked. Diagrams use Mermaid, which GitHub renders
+directly.
 
 **Reading order:**
 
@@ -41,18 +46,26 @@ The backend has five main jobs:
 
 The agent loop is implemented (`agent/loop.py`, hand-written, no
 framework): native function calling over the typed registry, parallel
-calls in call order, CAS plus events per step, server-set budgets
-(12 steps, 12 tool calls, 60k/12k tokens, 90 s wall clock) with stable
-stop reasons, Epicure queried by default, validation as the last gate
-(see `docs/agent.md` and `docs/adr/0002-agent-loop.md`). `search_web`
+calls in call order, CAS plus events per step, server-set budgets with
+stable stop reasons, Epicure queried by default, validation as the last
+gate (see `docs/agent.md` and `docs/adr/0002-agent-loop.md`). Budget
+defaults are 12 steps, 12 tool calls, 60k input and 12k output tokens
+and 90 s per run (`config.py:143-144`, `:306`, `:320-321`); `make demo`
+raises them to 40, 40, 300k, 60k and 240 s (`Makefile:13-23`), and the
+H8 live checks ran at those demo limits (`evals/h8_live/PLAN.md:25`). `search_web`
 is implemented behind the same registry (server-bound session,
 atomic slot claim max 3/session, one bounded hosted sub-request per
 dispatch; see `docs/tools.md`). The minimal UI is served at `/ui`
 (native ES modules, no build; toggle off by default, backend
-enforces; see `docs/ui-walkthrough.md`). Vector and hybrid
-retrieval exist in the retrieval service and the evaluation harness, but
-the API and recommendations run full-text by default (code default
-`fulltext`; see ADR 0001).
+enforces; see `docs/ui-walkthrough.md`). Retrieval defaults to
+full-text (`RETRIEVAL_MODE` default `fulltext`, ADR 0001). The retrieval
+endpoint and the agent's `search_recipes` read that setting; the agent
+tool also accepts an explicit `mode` (`fulltext` or `vector`, no hybrid)
+from the model on each call (`tools/search_tools.py:115-129`), so with
+`EMBEDDINGS_ENABLED=true`, as in `make demo`, the model can run vector
+searches whatever the default (it did in H8 attempt 1,
+`evals/h8_live/RESULTS.md`). Recommendations keep their own full-text
+search.
 Clarification readiness feeds the implemented recommendation
 workflow (source-grounded selection, backend-only), served over both
 non-streaming JSON and versioned SSE streaming (Phase 4, shared
@@ -125,7 +138,7 @@ All paths below are relative to `src/culinary_copilot/`.
 | Ingestion | Source normalization, extraction, validation and loading | `recipes/import_data.py`, `adapters/`, `llm_batch.py`, `llm_sched.py`, supporting modules |
 | Epicure | Load pinned vocabulary/vectors and calculate neighbors (core/cooc/chem) | `tools/epicure.py` |
 | Agent tools (M3 Phase 2 + Phase 4 + Phase 5 part 2) | Typed registry, recipe search, Epicure pairings/substitutions, scaling/conversion, technique search, server-bound web search | `tools/registry.py`, `search_tools.py`, `epicure_tools.py`, `measure_tools.py`, `technique_tools.py`, `stub_tools.py` (see `docs/tools.md`, `docs/techniques.md`) |
-| Agent loop (M3 Phase 3 + Phase 7) | Bounded hand-written loop, Epicure-by-default, ask/resume, select/plan, validation last gate, SSE stream | `agent/loop.py`, `agent/validate.py`, `api/agent.py` (see `docs/agent.md`, `docs/adr/0002-agent-loop.md`) |
+| Agent loop (M3 Phase 3 + Phase 7 + H0-H8) | Bounded hand-written loop, Epicure-by-default, ask/resume, select/plan, validation last gate, SSE stream; plan quantity attribution | `agent/loop.py`, `agent/validate.py`, `agent/plan_quantities.py`, `api/agent.py` (see `docs/agent.md`, `docs/adr/0002-agent-loop.md`) |
 | Web UI (M3 Phase 6) | Static page at `/ui` (no build): message box, streamed stages, options/plan/technique/web cards, question answering, toggle off by default (backend enforces) | `web/` (`index.html`, `demo.html`, `js/`, `styles.css`; see `docs/ui-walkthrough.md`) |
 | Infrastructure | Settings, database engine, planning events | `config.py`, `db.py`, `obs/clarification.py` |
 
@@ -133,7 +146,13 @@ Development-only tools are under `scripts/`:
 - dataset tools in `scripts/datasets/`;
 - the embedding backfill CLI in `scripts/embeddings/embed.py`;
 - the technique corpus CLI in `scripts/techniques/` (fetch, load, embed, eval baseline);
-- the retrieval evaluation harness in `scripts/retrieval_eval/`.
+- the retrieval evaluation harness in `scripts/retrieval_eval/`;
+- the read-only session export in `scripts/sessions/export_session.py`;
+- the Milestone 4 corpus-readiness scripts in `scripts/m4/` (read-only).
+
+Live agent runs go through `evals/phase3_agent/live_run.py` (spend
+ledger, per-run acknowledgement); the offline agent harness is
+`evals/phase7_agent/run.py`.
 
 Production code does not import them. Tests live under `tests/`. `evals/`
 holds the frozen retrieval evaluation inputs, the measured full-text
@@ -177,6 +196,9 @@ flowchart LR
 - The clarification store caps retained requests at 512 and removes associated groups on eviction.
 - App startup creates the engine, services and store. It initializes the application
   provider when enabled; shutdown closes that client and disposes the engine.
+  Startup also logs the session limits and warns when they exceed the
+  `make demo` values (`api/app.py:95`, `config.py:342-351`; D0, after a
+  demo server ran with inherited unlimited settings).
 - `/health/live` reports process availability; `/health/ready` checks PostgreSQL
   connectivity. Neither certifies model availability, corpus quality, or conversation persistence.
 
@@ -188,8 +210,14 @@ flowchart LR
 | `LLM_RECOMMENDATION_ENABLED` | Grounded recommendation selection (Phase 3) | Clarification planning or batch ingestion |
 | `LLM_INGESTION_ENABLED` | Explicit ingestion extraction calls | Interactive clarification or recommendations |
 | `EPICURE_ENABLED` | Local Epicure pairing capability | Dietary certification or automatic recommendation generation |
+| `EMBEDDINGS_ENABLED` | Query-embedding provider for vector search (retrieval endpoint, agent `search_recipes`, `search_techniques`) | A change of the retrieval default |
+| `WEB_SEARCH_ENABLED` | Connects a hosted search provider for `search_web` | Search in any session whose own toggle is off |
+| `AGENT_RECORD_TRAJECTORY` | Full scrubbed trajectories in `session_events` (tool outputs, every directive) | Any change to agent behavior |
 
-Defaults are disabled in code.
+Defaults are disabled in code (checked 2026-10-11 with
+`Settings(_env_file=None)`). `make demo` turns on all of the switches
+above except `LLM_ENABLED` and `LLM_INGESTION_ENABLED`
+(`Makefile:18-23`).
 
 Embedding and retrieval-mode settings are validated at load and, since
 Milestone 3 Phase 2, wired to the retrieval request path (ADR 0001
@@ -224,13 +252,13 @@ planning call” does not necessarily mean exactly one network attempt.
 | Source-grounded recommendations | Implemented backend-only (Phase 3): `POST /api/v1/recommendations` selects one source recipe with server-rendered content, deterministic validation, and Epicure consultation or a recorded skip/degraded outcome; see `docs/recommendations.md` |
 | Epicure inside recommendations | Implemented: early consultation with canonical ingredients via cached assets (`CachedEpicureAdapter`), distinct outcomes (consulted/skip/disabled/unavailable/unmapped/insufficient context), opt-in `get_recipe` tool mode |
 | Substitution verification | Limited checks; suggestions remain unverified, not certified equivalents |
-| Agent sessions + cooking phases | Implemented (Milestone 3, Phase 1): Postgres `sessions` + append-only `session_events` (migration `005`), phase table with `recommend -> plan` skip-select, create/read/permission endpoints; budgets stored (12 tool calls, 12 steps) and enforced by the loop. See [sessions](../sessions.md) |
+| Agent sessions + cooking phases | Implemented (Milestone 3, Phase 1): Postgres `sessions` + append-only `session_events` (migration `005`, applied; trigger `session_events_no_mutation`), phase table with `recommend -> plan` skip-select, create/read/permission endpoints; budgets stored per session from `SESSION_MAX_STEPS` / `SESSION_MAX_TOOL_CALLS` (default 12 each) and enforced by the loop. After a plan the table allows `cook`, `select` and, since D0, `recommend` (`domain/sessions.py:57-69`): a request for a different dish returns new options and the earlier plan stays in the event log. See [sessions](../sessions.md) |
 | Durable clarification conversations | Not implemented (in-memory store stays; sessions link by ID; migration path in [sessions](../sessions.md)) |
-| Recipe embeddings / pgvector | Implemented (Phase 5): migration 004 adds pgvector and `recipe_embeddings`. There is one `text-embedding-3-small` 1536-dimension vector per recipe, and search is an exact cosine scan with no HNSW index. `search_vector` is still the separate PostgreSQL full-text column |
+| Recipe embeddings / pgvector | Implemented (Phase 5): migration 004 adds pgvector and `recipe_embeddings`. There is one `text-embedding-3-small` 1536-dimension vector per recipe (15,875 rows for 15,875 recipes, 2026-10-11), and search is an exact cosine scan: the database has no HNSW or IVFFlat index. `search_vector` is still the separate PostgreSQL full-text column |
 | Vector / hybrid retrieval | Retrieval endpoint wired (M3 Phase 2, ADR 0001 steps 1–2/5): `RETRIEVAL_MODE` and friends reach `retrieve_for_group`; provider starts only when `EMBEDDINGS_ENABLED`. Code default stays `fulltext` (zero embedding calls); recommendations keep full-text (step 4 open). Vector/hybrid measured in Phase 6; flipping the default still needs owner approval |
 | Typed tool layer (M3 Phase 2 + Phase 4 + Phase 5 part 2) | Implemented: 10 typed tools (search/get, 3 Epicure variants + substitutions, scale/convert, technique search, server-bound web search) with server-set 10 s timeout, typed errors + `next_action`, and `session_events` logging; see `docs/tools.md`, `docs/techniques.md` |
-| Technique corpus (M3 Phase 4) | Implemented and applied to the app DB: 34 approved documents, 253 chunks, each with an embedding (migrations 006 full-text, 007 vector). `search_techniques` runs full-text by default, with vector as an option, and returns attribution. Plan and cook `technique_refs` are validated and stored as evidence. Frozen 16-case eval: full-text HitRate@5 0.625, MRR 0.594. See `docs/techniques.md` |
-| Bounded agent loop (M3 Phase 3 + Phase 7) | Implemented. See [the agent system](agent-system.md), `docs/agent.md` and ADR 0002. A hand-written loop over the registry: native function calling, parallel calls recorded in call order, a CAS write and an event per step. Server-set budgets: 12 steps, 12 calls, 60k input tokens, 90 s. Stable stops with `next_action`; Epicure by default; answers, select and SSE endpoints. Phase 7 offline harness: v8, 43 cases (`docs/agent-scoreboard.md`). The live evaluation ran 11 sessions; the owner reviewed them at checkpoint C (`evals/phase7_agent/CHECKPOINT_C.md`) |
+| Technique corpus (M3 Phase 4) | Implemented and applied to the app DB: 40 approved sources, 34 ingested (6 dropped: 4 too short, and both FSIS pages, which answered 403 to the fetcher; `evals/technique_corpus/manifest.json`), 253 chunks, each with an embedding (migrations 006 full-text, 007 vector). `search_techniques` runs full-text by default, with vector as an option, and returns attribution. Plan and cook `technique_refs` are validated and stored as evidence. Food-safety citations accept four document ids (`agent/validate.py:1061-1063`), but only the two FDA documents exist, so FDA chunks are the only food-safety evidence. Frozen 16-case eval: full-text HitRate@5 0.625, MRR 0.594. See `docs/techniques.md` |
+| Bounded agent loop (M3 Phase 3 + Phase 7 + H0-H8) | Implemented. See [the agent system](agent-system.md), `docs/agent.md` and ADR 0002. A hand-written loop over the registry: native function calling, parallel calls recorded in call order, a CAS write and an event per step. Server-set budgets (defaults above); one tool-less finishing turn after a tool-budget excess (H4) or a stall (after H8 attempt 1). Stable stops with `next_action`; Epicure by default; answers, select and SSE endpoints. Offline harness v14: 61 of 61 cases, 4 of 4 adversarial caught (`evals/phase7_agent/results.json`). Live: 11 Phase 7 sessions reviewed at checkpoint C (`evals/phase7_agent/CHECKPOINT_C.md`); H8, 8 sessions over four attempts, 2 complete, one per workflow, at demo limits (`evals/h8_live/RESULTS.md`) |
 | Recipe rewriting, scaling, web search | Recommendations select and render stored sources; scaling and conversion are deterministic tools (unknown stays unknown). Plans that change a source's method are labelled `model_adaptation`. Web search is permission-gated in the backend, in server-bound `search_web`: off means denied with no slot; on means an atomic slot claim (at most 3 per session), then one bounded hosted sub-request. Answers are discovery-only: cited pointers and page descriptions, never a cooking method |
 | Streaming | Implemented (Phase 4): `POST /api/v1/recommendations/stream` shares the recommendation service via a stage hook; versioned stage/final/error events, bounded duration/events, disconnect cancellation |
 | Complete telemetry | Implemented (Phase 4): correlated clarification + recommendation events with real ids, stage timings, per-turn usage and estimated cost from the model registry (gpt-6-luna); one event per run including cancelled runs; no message/recipe/secret logging |
@@ -246,6 +274,14 @@ insufficient, error, and cancelled stream outcomes).
 `make check` runs Ruff, formatting, mypy and tests/evals. Default model tests use
 fake providers. PostgreSQL integration tests use disposable databases when available.
 No live model reliability claim follows from fake-provider tests.
+
+CI (`.github/workflows/ci.yml`) runs `make check` against a pinned
+pgvector service, then a Docker Compose smoke test. Every CI run from
+2026-09-25 to the fix on 2026-10-09 failed (9 runs, `gh run list`):
+the first and last of them fail with PostgreSQL connection errors,
+because the database tests that do not skip had no server (`8fb3adf`). Tests that need the git-ignored local
+corpus now skip with a stated reason when it is absent (`6e2534e`), so
+CI does not exercise them.
 
 The pgvector tier (`PGVECTOR_TEST_URL`, `tests/test_embeddings_pg.py`) needs
 a disposable database whose name contains `test`, `disposable` or `check`.
@@ -268,9 +304,32 @@ docker stop cc-pgv-test
 - [Clarification contracts and HTTP examples](../clarification.md)
 - [Retrieval evidence summaries](../retrieval.md)
 - [Phase 6 retrieval scoreboard](../scoreboard.md)
-- [ADR 0001: retrieval default](../adr/0001-retrieval-default.md)
+- [ADR 0001: retrieval default](../adr/0001-retrieval-default.md),
+  [ADR 0002: agent loop](../adr/0002-agent-loop.md),
+  [ADR 0003: references, not answers](../adr/0003-references-not-answers.md)
+- [Milestone 4 plan](../milestone-4-plan.md)
 - [Grounded recommendations and Epicure](../recommendations.md)
 - [Food.com import runbook](../recipe-ingestion.md)
 - [Hybrid ingestion and completed local migration](../hybrid-ingestion.md)
 - [Database schema and ingestion diagrams](data-and-ingestion.md)
 - [Request lifecycle and concurrency diagrams](request-flows.md)
+
+## 7. How this page was checked (2026-10-11)
+
+Run against `main` at `e27a6fa` and the local application database,
+read-only, then rechecked at `a4422c6` after the D0 merge (line numbers,
+harness, tests):
+
+| Claim | Check |
+|---|---|
+| Setting defaults | `Settings(_env_file=None)`: 12 steps, 12 tool calls, 60,000 / 12,000 tokens, 90 s, `TOOL_TIMEOUT_S` 10, `SEARCH_WEB_TIMEOUT_S` 30, 3 searches per session, `RETRIEVAL_MODE` `fulltext`, every switch off |
+| Demo profile | `Makefile:13-23` |
+| Ten tools | `all_tool_definitions()` lists `search_recipes`, `get_recipe`, three pairing tools, `find_substitutions`, `scale_recipe`, `convert_units`, `search_techniques`, `search_web` |
+| Corpus counts | `SELECT dataset_id, count(*) FROM recipes`: Food.com 1,216, Foodie 14,659 (15,875); `recipe_quarantine` 644; `recipe_embeddings` 15,875 |
+| Technique corpus | `technique_documents` 34, `technique_chunks` 253, `technique_embeddings` 253; manifest: 40 approved, 34 ingested, 6 dropped |
+| Migrations | `recipe_schema_migrations`: 001-007 applied |
+| No ANN index | `pg_indexes`: no `hnsw` or `ivfflat` index |
+| Append-only events | `pg_trigger` on `session_events`: `session_events_no_mutation` |
+| Harness | `evals/phase7_agent/results.json`: `phase7-cases-v14-2026-10-09`, 61 / 61, adversarial 4 / 4 |
+| CI history | `gh run list`: failures from 2026-09-25 to 2026-10-09, then green on `6e2534e` |
+
