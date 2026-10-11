@@ -2,7 +2,8 @@
 
 Part of the [current architecture](README.md). SQL definitions live in
 `src/culinary_copilot/recipes/migrations/`; the migration ledger is created by
-`apply_migrations()` in `import_data.py`.
+`apply_migrations()` in `import_data.py`. Counts below were rechecked
+read-only against the application database on 2026-10-11.
 
 ## 1. One database, one shared recipe table
 
@@ -102,7 +103,40 @@ erDiagram
         jsonb payload
     }
     SESSIONS ||--o{ SESSION_EVENTS : logs
+    TECHNIQUE_DOCUMENTS ||--o{ TECHNIQUE_CHUNKS : "split into"
+    TECHNIQUE_CHUNKS ||--o{ TECHNIQUE_EMBEDDINGS : "embedded as"
+    TECHNIQUE_DOCUMENTS {
+        text doc_id PK
+        text title
+        text url
+        text publisher
+        text licence
+        text attribution_text
+        text revision_id
+    }
+    TECHNIQUE_CHUNKS {
+        text doc_id PK, FK
+        int chunk_id PK
+        text section
+        text chunk_text
+        tsvector search_vector
+    }
+    TECHNIQUE_EMBEDDINGS {
+        text doc_id PK, FK
+        int chunk_id PK, FK
+        text model PK
+        int dimension PK
+        text renderer_version PK
+        text chunking_version PK
+        text embedded_text_hash
+        vector embedding
+    }
 ```
+
+Technique tables are abbreviated (all columns in migrations 006 and
+007); chunks and their embeddings cascade-delete with their parent.
+`session_events` is append-only: the trigger `session_events_no_mutation`
+rejects UPDATE and DELETE.
 
 `(dataset_id, source_id)` is the composite recipe key. Quarantine uses
 `(import_id, row_number)`; its dataset comes through the import record.
@@ -128,7 +162,8 @@ of words. It is not an embedding. GIN indexes support full-text and ingredient-a
 queries; a duration index supports time filtering. Since migration 004 the
 database also carries the pgvector extension and a `recipe_embeddings` table
 (one 1536-dimensional `text-embedding-3-small` vector per recipe, renderer
-version 1); vector search is an exact scan (no HNSW index).
+version 1: 15,875 rows for 15,875 recipes); vector search is an exact
+scan (`pg_indexes` lists no HNSW or IVFFlat index).
 
 ### Migration history
 
@@ -137,9 +172,9 @@ version 1); vector search is an exact scan (no HNSW index).
 - **003:** quarantine source ID, status, verdict and problem details.
 - **004:** pgvector extension, `recipe_embeddings` and `embedding_runs`.
 - **005:** agent sessions + append-only `session_events` (Milestone 3,
-  Phase 1; plain Postgres, no extension). Rehearsed on disposable
-  databases only; not yet applied to the application database in this
-  change. See [sessions](../sessions.md).
+  Phase 1; plain Postgres, no extension). Applied to the application
+  database on 2026-09-28 with owner approval, after rehearsal on
+  disposable databases (`docs/sessions.md`, line 115).
 - **006:** technique documents + section chunks with tsvector full-text
   (Milestone 3, Phase 4; plain Postgres, applies on both images).
 - **007:** technique chunk embeddings, `requires-extension: vector`
@@ -147,6 +182,10 @@ version 1); vector search is an exact scan (no HNSW index).
   works on its own). Both applied to the application database
   2026-09-28 with the paid embedding run. See
   [techniques](../techniques.md).
+
+The application database's ledger (`recipe_schema_migrations`) lists
+001 to 007 as applied. No migration has been added since 007; the H5
+cleanup changed rows, not schema.
 
 Usage accounting note: `embedding_runs.used_tokens` is
 provider-reported billed usage going forward, and `reserved_tokens`
@@ -166,12 +205,19 @@ the database will not start. The former
 `compose.pgvector.override.yaml` was superseded by the pin and removed;
 do not reintroduce an unpinned image.
 
-### Recorded local migration snapshot
+### Recorded local migration snapshot and current counts
 
 The completed migration report records 1,216 Food.com + 14,817 Foodie recipes
 (**16,033 total**) and 12 + 431 quarantine rows (**443 total**). These are historical
-local counts, not an automatic seed or a live count rechecked for this documentation.
+local counts, not an automatic seed.
 See [the migration runbook section](../hybrid-ingestion.md#completed-foodie-migration-2026-09-23).
+
+The H5 cleanup, applied on 2026-10-08 after a verified backup, deleted
+the 158 Foodie records titled "summary" and added 201 quarantine rows
+for them and the source rows behind them: **15,875 recipes** (1,216 Food.com, 14,659 Foodie) and **644
+quarantine rows** (`docs/h5-summary-cleanup.md`, lines 14-19, 63-64 and 137).
+The read-only recount on 2026-10-11 gives the same numbers. The
+technique corpus holds 34 documents, 253 chunks and 253 embeddings.
 
 ## 2. Two ingestion paths
 
@@ -224,9 +270,9 @@ is explicitly selected.
 
 | Location | Contents | Lifetime |
 |---|---|---|
-| PostgreSQL volume | Canonical recipes, quarantine, import reports, migration ledger, recipe embeddings and embedding-run ledger, agent sessions + session event log (005) | Durable across container restarts |
+| PostgreSQL volume | Canonical recipes, quarantine, import reports, migration ledger, recipe embeddings and embedding-run ledger, agent sessions + session event log (005), technique documents, chunks and embeddings (006, 007) | Durable across container restarts |
 | API process memory | Cooking requests, questions, answers, confirmations, revisions | Lost on restart; bounded eviction |
-| Ignored `data/` | Batch manifests, responses, reviews, migration package and backup, Phase 6 evaluation outputs (raw retrieval, judging packet, judgments, scores) | Local files, not Git or conversation storage |
+| Ignored `data/` | Batch manifests, responses, reviews, migration package and backup, Phase 6 evaluation outputs (raw retrieval, judging packet, judgments, scores), the H5 cleanup backup, technique corpus text, live-run raw records and spend ledgers (`data/*-live/`), session exports, Milestone 4 readiness outputs (`data/m4-r1/`) | Local files, not Git or conversation storage. CI has none of them, so tests that need them skip there |
 | Model cache | Pinned Epicure vocabulary and vectors | Local cache / Docker volume |
 | Git repository | Code, migrations, tests, selected fixtures and maintained docs | Versioned; no runtime dataset corpus |
 

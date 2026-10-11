@@ -1,6 +1,8 @@
 # API request flows
 
-Part of the [current architecture](README.md). These are the current code paths.
+Part of the [current architecture](README.md). These are the code paths
+on `main` at `a4422c6` (reviewed 2026-10-11). The route table was checked
+against the route decorators in `src/culinary_copilot/api/`.
 
 ## 1. API surface
 
@@ -21,10 +23,10 @@ Part of the [current architecture](README.md). These are the current code paths.
 | `POST /api/v1/sessions` | Create a Postgres-backed agent session (Phase 1; see `docs/sessions.md`) |
 | `GET /api/v1/sessions/{session_id}` | Read a session + its append-only events |
 | `POST /api/v1/sessions/{session_id}/permission` | Revision-pinned internet-search permission update (off by default; backend-enforced in `search_web`) |
-| `POST /api/v1/sessions/{session_id}/agent:run` | Start or continue the bounded agent loop for one user message (see `docs/agent.md`) |
-| `POST /api/v1/sessions/{session_id}/agent:stream` | Same loop over SSE: stage events per step, one final or error (same stops as above) |
-| `POST /api/v1/sessions/{session_id}/answers` | Answer the agent's pending question (`expected_revision`, then resume) |
-| `POST /api/v1/sessions/{session_id}/select` | Select one suggested dish (`expected_revision`, phase `recommend -> plan`) |
+| `POST /api/v1/sessions/{session_id}/agent/stream` | Store the optional `message` as a `user_message` event (`api/agent.py:57-65`), then run the bounded agent loop over SSE: stage events per step, then exactly one `final` or `error` (`api/agent.py:209`; see `docs/agent.md`). There is no separate non-streaming run endpoint; the UI calls this one (`web/js/api.js:126-127`) |
+| `POST /api/v1/sessions/{session_id}/answers` | Answer the agent's pending question (`expected_revision`, then resume) (`api/agent.py:137`) |
+| `POST /api/v1/sessions/{session_id}/select` | Select one suggested dish (`expected_revision`); the session moves to `select` and the next run must finish with that dish's plan (`api/agent.py:173`, `agent/loop.py:1951-1956`). After a finished plan, a request for a different dish may return new options (D0) |
+| `GET /` | Redirects to `/ui/` (`api/app.py:207-209`) |
 | `GET /ui` | Minimal static page (no build): message box, streamed stages, options/plan/technique/web cards, questions, toggle off by default (see `docs/ui-walkthrough.md`) |
 
 Retrieval returns ranked bounded summaries. Recommendations fetch
@@ -235,10 +237,15 @@ which the Phase 6 evaluation harness and the tests use:
   `retrieval_fallback`.
 
 In the blind comparison, vector mode with a 0.66 cutoff won under the
-frozen rule ([ADR 0001](../adr/0001-retrieval-default.md)). Adopting it
-needs code that passes the mode and an embedding provider on the request
-path, plus owner approval. Setting an environment variable alone changes
-nothing.
+frozen rule ([ADR 0001](../adr/0001-retrieval-default.md)). Since
+Milestone 3 Phase 2 the retrieval endpoint and the agent's
+`search_recipes` read `RETRIEVAL_MODE` (`api/retrieval.py:57`,
+`tools/search_tools.py:115-129`), so the environment can switch them;
+recommendations cannot (`tests/test_tools.py::test_recommendations_path_still_fulltext`).
+Changing the default still needs owner approval and a decision on
+outage behavior (ADR 0001, steps 3-4). The agent tool supports
+`fulltext` and `vector` only, no hybrid, and the model may request
+`vector` on any call when embeddings are enabled.
 
 ## 7. Recommendation for a ready group
 
@@ -335,8 +342,8 @@ error. Telemetry (`obs/recommendations.py`) records both transports.
 
 ```mermaid
 flowchart TD
-    UI["/ui page (static, no build)"] -->|message / select / answers / toggle| AgentAPI["Agent endpoints (run, stream, answers, select, permission)"]
-    AgentAPI --> Loop["Bounded agent loop (12 steps / 12 calls / 60k in / 90 s)"]
+    UI["/ui page (static, no build)"] -->|message / select / answers / toggle| AgentAPI["Agent endpoints (agent/stream, answers, select, permission)"]
+    AgentAPI --> Loop["Bounded agent loop (defaults 12 steps / 12 calls / 60k in / 90 s; make demo 40 / 40 / 300k / 240 s)"]
     Loop -->|"each turn: framing + snapshot + evidence digest + capped history"| Model["Model (native function calling)"]
     Loop -->|"native function calling, parallel in call order"| Tools["Typed registry"]
     Tools --> Recipes["search_recipes / get_recipe (full-text default)"]

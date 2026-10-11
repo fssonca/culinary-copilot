@@ -4,6 +4,10 @@ Status: **implemented (Milestone 3, Phases 1-7). Budgets raised on
 2026-10-04 to 12 steps and 60k input tokens, after the live run.
 Phase 7 offline harness and live evaluation completed; checkpoint C
 answered on 2026-10-05.**
+Reviewed 2026-10-11 against `main` (`e27a6fa`, then `a4422c6` after
+the D0 merge): the decision stands; changes made during hardening
+(H0-H8, 2026-10-07 to 2026-10-08) and D0 are listed under "Later
+changes" with their code and tests.
 This records the design, its limits and what a framework would replace.
 
 ## Context
@@ -68,6 +72,11 @@ Phase 7 offline cooperative flows use 4 steps and 4-6 tool calls. The
 live run measured 3k-4.5k input tokens per turn, and a successful plan
 flow used 34.8k, so the owner raised the ceilings (see
 `docs/agent-scoreboard.md` and `docs/phase7-owner-decisions.md`).
+The defaults are still 12, 12, 60,000, 12,000 and 90 s
+(`config.py:143-144`, `:306`, `:320-321`). `make demo` sets 40 steps,
+40 tool calls, 300,000 / 60,000 tokens and 240 s (`Makefile:13-23`);
+the H8 live checks ran at those limits, so the defaults have no live
+measurement since Phase 7.
 
 ## Tool boundaries and permission enforcement
 
@@ -133,3 +142,28 @@ references, logs and gap candidates. Offline results measure the
 system, not model judgement; model quality is measured only live.
 Tightening budgets or changing the Epicure default needs owner
 approval with live evidence.
+
+## Later changes (hardening and D0, 2026-10-07 to 2026-10-11)
+
+Each change followed a classified live or review failure and ships with
+tests; the offline harness pins them (v14, 61 cases,
+`evals/phase7_agent/results.json`).
+
+| Change | Where | Tests |
+|---|---|---|
+| A tool batch larger than the remaining calls runs its affordable prefix, then the model gets one tool-less finishing turn instead of an immediate stop (H4). Decision step 4 above described the earlier immediate stop | `agent/loop.py:2618-2628` | `tests/test_h4_budget_recovery.py` |
+| A third identical call gets the same one tool-less finishing turn before `agent_no_progress` (after H8 attempt 1) | `agent/loop.py:2629-2637` | `tests/test_stall_recovery.py` |
+| A rejected finish on a final turn gets no retry and stops with the budget or stall reason plus a deterministic list of results already held | `agent/loop.py:5075-5086` | `tests/test_h4_budget_recovery.py::test_finishing_turn_rejected_stops_with_list_once` |
+| One `agent_turn` decision event per turn: offered and withheld tools with reasons, remaining budgets (H7) | `agent/loop.py:2023` | `tests/test_h7_decision_logging.py` |
+| Clipped or omitted directions are read with ranged `get_recipe`; a plan must read or name every omitted index (H3) | `tools/search_tools.py:83-104`, `agent/validate.py:1847-1859` | `tests/test_h3_clipped_directions.py` |
+| Plan amounts tied to source ingredients (H2), with list attribution and equipment sizes refined after H8 attempts 3 and 4 | `agent/plan_quantities.py` | `tests/test_agent_validate.py`, `tests/test_validator_regressions.py` |
+| A `model_adaptation` plan may not claim fidelity to the source (H3 part 2) | `agent/validate.py`, `fidelity_claim` | `tests/test_agent_validate.py` |
+| The plan run's input carries the selected recipe; after a plan, follow-ups get a technique answer, not a re-issued plan (after H8 attempts 2 and 3) | `agent/loop.py:1484-1516` | `tests/test_agent_loop.py` |
+| After a finished plan, a request for a different dish may finish with options: `plan -> recommend` is allowed, the selection and plan are cleared, the earlier plan is kept as `superseded_plan` (D0) | `domain/sessions.py:57-69` | `tests/test_agent_loop.py::test_new_dish_after_plan_returns_options` |
+| Advice to follow a doneness cue of the source is not a fidelity claim (D0) | `agent/validate.py`, `_cook_advice` | `tests/test_agent_validate.py` |
+| Start-up logs the session limits and warns above the `make demo` values (D0) | `api/app.py:95`, `config.py:342-351` | `tests/test_demo_limits.py` |
+
+Milestone 4 (ADR 0003, accepted 2026-10-09) keeps this loop and adds
+answer kinds, provenance and an ingredient contract on top of it; it
+does not introduce a framework.
+

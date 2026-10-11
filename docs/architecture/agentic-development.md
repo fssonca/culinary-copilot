@@ -32,6 +32,14 @@ These are two separate agent sessions with different instructions and
 context. The reviewer's main rule is: **check the code, not the
 report**.
 
+From the Milestone 3 close-out onward (the M4 plan, R0-R2, D0 and this
+review), one implementing agent worked directly with the owner, and
+independent review came as AI-assisted reviews the owner pasted in:
+three for the Milestone 4 plan and design, each recorded in a revision
+history (`docs/milestone-4-plan.md`, `docs/adr/0003-references-not-answers.md`).
+The agent records its own corrections when a review or a later check
+finds an error.
+
 ## 2. Standing context and guardrails
 
 - **`AGENTS.md`:** repo conventions every coding agent reads first.
@@ -62,6 +70,8 @@ judgement or money is involved:
 | A | Offline trajectories are acceptable; live budget approved |
 | B | Search provider, cost cap and timeout; logs and gap queue reviewed |
 | C | Real trajectories read beside their sources: Were claims supported? Were constraints relaxed? Were citations real and relevant? |
+| D (2026-10-08) | H6 ranking judgments and ranking (kept unchanged), H5 cleanup, H8 freeze (`docs/phase7-owner-decisions.md`) |
+| E (2026-10-09) | Milestone 4 design, evaluation design, sources and push/merge, approved as recommended (`docs/milestone-4-plan.md`, "Checkpoint E") |
 
 ## 4. The verification loop
 
@@ -102,6 +112,20 @@ Defects caught this way, before they shipped:
   corrected, and `verify_packet.py` now rechecks each live claim
   against the raw files.
 
+Later examples, from the hardening and Milestone 4 work:
+
+- **Grader bugs.** The H8 allergy grade checked option ingredients for
+  peanuts only, and read options from the last run, which in a full
+  session carries none; both found by reviewing the grades of attempt 1
+  (`evals/h8_live/RESULTS.md`, "Grading bugs found and fixed").
+- **Overstated spend record.** The review packet said every ledger call
+  was "reconciled per call"; $0.0320108 were kept-ambiguous
+  reservations. An external review caught it
+  (`evals/h8_live/OWNER_REVIEW.md`, "Spend reconciliation").
+- **CI ignored.** CI failed on every run from 2026-09-25 to 2026-10-09
+  because its database tests had no server; local `make check` passed
+  throughout. Found when a merge was gated on CI (`8fb3adf`, `6e2534e`).
+
 The human checkpoint still found what automated review missed. At
 checkpoint C, the owner found a plan that ignored its source directions
 yet was labelled "source", and a web answer that taught a cooking
@@ -124,8 +148,10 @@ method. Both became validators and regression cases.
 - **Database safety:** write tests run only on databases whose name
   marks them as disposable. Application migrations need a verified
   backup.
-- **Outcome:** Milestone 3 live evaluation spent about $0.28 of its
-  $1.00 budget.
+- **Outcome:** the live runner's ledgers record $0.4453375 to
+  2026-10-09 ($0.0320108 of it unresolved reservations); unledgered
+  runs are estimated separately and provider billing is not yet
+  compared (`evals/h8_live/OWNER_REVIEW.md`).
 
 ## 6. From experiment to production
 
@@ -141,14 +167,21 @@ Each capability follows the same path:
 The Phase 7 live run surfaced six defects (a configuration gap, a
 time-claim loop, redundant fetches, a misused constraint field, a plan
 attribution gap and a method-teaching web answer). All six are fixed
-and pinned offline. Live confirmation is a Milestone 4 acceptance item.
+and pinned offline. The hardening phase then ran the same path four
+times (H8): each attempt's failures became fixes and offline cases
+before the next, and attempts 3 and 4 each completed one workflow at
+demo limits (`evals/h8_live/RESULTS.md`). That shows the workflows can
+complete; reliability needs repeated runs of one frozen build, which
+Milestone 4 plans for (`docs/m4/evaluation-design.md`, "Protocol").
 
-## 7. In numbers (2026-10-05)
+## 7. In numbers (2026-10-11, `main` at `a4422c6`)
 
-| Measure | Value |
-|---|---|
-| Commits since 2026-09-15 | 36 |
-| Tests (`make check`) | 1,209 passed, 8 skipped |
-| Offline agent scenarios | 43 (4 adversarial), all passing |
-| Live agent sessions reviewed | 11 (7 first run, 4 re-runs) |
-| Milestone 3 live spend | about $0.28 of $1.00 |
+| Measure | Value | Source |
+|---|---|---|
+| Commits since 2026-09-15 | 76, plus 2 merges | `git rev-list --count --no-merges a4422c6` |
+| Tests (`make check`) | 1,332 passed, 8 skipped | `make check` |
+| Offline agent scenarios | 61 (4 adversarial), all passing | `evals/phase7_agent/results.json` (v14) |
+| Live agent sessions | 11 Phase 7 (reviewed at checkpoint C); 8 H8 plus a 2-session smoke re-run; 5 unledgered on 2026-10-07 | `evals/phase7_agent/CHECKPOINT_C.md`, `evals/h8_live/RESULTS.md`, `docs/phase7-owner-decisions.md` |
+| Ledgered live spend | $0.4453375 | `evals/h8_live/OWNER_REVIEW.md` |
+
+The 2026-10-05 figures were 36 commits, 1,209 tests and 43 scenarios.

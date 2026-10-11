@@ -1,8 +1,10 @@
 # The agent system
 
-Part of the [current architecture](README.md). Code snapshot:
-2026-10-05 (Milestone 3, Phase 7 complete; checkpoint C answered,
-milestone acceptance pending).
+Part of the [current architecture](README.md). Code snapshot: `main` at
+`a4422c6`, reviewed 2026-10-11 (Milestone 3 closed after hardening
+H0-H8; the demo fixes D0 merged; the Milestone 4 design in ADR 0003 is
+accepted but not implemented). Claims cite the code, test or record
+that shows them.
 
 This page explains how the cooking agent works, end to end. It is meant
 to be read in one sitting. The detailed contracts are in
@@ -34,7 +36,7 @@ reach the user.
 | The model proposes, code disposes | Every final answer passes deterministic validators before the user sees it. Rejected answers are sent back once as feedback, then the run stops. |
 | Tool outputs are data, never instructions | The task framing says so. Recipe text, technique chunks and web pages travel as `function_call_output` data. Nothing in them can widen permissions or budgets. |
 | Deny by default | Web search is off per session and enforced in the backend, not just hidden in the UI. Paid and network tools are labelled by cost class. |
-| Bounded by construction | Budgets are per session and server-set (12 steps, 12 tool calls, 60k input and 12k output tokens) plus 90 s of wall clock per run. Each stop has a stable reason and a `next_action`. |
+| Bounded by construction | Budgets are per session and server-set: by default 12 steps, 12 tool calls, 60k input and 12k output tokens, plus 90 s of wall clock per run (`config.py:143-144`, `:306`, `:320-321`). `make demo` uses 40, 40, 300k, 60k and 240 s (`Makefile:13-23`). Each stop has a stable reason and a `next_action`. |
 | Fail typed, not loud | Tool failures are typed results (`invalid_arguments`, `timeout`, `unavailable`, `tool_not_configured`) that the model can act on. Permanent failures are not offered again. |
 | State lives in the database | Sessions use compare-and-swap writes. Events are append-only, enforced by a Postgres trigger. A restart loses nothing. |
 | Unknown stays unknown | Unknown quantities and unverified dietary or allergen status are shown as unknown, never guessed. |
@@ -65,15 +67,16 @@ flowchart TB
 | Part | File | Role |
 |---|---|---|
 | Loop | `agent/loop.py` | Step control, context assembly, budgets, stop reasons, finish handling |
-| Validators | `agent/validate.py` | Evidence, quantity, constraint, allergen, citation and plan-attribution checks |
+| Validators | `agent/validate.py`, `agent/plan_quantities.py` | Evidence, quantity, constraint, allergen, citation and plan-attribution checks; amounts in plan text tied to source ingredients |
 | Registry | `tools/registry.py` | Pydantic argument models (`extra="forbid"`), server-set timeouts, cost class, typed errors, event logging |
 | Tools | `tools/*.py` | 10 tools across recipes, Epicure, measurement, techniques and web |
 | Sessions | `domain/sessions.py`, migration `005` | Phase table, budgets, CAS revisions, append-only events |
 | API | `api/agent.py` | Run, SSE stream, answers, select, permission |
 | UI | `web/` | Message box, streamed stages, cards per answer shape, question answering, search toggle |
 
-The loop is hand-written, without a framework: about 3,700 lines for
-the loop and 1,400 for the validators. A
+The loop is hand-written, without a framework: 5,150 lines for the
+loop, 2,047 for the validators and 1,025 for plan-quantity attribution
+(`wc -l` at `a4422c6`; about 3,700 and 1,400 on 2026-10-05). A
 framework would replace the step loop, call fan-out and history
 bookkeeping. It would not replace the session schema, the registry,
 permission enforcement, the validators or the spend ledger. Those are
@@ -133,7 +136,12 @@ has: fetch candidates it has not fetched yet, or answer (a wrap-up
 turn). Until 2026-10-07 the wrap-up offered no tools at all; with
 one recipe fetched, the model could then only ask the user a
 question. A rejected wrap-up answer is retried with the same tools
-withheld; repeating the same call a third time still stops the run.
+withheld. A third identical call no longer stops the run at once
+(after H8 attempt 1, where both sessions stopped that way with usable
+evidence): the run gets one tool-less finishing turn to finish from
+what it has or ask one question; a tool call, a rejected answer or a
+limit on that turn stops with `agent_no_progress` as before, at most
+once per run (`agent/loop.py:2629-2637`, `tests/test_stall_recovery.py`).
 A repeat `get_recipe` that returns the "already fetched" pointer
 counts as a repeat for both rules, even though the pointer differs
 from the full output it points at. An identical repeated search is
@@ -164,7 +172,18 @@ in-memory transcript.
   never relaxing constraints, labelling adaptations, the answer shapes
   and the Epicure policy.
 - **Session snapshot:** constraints, confirmed answers, open questions,
-  remaining budgets and Epicure status.
+  remaining budgets and Epicure status; once a plan exists, its first
+  12 steps (`agent/loop.py:1445-1450`).
+- **Phase lines:** after an allergy answer and before a dish is
+  selected, a line says the app checks each option's listed ingredients
+  itself (`agent/loop.py:1469-1482`). In the plan run, the selected
+  recipe's `get_recipe` output is part of the input and a re-fetch
+  returns a pointer (`agent/loop.py:1484-1500`; added after H8 attempt
+  3, where every plan run fetched the recipe three times). After a plan,
+  a line asks for a `technique_answer` grounded in the plan and returned
+  chunks, not a re-issued plan; a request for a different dish is
+  treated as a new request that finishes with options
+  (`agent/loop.py:1501-1516`).
 - **Evidence digest:** rebuilt from `session_events` every turn. It
   lists searches, fetched recipes, web sources and technique hits, so
   the model knows what it already has after history is trimmed or a
@@ -189,12 +208,15 @@ in-memory transcript.
   (directions cut at 600 characters, which end with "…"). "The source
   has no directions" and "directions were cut here" are therefore
   different facts. The bound was 6 x 200 until 2026-10-07: 64% of
-  corpus recipes had a longer direction, and the cut was silent; now
-  184 of 16,033 recipes have a clipped direction. Since 2026-10-08
-  (H3) the model reads omitted text with `get_recipe`
+  corpus recipes had a longer direction, and the cut was silent. Since
+  2026-10-08 (H3) the model reads omitted text with `get_recipe`
   `directions_from`/`to` (0-based, at most 12 full directions per
   call, each response within its output limit and naming what it
-  still omits); 605 of 16,033 recipes need the path.
+  still omits). On the current corpus (15,875 recipes after the H5
+  cleanup) 65 recipes have a clipped direction and 486 need the ranged
+  path (counted 2026-10-11 with `doc_directions` and
+  `omitted_direction_indices` from `agent/validate.py`); before the
+  cleanup the counts were 184 and 605 of 16,033.
 - **Visibility-aware de-duplication:** a repeated `get_recipe` returns
   a short pointer only when the full document is still in the model's
   visible history. Otherwise it returns the full document. Ranged
@@ -237,7 +259,7 @@ session starts from the request.
 | Approval point | Mechanism |
 |---|---|
 | Missing information | `ask_user` stops the run. `POST …/answers` merges the answer (CAS) and the next run resumes with it. |
-| Choosing a dish | `POST …/select` records the pick; the next finish must be a plan for exactly that dish. |
+| Choosing a dish | `POST …/select` records the pick and moves the session to `select` (`agent/loop.py:1951-1956`); the next finish must be a plan for exactly that dish. After a finished plan, a request for a different dish may finish with new options: the session moves to `recommend`, the selection and plan are cleared, and the earlier plan is kept in the finish event as `superseded_plan` (D0; `domain/sessions.py:57-69`, `tests/test_agent_loop.py::test_new_dish_after_plan_returns_options`). Before the plan, options for a selected dish are still rejected. |
 | Dietary constraint | The page's Diet selector sets `dietary_constraints` (vegetarian or vegan) when the session is created. It is a hard constraint: every option is checked against its ingredient list and is never relaxed. |
 | Internet access | The operator switch `WEB_SEARCH_ENABLED` (off by default) connects a search provider at all. Then the per-session toggle, off by default. `search_web` is offered only when it is on, and re-checks permission inside an atomic slot claim (at most 3 per session). |
 | Budget exhaustion | The stop says what to do next (start a new session or retry) and lists the useful results already held (fetched recipes, options, selected dish, plan). The UI shows a matching card (reason unchanged; the message carries the list). |
@@ -262,8 +284,12 @@ The validators run on every finish, with no model call:
     mentions an allergy or avoidance, when its question asked about
     one, or when the answer itself states one. A plain dish choice
     ("Creamy mushroom pasta") is not read as a wheat allergy.
-- **Claims:** pairing terms in the note must appear in session evidence.
-  Times and temperatures must appear in the cited chunk or recipe.
+- **Claims:** pairing terms in the note must appear in session evidence;
+  the user's request and confirmed answers count as evidence, so a note
+  warning about the allergen the user named is not an unsupported
+  pairing (`confirmed_answer_texts`, `agent/loop.py:2420`; after H8
+  attempt 2). Times and temperatures must appear in the cited chunk or
+  recipe.
 - **Plans:**
   - the source must be the selected dish, fetched in full;
   - mass and volume amounts in the plan text must equal an amount the
@@ -276,9 +302,17 @@ The validators run on every finish, with no model call:
     amount passes if any ingredient its name can refer to states it. A
     step may also rely on a cited direction that states the amount for
     the same ingredient; amounts tied to no ingredient pass only
-    through a cited direction. Rules, limits and corpus counts are in
+    through a cited direction. In a list line ("Gather A, B, C") an
+    amount attaches to the item it precedes (`_forward_list_attachment`,
+    `agent/plan_quantities.py:684`; after H8 attempt 3), and a
+    hyphenated size before an equipment noun ("12-cup muffin tin") is
+    not an amount (`_equipment_size`, `agent/plan_quantities.py:42-66`;
+    after H8 attempt 4). Rules, limits and corpus counts are in
     `docs/agent.md` (self-check script
-    `scripts/datasets/h2_quantity_selfcheck.py`);
+    `scripts/datasets/h2_quantity_selfcheck.py`). The Milestone 4
+    readiness sweep still found 402 Foodie recipes whose own lines fail
+    list attribution, a classified check defect
+    (`docs/m4/r1-corpus-readiness.md`, section 2);
   - steps are labelled `source` only when each step cites a stored
     direction that supports it and every direction is covered;
     otherwise `model_adaptation`. When the source has directions,
@@ -296,7 +330,13 @@ The validators run on every finish, with no model call:
     reference (technique search treats chicken, turkey, duck and goose
     as also matching "poultry", the word the FDA guidance uses). Once
     a dish is selected, the turn input states this requirement up
-    front instead of leaving it to a rejected plan;
+    front instead of leaving it to a rejected plan. Only the two FDA
+    documents are in the corpus (both FSIS pages were blocked at fetch
+    time), so they are the only accepted references. The raw-protein
+    list includes cured meats such as pepperoni and salami
+    (`agent/validate.py:1068`), which made a demo pizza plan cite food
+    safety; no source in the corpus classifies them, so the list stays
+    strict (`docs/milestone-4-plan.md`, D0 item 2);
   - a plan that claims the source has no directions is rejected when
     it does;
   - since H3 part 2 (2026-10-08) a `model_adaptation` plan whose note,
@@ -304,7 +344,11 @@ The validators run on every finish, with no model call:
     reproduce the source is rejected (deterministic patterns with
     negation handling; a `source` plan is unaffected). The plan final
     carries the model note with the validated `steps_source`, and the
-    UI shows that label next to the note as well as on the steps.
+    UI shows that label next to the note as well as on the steps. A
+    clause-initial instruction to follow a doneness cue of the source
+    ("follow the source's doneness cues") is advice, not a claim (D0,
+    after it ended a demo plan;
+    `tests/test_agent_validate.py::test_plan_fidelity_advice_to_follow_a_source_cue_is_not_a_claim`).
 - **Web answers:**
   - every URL must come from the provider's own citation evidence for
     this session;
@@ -375,18 +419,24 @@ The validators run on every finish, with no model call:
   - a turn that cannot be afforded stops the scenario;
   - pools and ceilings are cumulative, and every limit is enforced
     inside the run, not just at preflight.
-- **Spend:** Milestone 3 used about $0.28 of a $1.00 budget across all
-  live evaluation.
+- **Spend:** the live runner's four ledgers record $0.4453375 across
+  every ledgered live run to 2026-10-09, of which $0.0320108 are
+  reservations kept unresolved after ambiguous calls. Not in any
+  ledger: the 2026-10-07 five-session evaluation (about $0.081 by token
+  count), demo preparation on 2026-10-09 (about $0.02) and the owner's
+  demo sessions (unknown). Provider billing has not been compared
+  (`evals/h8_live/OWNER_REVIEW.md`, "Spend reconciliation").
 
 ## 11. Evaluation
 
 | Layer | What it proves | Size |
 |---|---|---|
-| Unit and integration tests | Contracts, validators, tools, CAS, UI headers (`make check`, disposable databases) | 1,271 passed, 8 skipped |
-| Offline scenario harness (`evals/phase7_agent/run.py`) | The real loop, tools and validators against scripted model turns, including adversarial ones (skipped Epicure, invented URL, bad arguments, illegal transition) | 55/55 cases (v10), 4/4 adversarial caught |
+| Unit and integration tests | Contracts, validators, tools, CAS, UI headers (`make check`, disposable databases) | 1,332 passed, 8 skipped (`main`, 2026-10-11); CI runs the same suite against a Postgres service |
+| Offline scenario harness (`evals/phase7_agent/run.py`) | The real loop, tools and validators against scripted model turns, including adversarial ones (skipped Epicure, invented URL, bad arguments, illegal transition) | 61/61 cases (v14), 4/4 adversarial caught (`evals/phase7_agent/results.json`) |
 | Scorer mutation tests | Each scoring check actually fails when the behaviour breaks | `tests/test_phase7_scorer.py` |
-| Bounded live runs | What the real model does: 7 scenarios, then 4 re-runs after fixes, all trajectories saved | First run 3/7 expected stops; re-runs 2/4 |
-| Human checkpoint | The owner reads live trajectories beside their sources | Checkpoint C |
+| Bounded live runs, Phase 7 | 7 scenarios, then 4 re-runs after fixes, all trajectories saved | First run 3/7 expected stops; re-runs 2/4 (`evals/phase7_agent/CHECKPOINT_C.md`) |
+| Bounded live runs, H8 | Two workflows per attempt, demo limits, fresh scenarios each attempt, fixes between attempts | 8 sessions over 4 attempts, 2 complete (one per workflow); a later smoke re-run of attempt 4's scenarios completed 2/2 (`evals/h8_live/RESULTS.md`) |
+| Human checkpoints | The owner reads live trajectories beside their sources, and decides | C (2026-10-05), D (2026-10-08, `docs/phase7-owner-decisions.md`), E (2026-10-09, `docs/milestone-4-plan.md`); the H8 transcript verdict is open (`evals/h8_live/OWNER_REVIEW.md`) |
 
 How a live finding becomes a regression test: each live failure is
 reproduced as a scripted offline case, fixed, and pinned before any
@@ -401,19 +451,32 @@ The harness version and case hash are recorded, so a changed case
 means a new version.
 
 Offline results measure the system, not the model's judgement. Live
-recovery after an answer, and allergy-aware options after resuming,
-are not yet shown live. They are Milestone 4 acceptance items.
+recovery after an answer with allergy-checked options was shown once,
+in H8 attempt 3 (question, recorded answer, checked options, plan,
+follow-up), at demo limits and with recorded limitations: the question
+came only after 16 steps (`evals/h8_live/OWNER_REVIEW.md`). One
+completion per workflow shows the workflows can complete; it does not
+establish reliability, which needs repeated runs of one frozen build.
 
 ## 12. Known limits and next steps
 
-- **Single agent.** Multi-agent designs, LangGraph and a tracing
-  platform are scheduled for Milestone 4; deployment and CI regression
-  gates for Milestone 5. CI already runs `make check` and a Docker
-  smoke test.
+- **Single agent.** No multi-agent design, framework or tracing
+  platform is planned: Milestone 3 put them out of scope
+  (`docs/milestone-3-hardening-plan.md:424`), and Milestone 4 is about
+  answers built on stored recipes (ADR 0003). CI runs `make check`
+  against a Postgres service and a Docker smoke test.
 - **Keyword-based checks.** Dietary, allergen, claim and web-method
   checks are deterministic and conservative, not semantic. A
   single-verb instruction can pass the web guard.
-- **Few live runs.** Live evidence is 11 sessions and one web search:
-  diagnostic, not a benchmark.
-- **Budget stops.** Two live flows ended on the tool budget after a
-  resume. The fixes are offline only until a live re-run.
+- **Few live runs.** Ledgered live evidence is the 11 Phase 7 sessions
+  (one web search), the 8 H8 sessions and a 2-session smoke re-run, plus
+  an unledgered five-session evaluation on 2026-10-07: diagnostic, not a
+  benchmark.
+- **Limits.** Every H8 session ran at the `make demo` limits (40 steps,
+  40 calls, 300k tokens). Behavior at the default limits (12, 12, 60k)
+  has not been re-measured since two Phase 7 flows ended on the tool
+  budget after a resume.
+- **Known false positive.** Cured meats such as pepperoni need a
+  food-safety citation (open, `docs/milestone-4-plan.md`, D0 item 2).
+  The other demo defects were fixed in D0; they have offline cases
+  (harness v14) but no live run yet.
