@@ -623,6 +623,7 @@ def _phase5_file() -> str:
     )
 
 
+@pytest.mark.usefixtures("postgres_available")
 def test_step1_stops_after_first_search(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     from culinary_copilot.config import Settings
@@ -660,6 +661,7 @@ def test_step1_stops_after_first_search(tmp_path: Path, monkeypatch: pytest.Monk
     assert summary["budget_pool"] == "phase3"
 
 
+@pytest.mark.usefixtures("postgres_available")
 def test_allergy_fake_run_grades_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     from culinary_copilot.config import Settings
@@ -696,6 +698,7 @@ def test_allergy_fake_run_grades_pass(tmp_path: Path, monkeypatch: pytest.Monkey
     assert grades["allergy_pass"] is True
 
 
+@pytest.mark.usefixtures("postgres_available")
 def test_web_discovery_answers_without_asking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1183,6 +1186,7 @@ def test_preflight_remainder_uses_corrected_total(
     assert record["prior_recorded_spend_usd"] == pytest.approx(0.075)
 
 
+@pytest.mark.usefixtures("postgres_available")
 def test_fake_summary_flags_swept_ambiguous(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
