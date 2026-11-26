@@ -557,6 +557,7 @@ def test_no_match_and_dataset_isolation_shape(engine: Any) -> None:
         search_recipes(engine, "chicken", limit=5, dataset_id="unknown/dataset")
 
 
+@pytest.mark.usefixtures("postgres_available")
 def test_migrate_cli_dry_run_lists_pending_with_zero_writes() -> None:
     import sys
 
@@ -610,6 +611,7 @@ def test_migrate_cli_refuses_unexpected_target() -> None:
     assert code == 2
 
 
+@pytest.mark.usefixtures("postgres_available")
 def test_migrate_cli_vector_behavior_matches_server() -> None:
     """Stock servers skip 004 with a reason; pgvector servers apply it."""
     import sys

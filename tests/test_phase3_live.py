@@ -722,6 +722,7 @@ def test_foreign_session_evidence_does_not_count(engine) -> None:
 # --- full fake run -------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("postgres_available")
 def test_full_fake_run_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     # The end-to-end fake run exercises the Epicure-consulted path, so
@@ -2503,6 +2504,7 @@ def test_fake_path_uses_effective_epicure_settings(engine, tmp_path: Path) -> No
     assert enabled["stop_reason"] == "agent_sufficient_evidence"
 
 
+@pytest.mark.usefixtures("postgres_available")
 def test_scenario_filter_and_attempts_recorded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

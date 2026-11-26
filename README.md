@@ -2,20 +2,22 @@
 
 Backend for the Epicure learning project: Python 3.13, FastAPI, PostgreSQL 17,
 uv, and Docker Compose. Includes hybrid recipe ingestion, clarification,
-dataset-aware retrieval and grounded recipe selection. Recipe facts and explanation
-wording are rendered by the server; recipe rewriting is not implemented. API keys
-are not needed to start the backend or run default tests.
+dataset-aware retrieval, grounded recommendations, and a bounded cooking agent.
+The browser UI supports session workflows and streamed results. Source facts retain
+their provenance; model adaptations are labelled separately. API keys are not
+needed to start the backend or run default tests.
 
 ## Run with Docker
 
 ```sh
-cp .env.example .env
+test -f .env || cp .env.example .env
 # Edit .env if needed, then:
 docker compose up --build -d --wait
 curl --fail http://localhost:8000/health/ready
 ```
 
-Open [Swagger UI](http://localhost:8000/docs). `GET /health/live` checks the API;
+Open the [browser UI](http://localhost:8000/ui/) or
+[Swagger UI](http://localhost:8000/docs). `GET /health/live` checks the API;
 `GET /health/ready` checks the database and returns 503 when unavailable.
 
 ```sh
@@ -35,7 +37,7 @@ Changing Postgres environment variables does not update an already initialized v
 Install [uv](https://docs.astral.sh/uv/), then:
 
 ```sh
-cp .env.example .env  # Only on first setup; preserve an existing .env.
+test -f .env || cp .env.example .env  # Preserve existing settings.
 uv sync --locked
 docker compose up -d db
 make dev
@@ -94,6 +96,7 @@ implemented behavior from planned integrations.
 ```text
 src/culinary_copilot/
   api/       FastAPI app, health, pairing, recipe, clarification, retrieval and recommendation endpoints
+  agent/     Bounded tool loop, plan validation, budgets and stop conditions
   domain/    Pydantic cooking-request schema, clarification contracts, rule planner
   llm/       Application provider boundary (fake + async OpenAI)
   services/  Hybrid planning, answer processing, in-memory clarification store
@@ -101,6 +104,8 @@ src/culinary_copilot/
   recommendations/ Source selection, constraints, typed propositions and rendering
   obs/       Clarification planning events
   tools/     Opt-in Epicure Core adapter
+  embeddings/ Recipe and query embedding providers, rendering and retrieval helpers
+  web/       Browser session UI and fixture-based demo
   recipes/   Normalization, import, migrations and offline retrieval
   config.py  Environment settings (secrets masked in repr)
   db.py      SQLAlchemy connection pool and readiness check
@@ -116,13 +121,19 @@ environments require explicit database setup and import. Implemented backend flo
 - [Grounded recommendations](docs/recommendations.md): Epicure consultation, model selection,
   typed propositions, source validation and server rendering. Phase 3 is
   [owner-accepted with limitations](docs/phase3-closure.md).
+- [Cooking agent](docs/agent.md): durable sessions, typed tools, bounded iteration,
+  streamed events and permission-gated web discovery.
 - [Architecture and diagrams](docs/architecture/README.md).
 
 The [corrected full-text baseline](evals/results/phase1/baseline_fulltext_corrected.md)
 reports grade-2 Recall@5 0.408 and MRR@5 0.446 over 27 relevant-labeled units,
 against an AI-assisted, owner-accepted rubric with incomplete judgments.
-Streaming and complete telemetry are next. Embeddings/pgvector, recipe adaptations,
-frontend, web search and autonomous agent iteration remain future work.
+Streaming and correlated request telemetry are implemented. Recipe embeddings and
+pgvector retrieval are available behind explicit configuration; full-text remains
+the default. The agent supports validated plans, labelled model adaptations and
+permission-gated web discovery. See the [architecture status table](docs/architecture/README.md)
+for implemented behavior, evaluation evidence and remaining limitations. A fresh
+checkout does not include the local recipe corpus, embeddings or model caches.
 
 ## Recipe foundation and next milestone
 
